@@ -14,7 +14,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   >;
 
   return (
-    <Provider attribute="class" defaultTheme="dark" enableSystem={false} disableTransitionOnChange>
+    <Provider attribute="class" defaultTheme="light" enableSystem={false} disableTransitionOnChange>
       {children}
     </Provider>
   );
