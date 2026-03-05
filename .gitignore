@@ -12,6 +12,8 @@ build/
 
 backend/prisma/*.db
 backend/prisma/*.db-*
+backend/prisma/**/*.db
+backend/prisma/**/*.db-*
 backend/uploads/
 
 .cursor/
