@@ -23,6 +23,12 @@ router.put(
   validate(replaceSchema),
   asyncHandler(specialtyController.replaceMyClinicSpecialties)
 );
+router.patch(
+  "/admin/clinic-specialties/:clinicSpecialtyId/template",
+  requireAuth,
+  allowRoles("SuperAdmin"),
+  asyncHandler(specialtyController.adminAssignClinicSpecialtyTemplate)
+);
 
 router.get(
   "/admin/:specialtyCode/templates",
@@ -47,6 +53,12 @@ router.post(
   requireAuth,
   allowRoles("SuperAdmin"),
   asyncHandler(specialtyController.adminCloneTemplate)
+);
+router.delete(
+  "/admin/templates/:templateId",
+  requireAuth,
+  allowRoles("SuperAdmin"),
+  asyncHandler(specialtyController.adminRemoveTemplate)
 );
 router.post(
   "/admin/templates/:templateId/fields",

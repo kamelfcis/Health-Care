@@ -136,14 +136,18 @@ export const patientSpecialtyService = {
         clinicId: patient.clinicId,
         specialtyId: specialty.id,
         deletedAt: null
-      }
+      },
+      select: { id: true, templateId: true }
     });
     if (!clinicSpecialty) {
       throw new AppError("Specialty is not enabled for this clinic", 403);
     }
+    if (!clinicSpecialty.templateId) {
+      throw new AppError("No template assigned for this clinic specialty", 404);
+    }
 
     const template = await prisma.specialtyTemplate.findFirst({
-      where: { specialtyId: specialty.id, isActive: true },
+      where: { id: clinicSpecialty.templateId, specialtyId: specialty.id },
       include: {
         fields: {
           orderBy: { displayOrder: "asc" },
@@ -157,9 +161,8 @@ export const patientSpecialtyService = {
           orderBy: { displayOrder: "asc" }
         }
       },
-      orderBy: { version: "desc" }
     });
-    if (!template) throw new AppError("No active template for specialty", 404);
+    if (!template) throw new AppError("Assigned template was not found for this clinic specialty", 404);
 
     return { patient, specialty, template };
   },

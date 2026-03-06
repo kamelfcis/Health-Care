@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { ColumnDef } from "@tanstack/react-table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Calendar, ChevronDown, ClipboardList, Loader2, MapPin, PhoneCall, PhoneOff, PhoneOutgoing, SquarePen, Trash2, TriangleAlert, User, UserPlus, Users } from "lucide-react";
+import { FaWhatsapp } from "react-icons/fa";
 import { AppShell } from "@/components/layout/app-shell";
 import { PatientForm, PatientFormValues } from "@/components/forms/patient-form";
 import { SpecialtyAssessmentForm } from "@/components/forms/specialty-assessment-form";
@@ -38,7 +39,7 @@ type PatientRow = {
 };
 
 export default function PatientsPage() {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const queryClient = useQueryClient();
   const [currentUser, setCurrentUser] = useState<ReturnType<typeof storage.getUser>>(null);
   useEffect(() => {
@@ -49,7 +50,10 @@ export default function PatientsPage() {
   const [formExpanded, setFormExpanded] = useState(false);
   const [editing, setEditing] = useState<PatientRow | null>(null);
   const [assessmentPatient, setAssessmentPatient] = useState<PatientRow | null>(null);
+  const [selectedAssessmentSpecialtyCode, setSelectedAssessmentSpecialtyCode] = useState<string>("");
   const [deleteTarget, setDeleteTarget] = useState<PatientRow | null>(null);
+  const [whatsappTarget, setWhatsappTarget] = useState<PatientRow | null>(null);
+  const [whatsappMessage, setWhatsappMessage] = useState("");
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const formRef = useRef<HTMLElement | null>(null);
   const assessmentRef = useRef<HTMLElement | null>(null);
@@ -114,26 +118,72 @@ export default function PatientsPage() {
     queryFn: () => patientService.stats(selectedClinicId === "all" ? undefined : selectedClinicId)
   });
 
-  const andrologyTemplateQuery = useQuery({
-    queryKey: ["patients", "specialty", "andrology", "template", assessmentPatient?.id, specialtyClinicScope],
+  const assessmentScopeReady = !isSuperAdmin || selectedClinicId !== "all";
+  const clinicSpecialtiesQuery = useQuery({
+    queryKey: ["specialties", "clinic", "assessment", specialtyClinicScope ?? selectedClinicId],
+    queryFn: () => specialtyService.listMyClinicSpecialties(specialtyClinicScope),
+    enabled: assessmentScopeReady
+  });
+  const assessmentSpecialties = useMemo(
+    () => (clinicSpecialtiesQuery.data ?? []).map((item) => item.specialty),
+    [clinicSpecialtiesQuery.data]
+  );
+  const specialtyPreferenceScope = isSuperAdmin ? selectedClinicId : currentUser?.clinicId ?? "default";
+  const specialtyPreferenceKey = `patients.assessment.specialty.${specialtyPreferenceScope}`;
+  useEffect(() => {
+    if (!assessmentSpecialties.length) {
+      setSelectedAssessmentSpecialtyCode("");
+      return;
+    }
+    const hasSelected = assessmentSpecialties.some((specialty) => specialty.code === selectedAssessmentSpecialtyCode);
+    if (hasSelected) return;
+    let remembered = "";
+    try {
+      remembered = localStorage.getItem(specialtyPreferenceKey) ?? "";
+    } catch {
+      remembered = "";
+    }
+    const rememberedValid = assessmentSpecialties.some((specialty) => specialty.code === remembered);
+    setSelectedAssessmentSpecialtyCode(rememberedValid ? remembered : assessmentSpecialties[0]!.code);
+  }, [assessmentSpecialties, selectedAssessmentSpecialtyCode, specialtyPreferenceKey]);
+  useEffect(() => {
+    if (!selectedAssessmentSpecialtyCode) return;
+    try {
+      localStorage.setItem(specialtyPreferenceKey, selectedAssessmentSpecialtyCode);
+    } catch {
+      // Ignore storage failures (private mode/locked storage).
+    }
+  }, [selectedAssessmentSpecialtyCode, specialtyPreferenceKey]);
+  const selectedAssessmentSpecialty = useMemo(
+    () => assessmentSpecialties.find((specialty) => specialty.code === selectedAssessmentSpecialtyCode) ?? null,
+    [assessmentSpecialties, selectedAssessmentSpecialtyCode]
+  );
+  const selectedAssessmentSpecialtyName = selectedAssessmentSpecialty
+    ? locale === "ar"
+      ? selectedAssessmentSpecialty.nameAr
+      : selectedAssessmentSpecialty.name
+    : "-";
+
+  const specialtyTemplateQuery = useQuery({
+    queryKey: ["patients", "specialty", selectedAssessmentSpecialtyCode, "template", assessmentPatient?.id, specialtyClinicScope],
     queryFn: () =>
       specialtyService.getPatientSpecialtyTemplate(
         String(assessmentPatient?.id),
-        "ANDROLOGY",
+        selectedAssessmentSpecialtyCode,
         specialtyClinicScope
       ),
-    enabled: Boolean(assessmentPatient) && (!isSuperAdmin || selectedClinicId !== "all")
+    enabled: Boolean(assessmentPatient) && Boolean(selectedAssessmentSpecialtyCode) && assessmentScopeReady
   });
 
-  const andrologyAssessmentQuery = useQuery({
-    queryKey: ["patients", "specialty", "andrology", "assessment", assessmentPatient?.id, specialtyClinicScope],
+  const specialtyAssessmentQuery = useQuery({
+    queryKey: ["patients", "specialty", selectedAssessmentSpecialtyCode, "assessment", assessmentPatient?.id, specialtyClinicScope],
     queryFn: () =>
       specialtyService.getPatientSpecialtyAssessment(
         String(assessmentPatient?.id),
-        "ANDROLOGY",
+        selectedAssessmentSpecialtyCode,
         specialtyClinicScope
       ),
-    enabled: Boolean(assessmentPatient) && (!isSuperAdmin || selectedClinicId !== "all")
+    enabled: Boolean(assessmentPatient) && Boolean(selectedAssessmentSpecialtyCode) && assessmentScopeReady
   });
 
   const rows: PatientRow[] =
@@ -171,6 +221,33 @@ export default function PatientsPage() {
         : t(`patients.leadSource.${row.leadSource}`),
     [t]
   );
+  const normalizeWhatsappNumber = useCallback((value: string) => value.replace(/[^\d]/g, ""), []);
+  const openWhatsappPopup = useCallback(
+    (row: PatientRow) => {
+      if (!row.whatsapp || row.whatsapp === "-") {
+        toast.error(t("patients.whatsappPopup.missingNumber"));
+        return;
+      }
+      setWhatsappTarget(row);
+      setWhatsappMessage(t("patients.whatsappPopup.defaultMessage", { name: row.name }));
+    },
+    [t]
+  );
+  const openWhatsappChat = useCallback(() => {
+    if (!whatsappTarget) return;
+    const normalizedNumber = normalizeWhatsappNumber(whatsappTarget.whatsapp || "");
+    if (!normalizedNumber) {
+      toast.error(t("patients.whatsappPopup.invalidNumber"));
+      return;
+    }
+    const message = (whatsappMessage || "").trim();
+    const encodedMessage = encodeURIComponent(message);
+    const url = encodedMessage
+      ? `https://wa.me/${normalizedNumber}?text=${encodedMessage}`
+      : `https://wa.me/${normalizedNumber}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+    setWhatsappTarget(null);
+  }, [normalizeWhatsappNumber, t, whatsappMessage, whatsappTarget]);
 
   const createMutation = useMutation({
     mutationFn: patientService.create,
@@ -208,19 +285,19 @@ export default function PatientsPage() {
 
   const saveAssessmentMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => {
-      if (!assessmentPatient) {
+      if (!assessmentPatient || !selectedAssessmentSpecialtyCode) {
         throw new Error("No selected patient");
       }
       return specialtyService.savePatientSpecialtyAssessment(
         assessmentPatient.id,
-        "ANDROLOGY",
+        selectedAssessmentSpecialtyCode,
         values,
         specialtyClinicScope
       );
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: ["patients", "specialty", "andrology", "assessment", assessmentPatient?.id, specialtyClinicScope]
+        queryKey: ["patients", "specialty", selectedAssessmentSpecialtyCode, "assessment", assessmentPatient?.id, specialtyClinicScope]
       });
       toast.success(t("patients.assessment.saved"));
     },
@@ -263,7 +340,7 @@ export default function PatientsPage() {
               }}
             >
               <SquarePen size={12} />
-              Edit
+              {t("patients.actions.edit")}
             </button>
             <button
               type="button"
@@ -285,7 +362,7 @@ export default function PatientsPage() {
               onClick={() => setDeleteTarget(row.original)}
             >
               <Trash2 size={12} />
-              Delete
+              {t("patients.actions.delete")}
             </button>
           </div>
         )
@@ -398,6 +475,19 @@ export default function PatientsPage() {
               {t("patients.assessment.title")} - {assessmentPatient.name}
             </h3>
             <p className="text-xs text-slate-500">{t("patients.assessment.subtitle")}</p>
+            <p className="mt-1 text-xs text-slate-600">
+              {t("patients.assessment.specialty")}: <span className="font-semibold text-slate-700">{selectedAssessmentSpecialtyName}</span>
+            </p>
+            <p className="text-xs text-slate-600">
+              {t("patients.assessment.activeTemplate")}:{" "}
+              <span className="font-semibold text-slate-700">
+                {specialtyTemplateQuery.data?.template
+                  ? locale === "ar"
+                    ? specialtyTemplateQuery.data.template.titleAr
+                    : specialtyTemplateQuery.data.template.title
+                  : "-"}
+              </span>
+            </p>
           </div>
           <button
             type="button"
@@ -409,24 +499,41 @@ export default function PatientsPage() {
         </div>
       </div>
       <div className="space-y-4 p-6">
-        {andrologyTemplateQuery.isLoading || andrologyAssessmentQuery.isLoading ? (
+        <div className="max-w-sm space-y-1">
+          <label className="text-sm font-semibold text-slate-700">{t("patients.assessment.specialty")}</label>
+          <select
+            className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+            value={selectedAssessmentSpecialtyCode}
+            onChange={(event) => setSelectedAssessmentSpecialtyCode(event.target.value)}
+            disabled={!assessmentSpecialties.length || saveAssessmentMutation.isPending}
+          >
+            {assessmentSpecialties.map((specialty) => (
+              <option key={specialty.id} value={specialty.code}>
+                {locale === "ar" ? specialty.nameAr : specialty.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        {!assessmentSpecialties.length ? (
+          <p className="text-sm text-rose-600">{t("patients.assessment.noSpecialtiesEnabled")}</p>
+        ) : clinicSpecialtiesQuery.isLoading || specialtyTemplateQuery.isLoading || specialtyAssessmentQuery.isLoading ? (
           <p className="text-sm text-slate-500">{t("common.loading")}</p>
-        ) : andrologyTemplateQuery.data?.template ? (
+        ) : specialtyTemplateQuery.data?.template ? (
           <>
             <SpecialtyAssessmentForm
-              key={`${assessmentPatient.id}-${andrologyAssessmentQuery.data?.assessment?.updatedAt ?? "new"}`}
-              template={andrologyTemplateQuery.data.template}
-              initialValues={andrologyAssessmentQuery.data?.assessment?.values as Record<string, unknown> | undefined}
+              key={`${assessmentPatient.id}-${selectedAssessmentSpecialtyCode}-${specialtyAssessmentQuery.data?.assessment?.updatedAt ?? "new"}`}
+              template={specialtyTemplateQuery.data.template}
+              initialValues={specialtyAssessmentQuery.data?.assessment?.values as Record<string, unknown> | undefined}
               isSubmitting={saveAssessmentMutation.isPending}
               onSubmit={async (values) => {
                 await saveAssessmentMutation.mutateAsync(values);
               }}
             />
-            {Array.isArray(andrologyAssessmentQuery.data?.assessment?.alerts) && andrologyAssessmentQuery.data?.assessment?.alerts?.length ? (
+            {Array.isArray(specialtyAssessmentQuery.data?.assessment?.alerts) && specialtyAssessmentQuery.data?.assessment?.alerts?.length ? (
               <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-3">
                 <p className="mb-2 text-sm font-semibold text-amber-800">{t("patients.assessment.alerts")}</p>
                 <ul className="list-disc space-y-1 ps-5 text-sm text-amber-900">
-                  {andrologyAssessmentQuery.data.assessment.alerts.map((alert, index) => (
+                  {specialtyAssessmentQuery.data.assessment.alerts.map((alert, index) => (
                     <li key={`${String(alert.key ?? "alert")}-${index}`}>
                       {String(alert.messageAr ?? alert.message ?? alert.nameAr ?? alert.name ?? "-")}
                     </li>
@@ -434,11 +541,11 @@ export default function PatientsPage() {
                 </ul>
               </div>
             ) : null}
-            {Array.isArray(andrologyAssessmentQuery.data?.assessment?.diagnoses) && andrologyAssessmentQuery.data?.assessment?.diagnoses?.length ? (
+            {Array.isArray(specialtyAssessmentQuery.data?.assessment?.diagnoses) && specialtyAssessmentQuery.data?.assessment?.diagnoses?.length ? (
               <div className="rounded-2xl border border-cyan-200 bg-cyan-50/70 p-3">
                 <p className="mb-2 text-sm font-semibold text-cyan-800">{t("patients.assessment.diagnoses")}</p>
                 <ul className="list-disc space-y-1 ps-5 text-sm text-cyan-900">
-                  {andrologyAssessmentQuery.data.assessment.diagnoses.map((diagnosis, index) => (
+                  {specialtyAssessmentQuery.data.assessment.diagnoses.map((diagnosis, index) => (
                     <li key={`${String(diagnosis.key ?? "diag")}-${index}`}>
                       {String(diagnosis.nameAr ?? diagnosis.name ?? "-")}
                     </li>
@@ -448,7 +555,9 @@ export default function PatientsPage() {
             ) : null}
           </>
         ) : (
-          <p className="text-sm text-rose-600">{t("patients.assessment.templateUnavailable")}</p>
+          <p className="text-sm text-rose-600">
+            {t("patients.assessment.templateUnavailable", { specialty: selectedAssessmentSpecialtyName })}
+          </p>
         )}
       </div>
     </section>
@@ -554,131 +663,134 @@ export default function PatientsPage() {
                     const isExpanded = expandedCardId === row.id;
                     return (
                       <>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-base font-bold text-slate-900">{row.name}</p>
-                      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
-                        <span className="inline-flex items-center gap-1 rounded-full bg-cyan-100 px-2 py-0.5 font-semibold text-cyan-700">
-                          <ClipboardList size={12} />
-                          {t("patients.card.fileNumber")}: {row.fileNumber}
-                        </span>
-                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 font-semibold text-blue-700">
-                          {t("field.nationalId")}: {row.nationalId || t("patients.card.notSet")}
-                        </span>
-                        <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 font-semibold text-orange-700">
-                          <MapPin size={12} />
-                          {row.clinicName ?? t("patients.card.notSet")}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="rounded-xl bg-blue-500 p-2 text-white shadow-soft">
-                      <User size={14} />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs text-orange-600">{t("patients.lastVisit")}: {row.lastVisit}</p>
-                    <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold text-orange-700">
-                      {getLeadSourceLabel(row)}
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white/85 px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-                    onClick={() => setExpandedCardId((prev) => (prev === row.id ? null : row.id))}
-                  >
-                    <ChevronDown size={14} className={cn("transition-transform", isExpanded && "rotate-180")} />
-                    {isExpanded ? t("patients.card.hideDetails") : t("patients.card.viewDetails")}
-                  </button>
-
-                  <div
-                    className={cn(
-                      "overflow-hidden transition-all duration-300 ease-out",
-                      isExpanded ? "mt-1 max-h-[1200px] opacity-100 pointer-events-auto" : "max-h-0 opacity-0 pointer-events-none"
-                    )}
-                  >
-                    <div className={cn("space-y-3", isExpanded && "pt-2")}>
-                        <div className="grid grid-cols-2 gap-2 text-xs">
-                          <div className="rounded-xl bg-white/90 p-2">
-                            <p className="text-slate-500">{t("patients.card.phone")}</p>
-                            <p className="mt-0.5 inline-flex items-center gap-1 font-semibold text-slate-800">
-                              <PhoneOutgoing size={12} className="text-cyan-600" />
-                              {row.phone || t("patients.card.notSet")}
-                            </p>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-lg font-bold leading-6 text-slate-900 break-words">{row.name}</p>
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                              <span className="inline-flex items-center gap-1 rounded-full bg-cyan-100 px-2 py-0.5 font-semibold text-cyan-700">
+                                <ClipboardList size={12} />
+                                {t("patients.card.fileNumber")}: {row.fileNumber}
+                              </span>
+                              <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 font-semibold text-blue-700">
+                                {t("field.nationalId")}: {row.nationalId || t("patients.card.notSet")}
+                              </span>
+                              <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 font-semibold text-orange-700">
+                                <MapPin size={12} />
+                                {row.clinicName ?? t("patients.card.notSet")}
+                              </span>
+                            </div>
                           </div>
-                          <div className="rounded-xl bg-white/90 p-2">
-                            <p className="text-slate-500">{t("patients.card.whatsapp")}</p>
-                            <p className="mt-0.5 font-semibold text-slate-800">{row.whatsapp || t("patients.card.notSet")}</p>
-                          </div>
-                          <div className="rounded-xl bg-white/90 p-2">
-                            <p className="text-slate-500">{t("patients.card.age")}</p>
-                            <p className="mt-0.5 font-semibold text-slate-800">{row.age ?? t("patients.card.notSet")}</p>
-                          </div>
-                          <div className="rounded-xl bg-white/90 p-2">
-                            <p className="text-slate-500">{t("patients.card.birthDate")}</p>
-                            <p className="mt-0.5 inline-flex items-center gap-1 font-semibold text-slate-800">
-                              <Calendar size={12} className="text-orange-600" />
-                              {row.dateOfBirth ? String(row.dateOfBirth).slice(0, 10) : t("patients.card.notSet")}
-                            </p>
+                          <div className="rounded-xl bg-blue-500 p-2 text-white shadow-soft">
+                            <User size={14} />
                           </div>
                         </div>
 
-                        <div className="rounded-xl bg-white/90 p-2 text-xs">
-                          <p className="text-slate-500">{t("patients.card.profession")}</p>
-                          <p className="mt-0.5 font-semibold text-slate-800">{getProfessionLabel(row)}</p>
+                        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                          <button
+                            type="button"
+                            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-amber-200 bg-gradient-to-b from-white to-amber-50 px-3 text-xs font-semibold text-amber-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-amber-300 hover:shadow"
+                            onClick={() => {
+                              if (isSuperAdmin && selectedClinicId === "all") {
+                                toast.error(t("patients.assessment.selectClinicScope"));
+                                return;
+                              }
+                              setAssessmentPatient(row);
+                            }}
+                          >
+                            <ClipboardList size={13} />
+                            {t("patients.assessment.open")}
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-200 bg-gradient-to-b from-white to-cyan-50 text-cyan-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow"
+                            onClick={() => {
+                              setEditing(row);
+                              setFormExpanded(true);
+                              setTimeout(scrollToFormTop, 0);
+                            }}
+                            aria-label={t("patients.actions.edit")}
+                          >
+                            <SquarePen size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-rose-200 bg-gradient-to-b from-white to-rose-50 text-rose-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-rose-300 hover:shadow"
+                            onClick={() => setDeleteTarget(row)}
+                            aria-label={t("patients.actions.delete")}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-gradient-to-b from-white to-emerald-50 text-emerald-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow disabled:cursor-not-allowed disabled:opacity-50"
+                            onClick={() => openWhatsappPopup(row)}
+                            disabled={!row.whatsapp || row.whatsapp === "-"}
+                            aria-label={t("patients.whatsappPopup.open")}
+                          >
+                            <FaWhatsapp size={15} />
+                          </button>
                         </div>
 
-                        <div className="rounded-xl bg-white/90 p-2 text-xs">
-                          <p className="text-slate-500">{t("patients.card.leadSource")}</p>
-                          <p className="mt-0.5 font-semibold text-orange-700">{getLeadSourceLabel(row)}</p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-medium text-orange-700">{t("patients.lastVisit")}: {row.lastVisit}</p>
+                          <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-semibold text-orange-700">
+                            {getLeadSourceLabel(row)}
+                          </span>
                         </div>
 
-                        <div className="rounded-xl bg-white/90 p-2 text-xs">
-                          <p className="text-slate-500">{t("patients.card.address")}</p>
-                          <p className="mt-0.5 font-semibold text-slate-800">{row.address || t("patients.card.notSet")}</p>
-                        </div>
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white/85 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                          onClick={() => setExpandedCardId((prev) => (prev === row.id ? null : row.id))}
+                        >
+                          <ChevronDown size={14} className={cn("transition-transform", isExpanded && "rotate-180")} />
+                          {isExpanded ? t("patients.card.hideDetails") : t("patients.card.viewDetails")}
+                        </button>
 
-                        <div className="pt-1">
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1 rounded-lg bg-cyan-50 px-2.5 py-1 text-xs font-medium text-cyan-700 transition hover:bg-cyan-100"
-                              onClick={() => {
-                                setEditing(row);
-                                setFormExpanded(true);
-                                setTimeout(scrollToFormTop, 0);
-                              }}
-                            >
-                              <SquarePen size={12} />
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1 rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 transition hover:bg-amber-100"
-                              onClick={() => {
-                                if (isSuperAdmin && selectedClinicId === "all") {
-                                  toast.error(t("patients.assessment.selectClinicScope"));
-                                  return;
-                                }
-                                setAssessmentPatient(row);
-                              }}
-                            >
-                              <ClipboardList size={12} />
-                              {t("patients.assessment.open")}
-                            </button>
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1 rounded-lg bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700 transition hover:bg-rose-100"
-                              onClick={() => setDeleteTarget(row)}
-                            >
-                              <Trash2 size={12} />
-                              Delete
-                            </button>
+                        <div
+                          className={cn(
+                            "overflow-hidden transition-all duration-300 ease-out",
+                            isExpanded ? "mt-1 max-h-[1200px] opacity-100 pointer-events-auto" : "max-h-0 opacity-0 pointer-events-none"
+                          )}
+                        >
+                          <div className={cn("space-y-3", isExpanded && "pt-2")}>
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                              <div className="rounded-xl bg-white/90 p-2">
+                                <p className="text-xs text-slate-500">{t("patients.card.phone")}</p>
+                                <p className="mt-0.5 inline-flex items-center gap-1 font-semibold text-slate-800">
+                                  <PhoneOutgoing size={13} className="text-cyan-600" />
+                                  {row.phone || t("patients.card.notSet")}
+                                </p>
+                              </div>
+                              <div className="rounded-xl bg-white/90 p-2">
+                                <p className="text-xs text-slate-500">{t("patients.card.age")}</p>
+                                <p className="mt-0.5 font-semibold text-slate-800">{row.age ?? t("patients.card.notSet")}</p>
+                              </div>
+                              <div className="rounded-xl bg-white/90 p-2">
+                                <p className="text-xs text-slate-500">{t("patients.card.birthDate")}</p>
+                                <p className="mt-0.5 inline-flex items-center gap-1 font-semibold text-slate-800">
+                                  <Calendar size={13} className="text-orange-600" />
+                                  {row.dateOfBirth ? String(row.dateOfBirth).slice(0, 10) : t("patients.card.notSet")}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                              <div className="rounded-xl bg-white/90 p-2">
+                                <p className="text-xs text-slate-500">{t("patients.card.profession")}</p>
+                                <p className="mt-0.5 font-semibold text-slate-800 break-words">{getProfessionLabel(row)}</p>
+                              </div>
+                              <div className="rounded-xl bg-white/90 p-2">
+                                <p className="text-xs text-slate-500">{t("patients.card.leadSource")}</p>
+                                <p className="mt-0.5 font-semibold text-orange-700 break-words">{getLeadSourceLabel(row)}</p>
+                              </div>
+                              <div className="col-span-2 rounded-xl bg-white/90 p-2">
+                                <p className="text-xs text-slate-500">{t("patients.card.address")}</p>
+                                <p className="mt-0.5 font-semibold text-slate-800 break-words">{row.address || t("patients.card.notSet")}</p>
+                              </div>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                  </div>
                       </>
                     );
                   })()}
@@ -688,6 +800,65 @@ export default function PatientsPage() {
           />
         )}
       </Suspense>
+      {whatsappTarget ? (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center p-4">
+          <button
+            type="button"
+            aria-label={t("patients.whatsappPopup.closeAria")}
+            className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+            onClick={() => setWhatsappTarget(null)}
+          />
+          <section className="relative w-full max-w-lg rounded-3xl border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-cyan-50 p-5 shadow-premium">
+            <div className="space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="rounded-xl bg-emerald-100 p-2 text-emerald-700">
+                  <FaWhatsapp size={18} />
+                </div>
+                <div className="space-y-1">
+                  <p className="text-base font-semibold text-slate-900">{t("patients.whatsappPopup.title")}</p>
+                  <p className="text-sm text-slate-600">
+                    {t("patients.whatsappPopup.to")}:{" "}
+                    <span className="font-semibold text-slate-800">
+                      {whatsappTarget.name} ({whatsappTarget.whatsapp || t("patients.card.notSet")})
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">{t("patients.whatsappPopup.messageLabel")}</label>
+                <textarea
+                  value={whatsappMessage}
+                  onChange={(event) => setWhatsappMessage(event.target.value)}
+                  rows={4}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                  placeholder={t("patients.whatsappPopup.messagePlaceholder")}
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                  onClick={() => setWhatsappTarget(null)}
+                >
+                  {t("patients.whatsappPopup.cancel")}
+                </button>
+                <RippleButton
+                  type="button"
+                  className="from-emerald-600 to-emerald-500 hover:shadow-emerald-500/30"
+                  onClick={openWhatsappChat}
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <FaWhatsapp size={14} />
+                    {t("patients.whatsappPopup.send")}
+                  </span>
+                </RippleButton>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
       {deleteTarget ? (
         <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
           <button

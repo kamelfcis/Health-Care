@@ -22,7 +22,18 @@ export const specialtyService = {
   async listClinicSpecialties(clinicId: string) {
     return prisma.clinicSpecialty.findMany({
       where: { clinicId, deletedAt: null, specialty: { isActive: true, deletedAt: null } },
-      include: { specialty: true },
+      include: {
+        specialty: true,
+        template: {
+          select: {
+            id: true,
+            title: true,
+            titleAr: true,
+            version: true,
+            isActive: true
+          }
+        }
+      },
       orderBy: { specialty: { name: "asc" } }
     });
   },
@@ -44,12 +55,37 @@ export const specialtyService = {
       throw new AppError(`Invalid specialties: ${missing.join(", ")}`, 400);
     }
 
+    const specialtyTemplates = await prisma.specialtyTemplate.findMany({
+      where: {
+        specialtyId: { in: specialties.map((item) => item.id) },
+        isActive: true
+      },
+      select: { id: true, specialtyId: true, version: true },
+      orderBy: [{ specialtyId: "asc" }, { version: "desc" }]
+    });
+    const templateBySpecialty = new Map<string, string>();
+    for (const template of specialtyTemplates) {
+      if (!templateBySpecialty.has(template.specialtyId)) {
+        templateBySpecialty.set(template.specialtyId, template.id);
+      }
+    }
+    const missingTemplateSpecialties = specialties
+      .filter((specialty) => !templateBySpecialty.has(specialty.id))
+      .map((specialty) => specialty.code);
+    if (missingTemplateSpecialties.length) {
+      throw new AppError(
+        `No active template configured for specialties: ${missingTemplateSpecialties.join(", ")}`,
+        400
+      );
+    }
+
     await prisma.$transaction([
       prisma.clinicSpecialty.deleteMany({ where: { clinicId } }),
       prisma.clinicSpecialty.createMany({
         data: specialties.map((specialty) => ({
           clinicId,
-          specialtyId: specialty.id
+          specialtyId: specialty.id,
+          templateId: templateBySpecialty.get(specialty.id)
         }))
       })
     ]);
@@ -79,6 +115,40 @@ export const specialtyService = {
     });
 
     return { specialty, templates };
+  },
+
+  async assignTemplateToClinicSpecialty(clinicSpecialtyId: string, templateId: string) {
+    const clinicSpecialty = await prisma.clinicSpecialty.findUnique({
+      where: { id: clinicSpecialtyId },
+      select: { id: true, specialtyId: true }
+    });
+    if (!clinicSpecialty) throw new AppError("Clinic specialty mapping not found", 404);
+
+    const template = await prisma.specialtyTemplate.findUnique({
+      where: { id: templateId },
+      select: { id: true, specialtyId: true, title: true, titleAr: true, version: true, isActive: true }
+    });
+    if (!template) throw new AppError("Template not found", 404);
+    if (template.specialtyId !== clinicSpecialty.specialtyId) {
+      throw new AppError("Template does not belong to this specialty", 400);
+    }
+
+    return prisma.clinicSpecialty.update({
+      where: { id: clinicSpecialtyId },
+      data: { templateId: template.id },
+      include: {
+        specialty: true,
+        template: {
+          select: {
+            id: true,
+            title: true,
+            titleAr: true,
+            version: true,
+            isActive: true
+          }
+        }
+      }
+    });
   },
 
   async createTemplateBySpecialtyCode(
@@ -241,6 +311,34 @@ export const specialtyService = {
       }
 
       return clonedTemplate;
+    });
+  },
+
+  async removeTemplate(templateId: string) {
+    const existing = await prisma.specialtyTemplate.findUnique({
+      where: { id: templateId },
+      select: { id: true, isActive: true }
+    });
+    if (!existing) throw new AppError("Template not found", 404);
+    if (existing.isActive) {
+      throw new AppError("Cannot delete active template. Activate another template first", 400);
+    }
+
+    const linkedAssessments = await prisma.patientSpecialtyAssessment.count({
+      where: { templateId }
+    });
+    if (linkedAssessments > 0) {
+      throw new AppError("Cannot delete template because it is linked to existing patient assessments", 400);
+    }
+    const linkedClinicAssignments = await prisma.clinicSpecialty.count({
+      where: { templateId, deletedAt: null }
+    });
+    if (linkedClinicAssignments > 0) {
+      throw new AppError("Cannot delete template because it is assigned to one or more clinics", 400);
+    }
+
+    return prisma.specialtyTemplate.delete({
+      where: { id: templateId }
     });
   },
 

@@ -42,6 +42,19 @@ export const specialtyController = {
     res.json(apiSuccess(data, "Clinic specialties updated"));
   },
 
+  async adminAssignClinicSpecialtyTemplate(req: Request, res: Response) {
+    const parsed = z
+      .object({
+        templateId: z.string().min(1)
+      })
+      .parse(req.body);
+    const data = await specialtyService.assignTemplateToClinicSpecialty(
+      String(req.params.clinicSpecialtyId),
+      parsed.templateId
+    );
+    res.json(apiSuccess(data, "Clinic specialty template assigned"));
+  },
+
   async adminTemplatesBySpecialty(req: Request, res: Response) {
     const data = await specialtyService.listTemplatesBySpecialtyCode(String(req.params.specialtyCode));
     res.json(apiSuccess(data));
@@ -81,6 +94,11 @@ export const specialtyController = {
       .parse(req.body ?? {});
     const data = await specialtyService.cloneTemplate(String(req.params.templateId), parsed);
     res.status(201).json(apiSuccess(data, "Template cloned"));
+  },
+
+  async adminRemoveTemplate(req: Request, res: Response) {
+    const data = await specialtyService.removeTemplate(String(req.params.templateId));
+    res.json(apiSuccess(data, "Template deleted"));
   },
 
   async adminCreateField(req: Request, res: Response) {

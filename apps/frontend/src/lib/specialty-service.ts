@@ -13,6 +13,8 @@ export interface ClinicSpecialtyItem {
   id: string;
   clinicId: string;
   specialtyId: string;
+  templateId?: string | null;
+  template?: Pick<SpecialtyTemplate, "id" | "title" | "titleAr" | "version" | "isActive"> | null;
   specialty: SpecialtyCatalogItem;
 }
 
@@ -106,6 +108,14 @@ export const specialtyService = {
     return res.data.data;
   },
 
+  async adminAssignClinicSpecialtyTemplate(clinicSpecialtyId: string, templateId: string) {
+    const res = await api.patch<{ data: ClinicSpecialtyItem }>(
+      `/specialties/admin/clinic-specialties/${clinicSpecialtyId}/template`,
+      { templateId }
+    );
+    return res.data.data;
+  },
+
   async getPatientSpecialtyTemplate(patientId: string, specialtyCode: string, clinicId?: string) {
     const res = await api.get<{ data: { specialty: SpecialtyCatalogItem; template: SpecialtyTemplate } }>(
       `/patients/${patientId}/specialties/${specialtyCode}/template`,
@@ -164,6 +174,11 @@ export const specialtyService = {
     payload?: { title?: string; titleAr?: string; isActive?: boolean }
   ) {
     const res = await api.post<{ data: SpecialtyTemplate }>(`/specialties/admin/templates/${templateId}/clone`, payload ?? {});
+    return res.data.data;
+  },
+
+  async adminDeleteTemplate(templateId: string) {
+    const res = await api.delete<{ data: SpecialtyTemplate }>(`/specialties/admin/templates/${templateId}`);
     return res.data.data;
   },
 

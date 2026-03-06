@@ -178,14 +178,14 @@ export function PremiumTable<TData>({
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
-            className="grid auto-rows-max items-start gap-3 sm:grid-cols-2 xl:grid-cols-3"
+            className="grid auto-rows-max items-start gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
           >
             {data.map((row, idx) => (
               <motion.div
                 key={idx}
                 layout
                 whileHover={{ y: -4 }}
-                className="self-start rounded-2xl border border-slate-200/80 bg-white/80 p-4 shadow-soft backdrop-blur-sm"
+                className="self-start rounded-2xl border border-slate-200/80 bg-white/80 p-5 shadow-soft backdrop-blur-sm"
               >
                 {cardRender(row)}
               </motion.div>

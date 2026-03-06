@@ -443,15 +443,18 @@ model ClinicSpecialty {
   id          String           @id @default(cuid())
   clinicId    String
   specialtyId String
+  templateId  String?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   deletedAt   DateTime?
   clinic      Clinic           @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   specialty   SpecialtyCatalog @relation(fields: [specialtyId], references: [id], onDelete: Cascade)
+  template    SpecialtyTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
 
   @@unique([clinicId, specialtyId])
   @@index([clinicId])
   @@index([specialtyId])
+  @@index([templateId])
 }
 
 model SpecialtyTemplate {
@@ -467,6 +470,7 @@ model SpecialtyTemplate {
   fields      SpecialtyTemplateField[]
   rules       SpecialtyRule[]
   assessments PatientSpecialtyAssessment[]
+  clinicAssignments ClinicSpecialty[]
 
   @@unique([specialtyId, version])
   @@index([specialtyId, isActive])
