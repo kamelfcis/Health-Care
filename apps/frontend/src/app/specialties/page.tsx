@@ -183,13 +183,9 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
   });
   const [createSectionDialogOpen, setCreateSectionDialogOpen] = useState(false);
   const [newSection, setNewSection] = useState({ name: "", nameAr: "" });
-  const [gridColumns, setGridColumns] = useState<GridColumnDraft[]>([
-    { id: "col-right", label: "Right", labelAr: "يمين" },
-    { id: "col-left", label: "Left", labelAr: "شمال" }
-  ]);
-  const [gridRows, setGridRows] = useState<GridRowDraft[]>([
-    { id: "row-1", label: "", labelAr: "" }
-  ]);
+  const [gridColumns, setGridColumns] = useState<GridColumnDraft[]>([{ id: "col-1", label: "", labelAr: "" }]);
+  const [gridRows, setGridRows] = useState<GridRowDraft[]>([{ id: "row-1", label: "", labelAr: "" }]);
+  const [gridPreviewValues, setGridPreviewValues] = useState<Record<string, string>>({});
   const [newRule, setNewRule] = useState<RuleFormState>(emptyRule);
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<Partial<SpecialtyTemplateField>>({});
@@ -508,10 +504,9 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
             sanitizeKeyBase(row.label, `row_${index + 1}`),
             usedRowKeys
           ),
-          label: row.label,
-          labelAr: row.labelAr
-        }))
-        .filter((row) => row.label.trim() && row.labelAr.trim());
+          label: row.label.trim() || `Row ${index + 1}`,
+          labelAr: row.labelAr.trim() || `صف ${index + 1}`
+        }));
 
       if (!normalizedColumns.length || !normalizedRows.length) {
         throw new Error("Grid rows and columns are required");
@@ -532,10 +527,6 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
               }))
             }
           };
-          if (column.key === "right" || column.key === "left") {
-            metadata.side = column.key;
-          }
-
           return specialtyService.adminCreateField(selectedTemplateId, {
             key: ensureUniqueKey(
               `${generatedBaseFieldKey}_${row.key}_${column.key}`,
@@ -565,10 +556,10 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
         isRequired: false
       });
       setGridColumns([
-        { id: "col-right", label: "Right", labelAr: "يمين" },
-        { id: "col-left", label: "Left", labelAr: "شمال" }
+        { id: "col-1", label: "", labelAr: "" }
       ]);
       setGridRows([{ id: "row-1", label: "", labelAr: "" }]);
+      setGridPreviewValues({});
       await refreshData();
     },
     onError: (error: unknown) => {
@@ -1325,6 +1316,58 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                                         </TooltipTrigger>
                                         <TooltipContent side="top">إضافة صف</TooltipContent>
                                       </Tooltip>
+                                    </div>
+                                    <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <p className="text-xs font-semibold text-slate-700">{t("specialties.grid.livePreview")}</p>
+                                        <p className="text-[11px] text-slate-500">{t("specialties.grid.livePreviewHint")}</p>
+                                      </div>
+                                      {gridColumns.some((column) => column.label.trim() || column.labelAr.trim()) ? (
+                                        <div className="overflow-x-auto rounded-xl border border-slate-200">
+                                          <table className="min-w-full border-separate border-spacing-0 text-right text-xs">
+                                            <thead className="bg-slate-100/80">
+                                              <tr>
+                                                {gridColumns.map((column, columnIndex) => (
+                                                  <th
+                                                    key={`preview-head-${column.id}`}
+                                                    className="border-b border-slate-200 px-3 py-2 text-center font-semibold text-slate-700"
+                                                  >
+                                                    {column.labelAr.trim() || column.label.trim() || `${t("specialties.grid.column")} ${columnIndex + 1}`}
+                                                  </th>
+                                                ))}
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {gridRows.map((rowItem, rowIndex) => (
+                                                <tr key={`preview-row-${rowItem.id}`}>
+                                                  {gridColumns.map((column) => {
+                                                    const previewKey = `${rowItem.id}:${column.id}`;
+                                                    return (
+                                                      <td key={`preview-cell-${rowItem.id}-${column.id}`} className="border-b border-slate-100 px-2 py-2">
+                                                        <input
+                                                          value={gridPreviewValues[previewKey] ?? ""}
+                                                          onChange={(event) =>
+                                                            setGridPreviewValues((prev) => ({
+                                                              ...prev,
+                                                              [previewKey]: event.target.value
+                                                            }))
+                                                          }
+                                                          placeholder={`${t("specialties.grid.sampleCell")} ${rowIndex + 1}`}
+                                                          className={dsInputCompactClass}
+                                                        />
+                                                      </td>
+                                                    );
+                                                  })}
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      ) : (
+                                        <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                                          {t("specialties.grid.livePreviewEmpty")}
+                                        </p>
+                                      )}
                                     </div>
                                   </div>
                                 ) : null}

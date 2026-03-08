@@ -219,6 +219,16 @@ export function SpecialtyAssessmentForm({
     activeSectionVisibleFields.some((field) => field.fieldType === "GRID") ||
     activeSectionVisibleFields.some((field) => getFieldSide(field) !== null) ||
     dynamicGridColumns.length > 0;
+  const gridColumnsToRender = useMemo(
+    () =>
+      dynamicGridColumns.length
+        ? dynamicGridColumns
+        : [
+            { key: "right", label: "Right", labelAr: "يمين", order: 1 },
+            { key: "left", label: "Left", labelAr: "شمال", order: 2 }
+          ],
+    [dynamicGridColumns]
+  );
   const hasPrev = activeIndex > 0;
   const hasNext = activeIndex >= 0 && activeIndex < groupedSections.length - 1;
   const goPrev = () => {
@@ -382,16 +392,7 @@ export function SpecialtyAssessmentForm({
               <table className="min-w-full border-separate border-spacing-0 text-right text-sm">
                 <thead className="bg-gradient-to-r from-orange-600 to-orange-500">
                   <tr>
-                    <th className="border-x-2 border-b-2 border-orange-300/70 px-4 py-3 align-middle text-center text-base font-semibold text-white">
-                      {locale === "ar" ? "الفحص" : "Exam"}
-                    </th>
-                    {(dynamicGridColumns.length
-                      ? dynamicGridColumns
-                      : [
-                          { key: "right", label: "Right", labelAr: "يمين", order: 1 },
-                          { key: "left", label: "Left", labelAr: "شمال", order: 2 }
-                        ]
-                    ).map((column) => (
+                    {gridColumnsToRender.map((column) => (
                       <th
                         key={column.key}
                         className="border-x-2 border-b-2 border-orange-300/70 px-4 py-3 align-middle text-center text-base font-semibold text-white"
@@ -404,16 +405,7 @@ export function SpecialtyAssessmentForm({
                 <tbody>
                   {gridRows.map((row) => (
                     <tr key={row.id} className="align-middle transition-colors even:bg-slate-50/60 hover:bg-orange-50/40">
-                      <td className="border-x-2 border-b-2 border-slate-200 px-4 py-3 text-center text-lg font-semibold text-slate-800">
-                        {row.label || "-"}
-                      </td>
-                      {(dynamicGridColumns.length
-                        ? dynamicGridColumns
-                        : [
-                            { key: "right", label: "Right", labelAr: "يمين", order: 1 },
-                            { key: "left", label: "Left", labelAr: "شمال", order: 2 }
-                          ]
-                      ).map((column) => (
+                      {gridColumnsToRender.map((column) => (
                         <td key={`${row.id}-${column.key}`} className="border-x-2 border-b-2 border-slate-200 px-4 py-3">
                           {row.cells[column.key] ? renderFieldControl(row.cells[column.key]!, true) : <span className="text-sm text-slate-400">-</span>}
                         </td>
