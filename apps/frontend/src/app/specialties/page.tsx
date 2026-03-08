@@ -105,6 +105,12 @@ const toSlug = (value: string) =>
     .replace(/^_+|_+$/g, "");
 
 const sanitizeKeyBase = (value: string, fallback: string) => toSlug(value) || fallback;
+const createClientId = () => {
+  if (typeof globalThis !== "undefined" && globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+  return `tmp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+};
 
 const ensureUniqueKey = (base: string, usedKeys: Set<string>) => {
   const normalizedBase = sanitizeKeyBase(base, "item");
@@ -1265,7 +1271,7 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                                             type="button"
                                             className="rounded border border-slate-200 px-2 py-1 text-sm text-slate-700"
                                             onClick={() =>
-                                              setGridColumns((prev) => [...prev, { id: crypto.randomUUID(), label: "", labelAr: "" }])
+                                              setGridColumns((prev) => [...prev, { id: createClientId(), label: "", labelAr: "" }])
                                             }
                                           >
                                             + عمود
@@ -1311,7 +1317,7 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                                             type="button"
                                             className="rounded border border-slate-200 px-2 py-1 text-sm text-slate-700"
                                             onClick={() =>
-                                              setGridRows((prev) => [...prev, { id: crypto.randomUUID(), label: "", labelAr: "" }])
+                                              setGridRows((prev) => [...prev, { id: createClientId(), label: "", labelAr: "" }])
                                             }
                                           >
                                             + صف
