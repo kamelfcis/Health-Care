@@ -19,6 +19,104 @@ export const specialtyService = {
     });
   },
 
+  async adminListCatalogAll() {
+    return prisma.specialtyCatalog.findMany({
+      where: { deletedAt: null },
+      orderBy: [{ name: "asc" }]
+    });
+  },
+
+  async adminCreateCatalog(input: {
+    code: string;
+    name: string;
+    nameAr: string;
+    description?: string;
+    isActive?: boolean;
+  }) {
+    const normalizedCode = input.code.trim().toUpperCase();
+    if (!normalizedCode) {
+      throw new AppError("Specialty code is required", 400);
+    }
+    const existing = await prisma.specialtyCatalog.findFirst({
+      where: { code: normalizedCode, deletedAt: null },
+      select: { id: true }
+    });
+    if (existing) {
+      throw new AppError("Specialty code already exists", 400);
+    }
+
+    return prisma.specialtyCatalog.create({
+      data: {
+        code: normalizedCode,
+        name: input.name.trim(),
+        nameAr: input.nameAr.trim(),
+        description: input.description?.trim() || null,
+        isActive: input.isActive ?? true
+      }
+    });
+  },
+
+  async adminUpdateCatalog(
+    specialtyId: string,
+    input: Partial<{
+      code: string;
+      name: string;
+      nameAr: string;
+      description: string | null;
+      isActive: boolean;
+    }>
+  ) {
+    const existing = await prisma.specialtyCatalog.findFirst({
+      where: { id: specialtyId, deletedAt: null },
+      select: { id: true, code: true }
+    });
+    if (!existing) throw new AppError("Specialty not found", 404);
+
+    let nextCode: string | undefined;
+    if (input.code !== undefined) {
+      nextCode = input.code.trim().toUpperCase();
+      if (!nextCode) throw new AppError("Specialty code is required", 400);
+      if (nextCode !== existing.code) {
+        const codeTaken = await prisma.specialtyCatalog.findFirst({
+          where: { code: nextCode, deletedAt: null, id: { not: specialtyId } },
+          select: { id: true }
+        });
+        if (codeTaken) throw new AppError("Specialty code already exists", 400);
+      }
+    }
+
+    return prisma.specialtyCatalog.update({
+      where: { id: specialtyId },
+      data: {
+        ...(nextCode !== undefined ? { code: nextCode } : {}),
+        ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+        ...(input.nameAr !== undefined ? { nameAr: input.nameAr.trim() } : {}),
+        ...(input.description !== undefined
+          ? { description: input.description === null ? null : input.description.trim() || null }
+          : {}),
+        ...(input.isActive !== undefined ? { isActive: input.isActive } : {})
+      }
+    });
+  },
+
+  async adminSoftDeleteCatalog(specialtyId: string) {
+    const existing = await prisma.specialtyCatalog.findFirst({
+      where: { id: specialtyId, deletedAt: null },
+      select: { id: true }
+    });
+    if (!existing) throw new AppError("Specialty not found", 404);
+
+    await prisma.specialtyCatalog.update({
+      where: { id: specialtyId },
+      data: {
+        isActive: false,
+        deletedAt: new Date()
+      }
+    });
+
+    return { id: specialtyId };
+  },
+
   async listClinicSpecialties(clinicId: string) {
     return prisma.clinicSpecialty.findMany({
       where: { clinicId, deletedAt: null, specialty: { isActive: true, deletedAt: null } },
@@ -102,6 +200,9 @@ export const specialtyService = {
     const templates = await prisma.specialtyTemplate.findMany({
       where: { specialtyId: specialty.id },
       include: {
+        sections: {
+          orderBy: { displayOrder: "asc" }
+        },
         fields: {
           include: {
             options: {
@@ -115,6 +216,111 @@ export const specialtyService = {
     });
 
     return { specialty, templates };
+  },
+
+  async listTemplateSections(templateId: string) {
+    const template = await prisma.specialtyTemplate.findUnique({
+      where: { id: templateId },
+      select: { id: true }
+    });
+    if (!template) throw new AppError("Template not found", 404);
+
+    return prisma.specialtyTemplateSection.findMany({
+      where: { templateId },
+      orderBy: { displayOrder: "asc" }
+    });
+  },
+
+  async createTemplateSection(
+    templateId: string,
+    input: { key: string; name: string; nameAr: string; displayOrder?: number }
+  ) {
+    const template = await prisma.specialtyTemplate.findUnique({
+      where: { id: templateId },
+      select: { id: true }
+    });
+    if (!template) throw new AppError("Template not found", 404);
+
+    const maxOrderRow = await prisma.specialtyTemplateSection.findFirst({
+      where: { templateId },
+      orderBy: { displayOrder: "desc" },
+      select: { displayOrder: true }
+    });
+    const fallbackOrder = (maxOrderRow?.displayOrder ?? 0) + 1;
+
+    return prisma.specialtyTemplateSection.create({
+      data: {
+        templateId,
+        key: input.key.trim().toLowerCase(),
+        name: input.name.trim(),
+        nameAr: input.nameAr.trim(),
+        displayOrder: input.displayOrder ?? fallbackOrder
+      }
+    });
+  },
+
+  async updateTemplateSection(
+    sectionId: string,
+    input: Partial<{ key: string; name: string; nameAr: string; displayOrder: number }>
+  ) {
+    const section = await prisma.specialtyTemplateSection.findUnique({
+      where: { id: sectionId },
+      select: { id: true }
+    });
+    if (!section) throw new AppError("Section not found", 404);
+
+    return prisma.specialtyTemplateSection.update({
+      where: { id: sectionId },
+      data: {
+        ...(input.key !== undefined ? { key: input.key.trim().toLowerCase() } : {}),
+        ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+        ...(input.nameAr !== undefined ? { nameAr: input.nameAr.trim() } : {}),
+        ...(input.displayOrder !== undefined ? { displayOrder: input.displayOrder } : {})
+      }
+    });
+  },
+
+  async reorderTemplateSections(templateId: string, sectionIds: string[]) {
+    const sections = await prisma.specialtyTemplateSection.findMany({
+      where: { templateId },
+      select: { id: true }
+    });
+    const existingIds = new Set(sections.map((section) => section.id));
+    if (sectionIds.length !== sections.length || sectionIds.some((id) => !existingIds.has(id))) {
+      throw new AppError("Invalid section order payload", 400);
+    }
+
+    await prisma.$transaction(
+      sectionIds.map((sectionId, index) =>
+        prisma.specialtyTemplateSection.update({
+          where: { id: sectionId },
+          data: { displayOrder: index + 1 }
+        })
+      )
+    );
+
+    return prisma.specialtyTemplateSection.findMany({
+      where: { templateId },
+      orderBy: { displayOrder: "asc" }
+    });
+  },
+
+  async removeTemplateSection(sectionId: string) {
+    const section = await prisma.specialtyTemplateSection.findUnique({
+      where: { id: sectionId },
+      include: {
+        _count: {
+          select: { fields: true }
+        }
+      }
+    });
+    if (!section) throw new AppError("Section not found", 404);
+    if (section._count.fields > 0) {
+      throw new AppError("Cannot delete section that still has fields", 400);
+    }
+
+    await prisma.specialtyTemplateSection.delete({ where: { id: sectionId } });
+    return { id: sectionId };
   },
 
   async assignTemplateToClinicSpecialty(clinicSpecialtyId: string, templateId: string) {
@@ -224,6 +430,9 @@ export const specialtyService = {
     const source = await prisma.specialtyTemplate.findUnique({
       where: { id: templateId },
       include: {
+        sections: {
+          orderBy: { displayOrder: "asc" }
+        },
         fields: {
           include: { options: { orderBy: { displayOrder: "asc" } },
           },
@@ -261,11 +470,26 @@ export const specialtyService = {
         }
       });
 
+      const sectionIdMap = new Map<string, string>();
+      for (const section of source.sections) {
+        const clonedSection = await tx.specialtyTemplateSection.create({
+          data: {
+            templateId: clonedTemplate.id,
+            key: section.key,
+            name: section.name,
+            nameAr: section.nameAr,
+            displayOrder: section.displayOrder
+          }
+        });
+        sectionIdMap.set(section.id, clonedSection.id);
+      }
+
       const fieldIdMap = new Map<string, string>();
       for (const field of source.fields) {
         const clonedField = await tx.specialtyTemplateField.create({
           data: {
             templateId: clonedTemplate.id,
+            sectionId: field.sectionId ? sectionIdMap.get(field.sectionId) ?? null : null,
             key: field.key,
             label: field.label,
             labelAr: field.labelAr,
@@ -299,6 +523,7 @@ export const specialtyService = {
         await tx.specialtyRule.create({
           data: {
             templateId: clonedTemplate.id,
+            fieldId: rule.fieldId ? fieldIdMap.get(rule.fieldId) ?? null : null,
             key: rule.key,
             name: rule.name,
             nameAr: rule.nameAr,
@@ -348,8 +573,9 @@ export const specialtyService = {
       key: string;
       label: string;
       labelAr: string;
-      section: string;
-      sectionAr: string;
+      sectionId?: string;
+      section?: string;
+      sectionAr?: string;
       fieldType: "TEXT" | "NUMBER" | "YES_NO" | "DATE" | "DROPDOWN" | "MULTI_SELECT" | "AUTO" | "GRID";
       isRequired?: boolean;
       displayOrder?: number;
@@ -371,15 +597,34 @@ export const specialtyService = {
       select: { displayOrder: true }
     });
     const fallbackOrder = (maxOrderRow?.displayOrder ?? 0) + 1;
+    let resolvedSectionId: string | undefined;
+    let resolvedSection = input.section?.trim() ?? "";
+    let resolvedSectionAr = input.sectionAr?.trim() ?? "";
+    if (input.sectionId) {
+      const section = await prisma.specialtyTemplateSection.findFirst({
+        where: { id: input.sectionId, templateId },
+        select: { id: true, name: true, nameAr: true }
+      });
+      if (!section) {
+        throw new AppError("Section not found for this template", 404);
+      }
+      resolvedSectionId = section.id;
+      resolvedSection = section.name;
+      resolvedSectionAr = section.nameAr;
+    }
+    if (!resolvedSection || !resolvedSectionAr) {
+      throw new AppError("Section is required", 400);
+    }
 
     return prisma.specialtyTemplateField.create({
       data: {
         templateId,
+        sectionId: resolvedSectionId,
         key: input.key,
         label: input.label,
         labelAr: input.labelAr,
-        section: input.section,
-        sectionAr: input.sectionAr,
+        section: resolvedSection,
+        sectionAr: resolvedSectionAr,
         fieldType: input.fieldType,
         isRequired: Boolean(input.isRequired),
         displayOrder: input.displayOrder ?? fallbackOrder,
@@ -402,6 +647,7 @@ export const specialtyService = {
       key?: string;
       label?: string;
       labelAr?: string;
+      sectionId?: string | null;
       section?: string;
       sectionAr?: string;
       fieldType?: "TEXT" | "NUMBER" | "YES_NO" | "DATE" | "DROPDOWN" | "MULTI_SELECT" | "AUTO" | "GRID";
@@ -415,9 +661,34 @@ export const specialtyService = {
   ) {
     const existing = await prisma.specialtyTemplateField.findUnique({
       where: { id: fieldId },
-      select: { id: true }
+      select: { id: true, templateId: true }
     });
     if (!existing) throw new AppError("Field not found", 404);
+
+    let sectionPayload:
+      | {
+          sectionId?: string | null;
+          section?: string;
+          sectionAr?: string;
+        }
+      | undefined;
+
+    if (input.sectionId !== undefined) {
+      if (input.sectionId === null) {
+        sectionPayload = { sectionId: null };
+      } else {
+        const section = await prisma.specialtyTemplateSection.findFirst({
+          where: { id: input.sectionId, templateId: existing.templateId },
+          select: { id: true, name: true, nameAr: true }
+        });
+        if (!section) throw new AppError("Section not found for this template", 404);
+        sectionPayload = {
+          sectionId: section.id,
+          section: section.name,
+          sectionAr: section.nameAr
+        };
+      }
+    }
 
     return prisma.specialtyTemplateField.update({
       where: { id: fieldId },
@@ -425,6 +696,7 @@ export const specialtyService = {
         ...(input.key !== undefined ? { key: input.key } : {}),
         ...(input.label !== undefined ? { label: input.label } : {}),
         ...(input.labelAr !== undefined ? { labelAr: input.labelAr } : {}),
+        ...(sectionPayload ?? {}),
         ...(input.section !== undefined ? { section: input.section } : {}),
         ...(input.sectionAr !== undefined ? { sectionAr: input.sectionAr } : {}),
         ...(input.fieldType !== undefined ? { fieldType: input.fieldType } : {}),
@@ -579,15 +851,23 @@ export const specialtyService = {
     });
   },
 
-  async listTemplateRules(templateId: string) {
+  async listTemplateRules(templateId: string, fieldId?: string) {
     const template = await prisma.specialtyTemplate.findUnique({
       where: { id: templateId },
       select: { id: true }
     });
     if (!template) throw new AppError("Template not found", 404);
 
+    if (fieldId) {
+      const field = await prisma.specialtyTemplateField.findFirst({
+        where: { id: fieldId, templateId },
+        select: { id: true }
+      });
+      if (!field) throw new AppError("Field not found for this template", 404);
+    }
+
     return prisma.specialtyRule.findMany({
-      where: { templateId },
+      where: { templateId, ...(fieldId ? { fieldId } : {}) },
       orderBy: { displayOrder: "asc" }
     });
   },
@@ -602,6 +882,7 @@ export const specialtyService = {
       expression: Record<string, unknown>;
       severity?: string;
       displayOrder?: number;
+      fieldId?: string;
     }
   ) {
     const template = await prisma.specialtyTemplate.findUnique({
@@ -616,9 +897,18 @@ export const specialtyService = {
       select: { displayOrder: true }
     });
 
+    if (input.fieldId) {
+      const field = await prisma.specialtyTemplateField.findFirst({
+        where: { id: input.fieldId, templateId },
+        select: { id: true }
+      });
+      if (!field) throw new AppError("Field not found for this template", 404);
+    }
+
     return prisma.specialtyRule.create({
       data: {
         templateId,
+        fieldId: input.fieldId ?? null,
         key: input.key,
         name: input.name,
         nameAr: input.nameAr,
@@ -640,13 +930,22 @@ export const specialtyService = {
       expression: Record<string, unknown>;
       severity: string | null;
       displayOrder: number;
+      fieldId: string | null;
     }>
   ) {
     const existing = await prisma.specialtyRule.findUnique({
       where: { id: ruleId },
-      select: { id: true }
+      select: { id: true, templateId: true }
     });
     if (!existing) throw new AppError("Rule not found", 404);
+
+    if (input.fieldId !== undefined && input.fieldId !== null) {
+      const field = await prisma.specialtyTemplateField.findFirst({
+        where: { id: input.fieldId, templateId: existing.templateId },
+        select: { id: true }
+      });
+      if (!field) throw new AppError("Field not found for this template", 404);
+    }
 
     return prisma.specialtyRule.update({
       where: { id: ruleId },
@@ -657,7 +956,8 @@ export const specialtyService = {
         ...(input.type !== undefined ? { type: input.type } : {}),
         ...(input.expression !== undefined ? { expression: input.expression as Prisma.InputJsonValue } : {}),
         ...(input.severity !== undefined ? { severity: input.severity } : {}),
-        ...(input.displayOrder !== undefined ? { displayOrder: input.displayOrder } : {})
+        ...(input.displayOrder !== undefined ? { displayOrder: input.displayOrder } : {}),
+        ...(input.fieldId !== undefined ? { fieldId: input.fieldId } : {})
       }
     });
   },

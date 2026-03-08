@@ -14,6 +14,8 @@ interface SpecialtyAssessmentFormProps {
   isSubmitting?: boolean;
   submitLabel?: string;
   hideSubmitActions?: boolean;
+  hideSaveAction?: boolean;
+  readOnly?: boolean;
 }
 
 type Values = Record<string, unknown>;
@@ -22,8 +24,14 @@ type SectionField = SpecialtyTemplate["fields"][number];
 type GridRow = {
   id: string;
   label: string;
-  right?: SectionField;
-  left?: SectionField;
+  cells: Record<string, SectionField | undefined>;
+};
+
+type DynamicGridColumn = {
+  key: string;
+  label: string;
+  labelAr: string;
+  order: number;
 };
 
 const isVisible = (field: SectionField, values: Values) => {
@@ -58,13 +66,47 @@ const cleanGridRowLabel = (field: SectionField, locale: "ar" | "en") => {
     .trim();
 };
 
+const getGridMetadata = (field: SectionField) => {
+  const grid = (field.metadata as { grid?: unknown } | null | undefined)?.grid;
+  if (!grid || typeof grid !== "object") return null;
+  const candidate = grid as { rowKey?: unknown; columns?: unknown };
+  if (!Array.isArray(candidate.columns)) return null;
+  const columns = candidate.columns
+    .map((column, index) => {
+      if (!column || typeof column !== "object") return null;
+      const item = column as { key?: unknown; label?: unknown; labelAr?: unknown; order?: unknown };
+      if (typeof item.key !== "string" || !item.key.trim()) return null;
+      return {
+        key: item.key.trim(),
+        label: typeof item.label === "string" ? item.label : item.key.trim(),
+        labelAr: typeof item.labelAr === "string" ? item.labelAr : item.key.trim(),
+        order: typeof item.order === "number" ? item.order : index + 1
+      };
+    })
+    .filter((column): column is DynamicGridColumn => Boolean(column))
+    .sort((a, b) => a.order - b.order);
+  if (!columns.length) return null;
+  return {
+    rowKey: typeof candidate.rowKey === "string" ? candidate.rowKey.trim() : "",
+    columns
+  };
+};
+
+const getFieldColumnKey = (field: SectionField) => {
+  const fromMeta = (field.metadata as { columnKey?: unknown } | null | undefined)?.columnKey;
+  if (typeof fromMeta === "string" && fromMeta.trim()) return fromMeta.trim();
+  return getFieldSide(field) ?? "value";
+};
+
 export function SpecialtyAssessmentForm({
   template,
   initialValues,
   onSubmit,
   isSubmitting,
   submitLabel,
-  hideSubmitActions
+  hideSubmitActions,
+  hideSaveAction,
+  readOnly
 }: SpecialtyAssessmentFormProps) {
   const { locale, t } = useI18n();
   const { register, handleSubmit, setValue, watch } = useForm<Values>({
@@ -115,17 +157,39 @@ export function SpecialtyAssessmentForm({
     () => (activeSection?.fields.filter((field) => isVisible(field, values)) ?? []),
     [activeSection, values]
   );
+  const dynamicGridColumns = useMemo(() => {
+    const firstWithGrid = activeSectionVisibleFields.find((field) => Boolean(getGridMetadata(field)));
+    return firstWithGrid ? (getGridMetadata(firstWithGrid)?.columns ?? []) : [];
+  }, [activeSectionVisibleFields]);
   const gridRows = useMemo(() => {
     const rowsMap = new Map<string, GridRow>();
     const unpairedRows: GridRow[] = [];
+    const useDynamicGrid = dynamicGridColumns.length > 0;
 
     activeSectionVisibleFields.forEach((field, index) => {
+      if (useDynamicGrid) {
+        const rowKey = getGridRowKey(field);
+        const existing = rowsMap.get(rowKey);
+        const cellKey = getFieldColumnKey(field);
+        if (!existing) {
+          rowsMap.set(rowKey, {
+            id: rowKey || `row-${field.id}-${index}`,
+            label: cleanGridRowLabel(field, locale),
+            cells: { [cellKey]: field }
+          });
+          return;
+        }
+        existing.cells[cellKey] = field;
+        if (!existing.label) existing.label = cleanGridRowLabel(field, locale);
+        return;
+      }
+
       const side = getFieldSide(field);
       if (!side) {
         unpairedRows.push({
           id: `single-${field.id}-${index}`,
           label: locale === "ar" ? field.labelAr : field.label,
-          right: field
+          cells: { right: field }
         });
         return;
       }
@@ -136,22 +200,25 @@ export function SpecialtyAssessmentForm({
         rowsMap.set(rowKey, {
           id: rowKey || `row-${field.id}-${index}`,
           label: cleanGridRowLabel(field, locale),
-          right: side === "right" ? field : undefined,
-          left: side === "left" ? field : undefined
+          cells: {
+            right: side === "right" ? field : undefined,
+            left: side === "left" ? field : undefined
+          }
         });
         return;
       }
 
-      if (side === "right") existing.right = field;
-      if (side === "left") existing.left = field;
+      if (side === "right") existing.cells.right = field;
+      if (side === "left") existing.cells.left = field;
       if (!existing.label) existing.label = cleanGridRowLabel(field, locale);
     });
 
     return [...Array.from(rowsMap.values()), ...unpairedRows];
-  }, [activeSectionVisibleFields, locale]);
+  }, [activeSectionVisibleFields, dynamicGridColumns.length, locale]);
   const useGridTable =
     activeSectionVisibleFields.some((field) => field.fieldType === "GRID") ||
-    activeSectionVisibleFields.some((field) => getFieldSide(field) !== null);
+    activeSectionVisibleFields.some((field) => getFieldSide(field) !== null) ||
+    dynamicGridColumns.length > 0;
   const hasPrev = activeIndex > 0;
   const hasNext = activeIndex >= 0 && activeIndex < groupedSections.length - 1;
   const goPrev = () => {
@@ -263,7 +330,12 @@ export function SpecialtyAssessmentForm({
         <label className={compact ? "text-sm font-semibold text-slate-700" : "text-sm font-medium text-slate-600"}>
           {label}
         </label>
-        <input type={type} step={type === "number" ? "any" : undefined} {...register(field.key)} className={inputClass} />
+        <input
+          type={type}
+          step={type === "number" ? "any" : undefined}
+          {...register(field.key)}
+          className={inputClass}
+        />
         {help ? <p className="text-[11px] text-slate-500">{help}</p> : null}
       </div>
     );
@@ -273,6 +345,7 @@ export function SpecialtyAssessmentForm({
     <form
       className="space-y-5"
       onSubmit={handleSubmit(async (submittedValues) => {
+        if (readOnly) return;
         await onSubmit(submittedValues);
       })}
     >
@@ -312,12 +385,20 @@ export function SpecialtyAssessmentForm({
                     <th className="border-x-2 border-b-2 border-orange-300/70 px-4 py-3 align-middle text-center text-base font-semibold text-white">
                       {locale === "ar" ? "الفحص" : "Exam"}
                     </th>
-                    <th className="border-x-2 border-b-2 border-orange-300/70 px-4 py-3 align-middle text-center text-base font-semibold text-white">
-                      {locale === "ar" ? "يمين" : "Right"}
-                    </th>
-                    <th className="border-x-2 border-b-2 border-orange-300/70 px-4 py-3 align-middle text-center text-base font-semibold text-white">
-                      {locale === "ar" ? "شمال" : "Left"}
-                    </th>
+                    {(dynamicGridColumns.length
+                      ? dynamicGridColumns
+                      : [
+                          { key: "right", label: "Right", labelAr: "يمين", order: 1 },
+                          { key: "left", label: "Left", labelAr: "شمال", order: 2 }
+                        ]
+                    ).map((column) => (
+                      <th
+                        key={column.key}
+                        className="border-x-2 border-b-2 border-orange-300/70 px-4 py-3 align-middle text-center text-base font-semibold text-white"
+                      >
+                        {locale === "ar" ? column.labelAr : column.label}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -326,12 +407,17 @@ export function SpecialtyAssessmentForm({
                       <td className="border-x-2 border-b-2 border-slate-200 px-4 py-3 text-center text-lg font-semibold text-slate-800">
                         {row.label || "-"}
                       </td>
-                      <td className="border-x-2 border-b-2 border-slate-200 px-4 py-3">
-                        {row.right ? renderFieldControl(row.right, true) : <span className="text-sm text-slate-400">-</span>}
-                      </td>
-                      <td className="border-x-2 border-b-2 border-slate-200 px-4 py-3">
-                        {row.left ? renderFieldControl(row.left, true) : <span className="text-sm text-slate-400">-</span>}
-                      </td>
+                      {(dynamicGridColumns.length
+                        ? dynamicGridColumns
+                        : [
+                            { key: "right", label: "Right", labelAr: "يمين", order: 1 },
+                            { key: "left", label: "Left", labelAr: "شمال", order: 2 }
+                          ]
+                      ).map((column) => (
+                        <td key={`${row.id}-${column.key}`} className="border-x-2 border-b-2 border-slate-200 px-4 py-3">
+                          {row.cells[column.key] ? renderFieldControl(row.cells[column.key]!, true) : <span className="text-sm text-slate-400">-</span>}
+                        </td>
+                      ))}
                     </tr>
                   ))}
                 </tbody>
@@ -368,9 +454,11 @@ export function SpecialtyAssessmentForm({
               {locale === "ar" ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
             </button>
           </div>
-          <RippleButton type="submit" disabled={Boolean(isSubmitting)}>
-            {isSubmitting ? t("patients.assessment.saving") : submitLabel ?? t("patients.assessment.save")}
-          </RippleButton>
+          {!hideSaveAction ? (
+            <RippleButton type="submit" disabled={Boolean(isSubmitting) || Boolean(readOnly)}>
+              {isSubmitting ? t("patients.assessment.saving") : submitLabel ?? t("patients.assessment.save")}
+            </RippleButton>
+          ) : null}
         </div>
       ) : null}
     </form>

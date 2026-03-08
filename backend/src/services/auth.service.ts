@@ -23,6 +23,12 @@ interface LoginInput {
   password: string;
 }
 
+interface ChangePasswordInput {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
 const signToken = (
   payload: { sub: string; clinicId: string; role: RoleName; permissions: string[] },
   secret: Secret,
@@ -97,7 +103,9 @@ export const authService = {
         name: input.clinicName.trim(),
         slug,
         email: input.email.toLowerCase(),
-        imageUrl: input.imageUrl
+        imageUrl: input.imageUrl,
+        countryCode: "US",
+        currencyCode: "USD"
       }
     });
 
@@ -187,7 +195,15 @@ export const authService = {
         deletedAt: null
       },
       take: 2,
-      include: { role: true }
+      include: {
+        role: true,
+        clinic: {
+          select: {
+            isActive: true,
+            deletedAt: true
+          }
+        }
+      }
     });
 
     if (users.length > 1) {
@@ -198,6 +214,10 @@ export const authService = {
 
     if (!user || !user.isActive) {
       throw new AppError("Invalid credentials", 401);
+    }
+    const isSuperAdmin = user.role.name === "SuperAdmin";
+    if (!isSuperAdmin && (!user.clinic.isActive || user.clinic.deletedAt)) {
+      throw new AppError("Clinic account is inactive", 403);
     }
 
     const passwordValid = await bcrypt.compare(input.password, user.passwordHash);
@@ -284,6 +304,39 @@ export const authService = {
     await prisma.user.update({
       where: { id: userId },
       data: { refreshToken: null }
+    });
+  },
+
+  async changePassword(userId: string, input: ChangePasswordInput) {
+    if (input.newPassword !== input.confirmPassword) {
+      throw new AppError("New password and confirmation do not match", 400);
+    }
+
+    const user = await prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      select: { id: true, passwordHash: true }
+    });
+    if (!user) {
+      throw new AppError("User not found", 404);
+    }
+
+    const currentPasswordValid = await bcrypt.compare(input.currentPassword, user.passwordHash);
+    if (!currentPasswordValid) {
+      throw new AppError("Current password is incorrect", 400);
+    }
+
+    const samePassword = await bcrypt.compare(input.newPassword, user.passwordHash);
+    if (samePassword) {
+      throw new AppError("New password must be different from current password", 400);
+    }
+
+    const passwordHash = await bcrypt.hash(input.newPassword, 12);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        refreshToken: null
+      }
     });
   },
 

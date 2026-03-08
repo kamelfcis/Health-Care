@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../config/prisma";
 import { permissionService } from "./permission.service";
 import { AppError } from "../utils/app-error";
@@ -19,6 +20,52 @@ interface CreateRoleInput {
 interface UpdateRolePermissionsInput {
   permissionKeys: string[];
 }
+
+const AUTO_DOCTOR_SPECIALTY = "General";
+const AUTO_DOCTOR_LICENSE_PREFIX = "AUTO";
+
+const buildAutoDoctorLicense = () =>
+  `${AUTO_DOCTOR_LICENSE_PREFIX}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+
+const ensureDoctorProfileForUser = async (tx: Prisma.TransactionClient, clinicId: string, userId: string) => {
+  const existingProfile = await tx.doctor.findFirst({
+    where: { clinicId, userId }
+  });
+
+  if (existingProfile) {
+    if (existingProfile.deletedAt) {
+      await tx.doctor.update({
+        where: { id: existingProfile.id },
+        data: { deletedAt: null }
+      });
+    }
+    return;
+  }
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const licenseNumber = buildAutoDoctorLicense();
+    const duplicateLicense = await tx.doctor.findFirst({
+      where: { clinicId, licenseNumber, deletedAt: null },
+      select: { id: true }
+    });
+
+    if (duplicateLicense) {
+      continue;
+    }
+
+    await tx.doctor.create({
+      data: {
+        clinicId,
+        userId,
+        specialty: AUTO_DOCTOR_SPECIALTY,
+        licenseNumber
+      }
+    });
+    return;
+  }
+
+  throw new AppError("Could not generate unique doctor license number", 500);
+};
 
 export const adminService = {
   async listRoles(clinicId: string) {
@@ -91,16 +138,24 @@ export const adminService = {
     }
 
     const passwordHash = await bcrypt.hash(input.password, 12);
-    const user = await prisma.user.create({
-      data: {
-        clinicId,
-        roleId: role.id,
-        firstName: input.firstName,
-        lastName: input.lastName,
-        email: input.email.toLowerCase(),
-        passwordHash
-      },
-      include: { role: true }
+    const user = await prisma.$transaction(async (tx) => {
+      const createdUser = await tx.user.create({
+        data: {
+          clinicId,
+          roleId: role.id,
+          firstName: input.firstName,
+          lastName: input.lastName,
+          email: input.email.toLowerCase(),
+          passwordHash
+        },
+        include: { role: true }
+      });
+
+      if (role.name === "Doctor") {
+        await ensureDoctorProfileForUser(tx, clinicId, createdUser.id);
+      }
+
+      return createdUser;
     });
 
     const permissions = await permissionService.getRolePermissions(user.role.id);
@@ -206,10 +261,18 @@ export const adminService = {
       throw new AppError("User not found", 404);
     }
 
-    const user = await prisma.user.update({
-      where: { id: existingUser.id },
-      data: { roleId },
-      include: { role: true }
+    const user = await prisma.$transaction(async (tx) => {
+      const updatedUser = await tx.user.update({
+        where: { id: existingUser.id },
+        data: { roleId },
+        include: { role: true }
+      });
+
+      if (role.name === "Doctor") {
+        await ensureDoctorProfileForUser(tx, clinicId, updatedUser.id);
+      }
+
+      return updatedUser;
     });
 
     return {
@@ -218,5 +281,61 @@ export const adminService = {
       role: user.role.name,
       permissions: await permissionService.getRolePermissions(user.role.id)
     };
+  },
+
+  async deleteUser(clinicId: string, userId: string, actorUserId: string) {
+    if (userId === actorUserId) {
+      throw new AppError("You cannot delete your own account", 400);
+    }
+
+    const existingUser = await prisma.user.findFirst({
+      where: { id: userId, clinicId, deletedAt: null },
+      include: { role: true }
+    });
+    if (!existingUser) {
+      throw new AppError("User not found", 404);
+    }
+    if (existingUser.role.name === "ClinicAdmin" || existingUser.role.name === "SuperAdmin") {
+      throw new AppError("This account cannot be deleted", 403);
+    }
+
+    const doctorProfile = await prisma.doctor.findFirst({
+      where: { clinicId, userId: existingUser.id }
+    });
+
+    if (doctorProfile) {
+      const [appointmentsCount, prescriptionsCount] = await Promise.all([
+        prisma.appointment.count({ where: { clinicId, doctorId: doctorProfile.id } }),
+        prisma.prescription.count({ where: { clinicId, doctorId: doctorProfile.id } })
+      ]);
+      if (appointmentsCount > 0 || prescriptionsCount > 0) {
+        throw new AppError("Cannot delete user: linked doctor appointments or prescriptions exist", 409);
+      }
+    }
+
+    const followUpsCount = await prisma.followUp.count({
+      where: { createdById: existingUser.id }
+    });
+    if (followUpsCount > 0) {
+      throw new AppError("Cannot delete user: linked follow-ups exist", 409);
+    }
+
+    await prisma.$transaction(async (tx) => {
+      if (doctorProfile) {
+        await tx.doctor.delete({ where: { id: doctorProfile.id } });
+      }
+      await tx.notification.updateMany({
+        where: { userId: existingUser.id },
+        data: { userId: null }
+      });
+      await tx.lead.updateMany({
+        where: { assignedToId: existingUser.id },
+        data: { assignedToId: null }
+      });
+      await tx.clinicUser.deleteMany({
+        where: { userId: existingUser.id }
+      });
+      await tx.user.delete({ where: { id: existingUser.id } });
+    });
   }
 };

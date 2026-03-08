@@ -5,6 +5,15 @@ import { apiSuccess } from "../utils/api-response";
 import { AuthenticatedRequest } from "../types/auth";
 import { getOptionalClinicScope, getScopedClinicId } from "../utils/tenant";
 import { buildCacheKey, getOrSetCache, invalidateCacheByPrefix } from "../utils/response-cache";
+import { AppError } from "../utils/app-error";
+
+const getRequiredClinicScope = (req: AuthenticatedRequest) => {
+  const scoped = getOptionalClinicScope(req);
+  if (!scoped) {
+    throw new AppError("Please select a clinic scope", 400);
+  }
+  return scoped;
+};
 
 export const doctorController = {
   async list(req: AuthenticatedRequest, res: Response) {
@@ -27,8 +36,14 @@ export const doctorController = {
     res.json(apiSuccess(data));
   },
 
+  async getById(req: AuthenticatedRequest, res: Response) {
+    const clinicId = getRequiredClinicScope(req);
+    const data = await doctorService.getById(String(req.params.id), clinicId);
+    res.json(apiSuccess(data));
+  },
+
   async create(req: AuthenticatedRequest, res: Response) {
-    const clinicId = getScopedClinicId(req);
+    const clinicId = req.user?.role === "SuperAdmin" ? getRequiredClinicScope(req) : getScopedClinicId(req);
     const data = await doctorService.create(clinicId, req.body);
     invalidateCacheByPrefix(buildCacheKey("doctors", clinicId));
     invalidateCacheByPrefix(buildCacheKey("dashboard", clinicId));
@@ -36,7 +51,7 @@ export const doctorController = {
   },
 
   async update(req: AuthenticatedRequest, res: Response) {
-    const clinicId = getScopedClinicId(req);
+    const clinicId = req.user?.role === "SuperAdmin" ? getRequiredClinicScope(req) : getScopedClinicId(req);
     const data = await doctorService.update(String(req.params.id), clinicId, req.body);
     invalidateCacheByPrefix(buildCacheKey("doctors", clinicId));
     invalidateCacheByPrefix(buildCacheKey("dashboard", clinicId));
@@ -44,7 +59,7 @@ export const doctorController = {
   },
 
   async remove(req: AuthenticatedRequest, res: Response) {
-    const clinicId = getScopedClinicId(req);
+    const clinicId = req.user?.role === "SuperAdmin" ? getRequiredClinicScope(req) : getScopedClinicId(req);
     const data = await doctorService.remove(String(req.params.id), clinicId);
     invalidateCacheByPrefix(buildCacheKey("doctors", clinicId));
     invalidateCacheByPrefix(buildCacheKey("dashboard", clinicId));

@@ -8,11 +8,13 @@ import { EntityCollectionView } from "@/components/ui/entity-collection-view";
 import { RippleButton } from "@/components/ui/ripple-button";
 import { useI18n } from "@/components/providers/i18n-provider";
 import { clinicService } from "@/lib/clinic-service";
+import { formatCurrency } from "@/lib/currency-format";
 import { paymentService } from "@/lib/payment-service";
 import { storage } from "@/lib/storage";
 import { RoleGate } from "@/components/auth/role-gate";
 
 type PaymentRow = {
+  clinicId: string;
   invoice: string;
   amount: string;
   method: string;
@@ -34,6 +36,24 @@ export default function PaymentsPage() {
     queryFn: () => clinicService.list(),
     enabled: isSuperAdmin
   });
+  const myClinicQuery = useQuery({
+    queryKey: ["settings", "clinic-me"],
+    queryFn: () => clinicService.getMyClinic(),
+    enabled: !isSuperAdmin
+  });
+
+  const clinicCurrencyById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const clinic of clinicsQuery.data ?? []) {
+      if (clinic.id) {
+        map.set(clinic.id, (clinic.currencyCode ?? "USD").toUpperCase());
+      }
+    }
+    if (myClinicQuery.data?.id) {
+      map.set(myClinicQuery.data.id, (myClinicQuery.data.currencyCode ?? "USD").toUpperCase());
+    }
+    return map;
+  }, [clinicsQuery.data, myClinicQuery.data]);
 
   const paymentsQuery = useQuery({
     queryKey: ["payments", { page: 1, pageSize: 500, clinicId: selectedClinicId }],
@@ -43,13 +63,14 @@ export default function PaymentsPage() {
   const data: PaymentRow[] = useMemo(
     () =>
       paymentsQuery.data?.map((item) => ({
+        clinicId: item.clinicId,
         invoice: item.invoice?.invoiceNumber ?? "-",
-        amount: `$${item.amount.toFixed(2)}`,
+        amount: formatCurrency(item.amount, clinicCurrencyById.get(item.clinicId) ?? "USD"),
         method: item.method,
         status: item.status,
         date: String(item.createdAt).slice(0, 10)
       })) ?? [],
-    [paymentsQuery.data]
+    [paymentsQuery.data, clinicCurrencyById]
   );
 
   const statuses = useMemo(() => Array.from(new Set(data.map((item) => item.status))), [data]);

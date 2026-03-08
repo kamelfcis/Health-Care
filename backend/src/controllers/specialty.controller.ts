@@ -9,6 +9,12 @@ import { AppError } from "../utils/app-error";
 const replaceSchema = z.object({
   specialtyCodes: z.array(z.string().min(1)).min(1)
 });
+const sectionSchema = z.object({
+  key: z.string().min(1),
+  name: z.string().min(1),
+  nameAr: z.string().min(1),
+  displayOrder: z.number().int().positive().optional()
+});
 const fieldTypeSchema = z.enum(["TEXT", "NUMBER", "YES_NO", "DATE", "DROPDOWN", "MULTI_SELECT", "AUTO", "GRID"]);
 const ruleTypeSchema = z.enum(["ALERT", "DIAGNOSIS", "COMPUTE"]);
 
@@ -27,6 +33,44 @@ export const specialtyController = {
   async listCatalog(_req: Request, res: Response) {
     const data = await specialtyService.listCatalog();
     res.json(apiSuccess(data));
+  },
+
+  async adminListCatalog(_req: Request, res: Response) {
+    const data = await specialtyService.adminListCatalogAll();
+    res.json(apiSuccess(data));
+  },
+
+  async adminCreateCatalog(req: Request, res: Response) {
+    const parsed = z
+      .object({
+        code: z.string().min(1),
+        name: z.string().min(1),
+        nameAr: z.string().min(1),
+        description: z.string().optional(),
+        isActive: z.boolean().optional()
+      })
+      .parse(req.body);
+    const data = await specialtyService.adminCreateCatalog(parsed);
+    res.status(201).json(apiSuccess(data, "Specialty created"));
+  },
+
+  async adminUpdateCatalog(req: Request, res: Response) {
+    const parsed = z
+      .object({
+        code: z.string().min(1).optional(),
+        name: z.string().min(1).optional(),
+        nameAr: z.string().min(1).optional(),
+        description: z.union([z.string(), z.null()]).optional(),
+        isActive: z.boolean().optional()
+      })
+      .parse(req.body);
+    const data = await specialtyService.adminUpdateCatalog(String(req.params.specialtyId), parsed);
+    res.json(apiSuccess(data, "Specialty updated"));
+  },
+
+  async adminDeleteCatalog(req: Request, res: Response) {
+    const data = await specialtyService.adminSoftDeleteCatalog(String(req.params.specialtyId));
+    res.json(apiSuccess(data, "Specialty deleted"));
   },
 
   async myClinicSpecialties(req: AuthenticatedRequest, res: Response) {
@@ -107,8 +151,9 @@ export const specialtyController = {
         key: z.string().min(1),
         label: z.string().min(1),
         labelAr: z.string().min(1),
-        section: z.string().min(1),
-        sectionAr: z.string().min(1),
+        sectionId: z.string().min(1).optional(),
+        section: z.string().min(1).optional(),
+        sectionAr: z.string().min(1).optional(),
         fieldType: fieldTypeSchema,
         isRequired: z.boolean().optional(),
         displayOrder: z.number().int().positive().optional(),
@@ -117,9 +162,45 @@ export const specialtyController = {
         visibleWhen: z.record(z.string(), z.unknown()).optional(),
         metadata: z.record(z.string(), z.unknown()).optional()
       })
+      .refine((value) => Boolean(value.sectionId) || (Boolean(value.section) && Boolean(value.sectionAr)), {
+        message: "sectionId or section/sectionAr are required",
+        path: ["sectionId"]
+      })
       .parse(req.body);
     const data = await specialtyService.createTemplateField(String(req.params.templateId), parsed);
     res.status(201).json(apiSuccess(data, "Field created"));
+  },
+
+  async adminListSections(req: Request, res: Response) {
+    const data = await specialtyService.listTemplateSections(String(req.params.templateId));
+    res.json(apiSuccess(data));
+  },
+
+  async adminCreateSection(req: Request, res: Response) {
+    const parsed = sectionSchema.parse(req.body);
+    const data = await specialtyService.createTemplateSection(String(req.params.templateId), parsed);
+    res.status(201).json(apiSuccess(data, "Section created"));
+  },
+
+  async adminUpdateSection(req: Request, res: Response) {
+    const parsed = sectionSchema.partial().parse(req.body);
+    const data = await specialtyService.updateTemplateSection(String(req.params.sectionId), parsed);
+    res.json(apiSuccess(data, "Section updated"));
+  },
+
+  async adminReorderSections(req: Request, res: Response) {
+    const parsed = z
+      .object({
+        sectionIds: z.array(z.string().min(1)).min(1)
+      })
+      .parse(req.body);
+    const data = await specialtyService.reorderTemplateSections(String(req.params.templateId), parsed.sectionIds);
+    res.json(apiSuccess(data, "Sections reordered"));
+  },
+
+  async adminRemoveSection(req: Request, res: Response) {
+    const data = await specialtyService.removeTemplateSection(String(req.params.sectionId));
+    res.json(apiSuccess(data, "Section deleted"));
   },
 
   async adminUpdateField(req: Request, res: Response) {
@@ -128,6 +209,7 @@ export const specialtyController = {
         key: z.string().min(1).optional(),
         label: z.string().min(1).optional(),
         labelAr: z.string().min(1).optional(),
+        sectionId: z.union([z.string().min(1), z.null()]).optional(),
         section: z.string().min(1).optional(),
         sectionAr: z.string().min(1).optional(),
         fieldType: fieldTypeSchema.optional(),
@@ -200,7 +282,12 @@ export const specialtyController = {
   },
 
   async adminListRules(req: Request, res: Response) {
-    const data = await specialtyService.listTemplateRules(String(req.params.templateId));
+    const parsedQuery = z
+      .object({
+        fieldId: z.string().min(1).optional()
+      })
+      .parse(req.query);
+    const data = await specialtyService.listTemplateRules(String(req.params.templateId), parsedQuery.fieldId);
     res.json(apiSuccess(data));
   },
 
@@ -213,7 +300,8 @@ export const specialtyController = {
         type: ruleTypeSchema,
         expression: z.record(z.string(), z.unknown()),
         severity: z.string().optional(),
-        displayOrder: z.number().int().positive().optional()
+        displayOrder: z.number().int().positive().optional(),
+        fieldId: z.string().min(1).optional()
       })
       .parse(req.body);
     const data = await specialtyService.createTemplateRule(String(req.params.templateId), parsed);
@@ -229,7 +317,8 @@ export const specialtyController = {
         type: ruleTypeSchema.optional(),
         expression: z.record(z.string(), z.unknown()).optional(),
         severity: z.union([z.string(), z.null()]).optional(),
-        displayOrder: z.number().int().positive().optional()
+        displayOrder: z.number().int().positive().optional(),
+        fieldId: z.union([z.string().min(1), z.null()]).optional()
       })
       .parse(req.body);
     const data = await specialtyService.updateTemplateRule(String(req.params.ruleId), parsed);

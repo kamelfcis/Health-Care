@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { VisitEntryType } from "@prisma/client";
 import { requireAuth } from "../middleware/auth.middleware";
 import { requirePermissions } from "../middleware/rbac.middleware";
 import { validate } from "../middleware/validate.middleware";
@@ -10,7 +11,8 @@ const router = Router({ mergeParams: true });
 
 const upsertSchema = z.object({
   body: z.object({
-    values: z.record(z.string(), z.unknown())
+    values: z.record(z.string(), z.unknown()),
+    entryType: z.nativeEnum(VisitEntryType).optional()
   })
 });
 
@@ -29,7 +31,7 @@ router.get(
 router.put(
   "/:specialtyCode/assessment",
   requireAuth,
-  requirePermissions("patients.manage"),
+  requirePermissions("specialty_assessments.manage"),
   validate(upsertSchema),
   asyncHandler(patientSpecialtyController.upsertAssessment)
 );

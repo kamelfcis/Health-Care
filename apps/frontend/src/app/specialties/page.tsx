@@ -1,13 +1,18 @@
 "use client";
 
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, PencilLine, Sparkles, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, ClipboardList, Eye, FileStack, PencilLine, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/app-shell";
 import { RoleGate } from "@/components/auth/role-gate";
 import { useI18n } from "@/components/providers/i18n-provider";
+import { SpecialtyAssessmentForm } from "@/components/forms/specialty-assessment-form";
 import { RippleButton } from "@/components/ui/ripple-button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import { clinicService } from "@/lib/clinic-service";
 import { SpecialtyTemplate, SpecialtyTemplateField, SpecialtyTemplateRule, specialtyService } from "@/lib/specialty-service";
 
@@ -70,7 +75,6 @@ type RuleCondition = {
 };
 
 type RuleFormState = {
-  key: string;
   name: string;
   nameAr: string;
   type: (typeof ruleTypes)[number];
@@ -81,8 +85,40 @@ type RuleFormState = {
   messageAr: string;
 };
 
+type GridColumnDraft = {
+  id: string;
+  label: string;
+  labelAr: string;
+};
+
+type GridRowDraft = {
+  id: string;
+  label: string;
+  labelAr: string;
+};
+
+const toSlug = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+const sanitizeKeyBase = (value: string, fallback: string) => toSlug(value) || fallback;
+
+const ensureUniqueKey = (base: string, usedKeys: Set<string>) => {
+  const normalizedBase = sanitizeKeyBase(base, "item");
+  let candidate = normalizedBase;
+  let suffix = 2;
+  while (usedKeys.has(candidate)) {
+    candidate = `${normalizedBase}_${suffix}`;
+    suffix += 1;
+  }
+  usedKeys.add(candidate);
+  return candidate;
+};
+
 const emptyRule: RuleFormState = {
-  key: "",
   name: "",
   nameAr: "",
   type: "ALERT",
@@ -121,7 +157,7 @@ const buildExpression = (rule: RuleFormState) => {
   };
 };
 
-export default function SpecialtiesPage() {
+function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" | "rules" } = {}) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const [selectedClinicId, setSelectedClinicId] = useState("");
@@ -133,14 +169,21 @@ export default function SpecialtiesPage() {
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [editingTemplate, setEditingTemplate] = useState({ title: "", titleAr: "", isActive: false });
   const [newField, setNewField] = useState({
-    key: "",
     label: "",
     labelAr: "",
-    section: "",
-    sectionAr: "",
+    sectionId: "",
     fieldType: "TEXT" as (typeof fieldTypes)[number],
     isRequired: false
   });
+  const [createSectionDialogOpen, setCreateSectionDialogOpen] = useState(false);
+  const [newSection, setNewSection] = useState({ name: "", nameAr: "" });
+  const [gridColumns, setGridColumns] = useState<GridColumnDraft[]>([
+    { id: "col-right", label: "Right", labelAr: "يمين" },
+    { id: "col-left", label: "Left", labelAr: "شمال" }
+  ]);
+  const [gridRows, setGridRows] = useState<GridRowDraft[]>([
+    { id: "row-1", label: "", labelAr: "" }
+  ]);
   const [newRule, setNewRule] = useState<RuleFormState>(emptyRule);
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<Partial<SpecialtyTemplateField>>({});
@@ -148,10 +191,15 @@ export default function SpecialtiesPage() {
   const [editingOption, setEditingOption] = useState({ value: "", label: "", labelAr: "" });
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
   const [editingRule, setEditingRule] = useState<RuleFormState>(emptyRule);
+  const [deleteRuleTarget, setDeleteRuleTarget] = useState<SpecialtyTemplateRule | null>(null);
   const [deleteTemplateTarget, setDeleteTemplateTarget] = useState<SpecialtyTemplate | null>(null);
+  const [previewTemplate, setPreviewTemplate] = useState<SpecialtyTemplate | null>(null);
   const [deleteFieldTarget, setDeleteFieldTarget] = useState<SpecialtyTemplateField | null>(null);
+  const [sectionToDeleteId, setSectionToDeleteId] = useState<string | null>(null);
+  const [expandedSectionIds, setExpandedSectionIds] = useState<string[]>([]);
+  const [addFieldSectionId, setAddFieldSectionId] = useState<string | null>(null);
+  const [newRuleFieldId, setNewRuleFieldId] = useState<string | null>(null);
   const [dragFieldId, setDragFieldId] = useState<string | null>(null);
-  const [dragRuleId, setDragRuleId] = useState<string | null>(null);
   const [dragOption, setDragOption] = useState<{ fieldId: string; optionId: string } | null>(null);
 
   const catalogQuery = useQuery({
@@ -245,6 +293,28 @@ export default function SpecialtiesPage() {
     () => templates.find((template) => template.id === selectedTemplateId) ?? null,
     [templates, selectedTemplateId]
   );
+  const selectedTemplateSections = useMemo(
+    () => selectedTemplate?.sections ?? [],
+    [selectedTemplate]
+  );
+  useEffect(() => {
+    if (!selectedTemplateSections.length) {
+      setNewField((prev) => ({ ...prev, sectionId: "" }));
+      return;
+    }
+    const exists = selectedTemplateSections.some((section) => section.id === newField.sectionId);
+    if (!exists) {
+      setNewField((prev) => ({ ...prev, sectionId: selectedTemplateSections[0].id }));
+    }
+  }, [selectedTemplateSections, newField.sectionId]);
+  useEffect(() => {
+    setExpandedSectionIds((prev) =>
+      prev.filter((id) => selectedTemplateSections.some((section) => section.id === id))
+    );
+    if (addFieldSectionId && !selectedTemplateSections.some((section) => section.id === addFieldSectionId)) {
+      setAddFieldSectionId(null);
+    }
+  }, [selectedTemplateSections, addFieldSectionId]);
 
   const rulesQuery = useQuery({
     queryKey: ["specialties", "admin", "rules", selectedTemplateId],
@@ -252,24 +322,47 @@ export default function SpecialtiesPage() {
     enabled: Boolean(selectedTemplateId)
   });
 
-  const rules = rulesQuery.data ?? [];
-  const groupedFields = useMemo(() => {
-    if (!selectedTemplate) return [];
-
-    const groups = new Map<string, { id: string; label: string; fields: SpecialtyTemplateField[] }>();
-    selectedTemplate.fields.forEach((field) => {
-      const label = (field.sectionAr || field.section || "بدون قسم").trim() || "بدون قسم";
-      const id = label.toLowerCase();
-      const existing = groups.get(id);
+  const rules = useMemo(() => rulesQuery.data ?? [], [rulesQuery.data]);
+  const fieldRulesByFieldId = useMemo(() => {
+    const grouped = new Map<string, SpecialtyTemplateRule[]>();
+    rules.forEach((rule) => {
+      if (!rule.fieldId) return;
+      const existing = grouped.get(rule.fieldId);
       if (existing) {
-        existing.fields.push(field);
+        existing.push(rule);
+      } else {
+        grouped.set(rule.fieldId, [rule]);
+      }
+    });
+    return grouped;
+  }, [rules]);
+  const globalRules = useMemo(() => rules.filter((rule) => !rule.fieldId), [rules]);
+  const sectionRows = useMemo(() => {
+    if (!selectedTemplate) return [];
+    const fieldsBySection = new Map<string, SpecialtyTemplateField[]>();
+    selectedTemplate.fields.forEach((field) => {
+      if (!field.sectionId) return;
+      const existing = fieldsBySection.get(field.sectionId);
+      if (existing) {
+        existing.push(field);
         return;
       }
-      groups.set(id, { id, label, fields: [field] });
+      fieldsBySection.set(field.sectionId, [field]);
     });
-
-    return Array.from(groups.values());
-  }, [selectedTemplate]);
+    return selectedTemplateSections.map((section) => ({
+      id: section.id,
+      label: (section.nameAr || section.name || "بدون قسم").trim() || "بدون قسم",
+      fields: fieldsBySection.get(section.id) ?? []
+    }));
+  }, [selectedTemplate, selectedTemplateSections]);
+  const unassignedFields = useMemo(
+    () => selectedTemplate?.fields.filter((field) => !field.sectionId) ?? [],
+    [selectedTemplate]
+  );
+  const sectionToDelete = useMemo(
+    () => selectedTemplateSections.find((section) => section.id === sectionToDeleteId) ?? null,
+    [selectedTemplateSections, sectionToDeleteId]
+  );
 
   const refreshData = async () => {
     await queryClient.invalidateQueries({ queryKey: ["specialties", "admin", "templates", specialtyCode] });
@@ -369,33 +462,175 @@ export default function SpecialtiesPage() {
   });
 
   const createFieldMutation = useMutation({
-    mutationFn: () => specialtyService.adminCreateField(selectedTemplateId, newField),
+    mutationFn: async () => {
+      if (!selectedTemplateId) throw new Error("Template is required");
+      if (!newField.sectionId) throw new Error("Section is required");
+      const usedFieldKeys = new Set((selectedTemplate?.fields ?? []).map((field) => field.key));
+      const generatedBaseFieldKey = ensureUniqueKey(
+        sanitizeKeyBase(newField.label, "field"),
+        usedFieldKeys
+      );
+      if (newField.fieldType !== "GRID") {
+        return specialtyService.adminCreateField(selectedTemplateId, {
+          key: generatedBaseFieldKey,
+          label: newField.label,
+          labelAr: newField.labelAr,
+          sectionId: newField.sectionId,
+          fieldType: newField.fieldType,
+          isRequired: newField.isRequired
+        });
+      }
+
+      const usedColumnKeys = new Set<string>();
+      const normalizedColumns = gridColumns
+        .map((column, index) => ({
+          id: column.id,
+          key: ensureUniqueKey(
+            sanitizeKeyBase(column.label, `col_${index + 1}`),
+            usedColumnKeys
+          ),
+          label: column.label,
+          labelAr: column.labelAr,
+          order: index + 1
+        }))
+        .filter((column) => column.label.trim() && column.labelAr.trim());
+      const usedRowKeys = new Set<string>();
+      const normalizedRows = gridRows
+        .map((row, index) => ({
+          id: row.id,
+          key: ensureUniqueKey(
+            sanitizeKeyBase(row.label, `row_${index + 1}`),
+            usedRowKeys
+          ),
+          label: row.label,
+          labelAr: row.labelAr
+        }))
+        .filter((row) => row.label.trim() && row.labelAr.trim());
+
+      if (!normalizedColumns.length || !normalizedRows.length) {
+        throw new Error("Grid rows and columns are required");
+      }
+
+      const createCalls = normalizedRows.flatMap((row) =>
+        normalizedColumns.map((column) => {
+          const metadata: Record<string, unknown> = {
+            row: row.key,
+            columnKey: column.key,
+            grid: {
+              rowKey: row.key,
+              columns: normalizedColumns.map((item) => ({
+                key: item.key,
+                label: item.label,
+                labelAr: item.labelAr,
+                order: item.order
+              }))
+            }
+          };
+          if (column.key === "right" || column.key === "left") {
+            metadata.side = column.key;
+          }
+
+          return specialtyService.adminCreateField(selectedTemplateId, {
+            key: ensureUniqueKey(
+              `${generatedBaseFieldKey}_${row.key}_${column.key}`,
+              usedFieldKeys
+            ),
+            label: `${row.label} - ${column.label}`,
+            labelAr: `${row.labelAr} - ${column.labelAr}`,
+            sectionId: newField.sectionId,
+            fieldType: "TEXT",
+            isRequired: newField.isRequired,
+            metadata
+          });
+        })
+      );
+
+      await Promise.all(createCalls);
+      return null;
+    },
     onSuccess: async () => {
       toast.success("تم إنشاء الحقل");
+      setAddFieldSectionId(null);
       setNewField({
-        key: "",
         label: "",
         labelAr: "",
-        section: "",
-        sectionAr: "",
+        sectionId: "",
         fieldType: "TEXT",
         isRequired: false
       });
+      setGridColumns([
+        { id: "col-right", label: "Right", labelAr: "يمين" },
+        { id: "col-left", label: "Left", labelAr: "شمال" }
+      ]);
+      setGridRows([{ id: "row-1", label: "", labelAr: "" }]);
       await refreshData();
     },
-    onError: () => toast.error("تعذر إنشاء الحقل")
+    onError: (error: unknown) => {
+      const message = error instanceof Error ? error.message : "";
+      if (message.includes("Section")) {
+        toast.error("اختر قسمًا قبل إنشاء الحقل");
+        return;
+      }
+      if (message.includes("Grid")) {
+        toast.error("أضف صفوفًا وأعمدة صالحة للـ Grid");
+        return;
+      }
+      toast.error("تعذر إنشاء الحقل");
+    }
+  });
+
+  const createSectionMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedTemplateId) throw new Error("Template is required");
+      const usedSectionKeys = new Set(selectedTemplateSections.map((section) => section.key));
+      const key = ensureUniqueKey(sanitizeKeyBase(newSection.name, "section"), usedSectionKeys);
+      return specialtyService.adminCreateSection(selectedTemplateId, {
+        key,
+        name: newSection.name.trim(),
+        nameAr: newSection.nameAr.trim()
+      });
+    },
+    onSuccess: async (section) => {
+      toast.success("تم إنشاء القسم");
+      setCreateSectionDialogOpen(false);
+      setNewSection({ name: "", nameAr: "" });
+      setNewField((prev) => ({ ...prev, sectionId: section.id }));
+      await refreshData();
+    },
+    onError: () => toast.error("تعذر إنشاء القسم")
+  });
+  const deleteSectionMutation = useMutation({
+    mutationFn: (sectionId: string) => specialtyService.adminDeleteSection(sectionId),
+    onSuccess: async () => {
+      toast.success("تم حذف القسم");
+      setSectionToDeleteId(null);
+      await refreshData();
+    },
+    onError: (error: unknown) => {
+      const errorMessage =
+        typeof error === "object" &&
+        error !== null &&
+        "response" in error &&
+        typeof (error as { response?: { data?: { message?: unknown } } }).response?.data?.message === "string"
+          ? ((error as { response?: { data?: { message?: string } } }).response?.data?.message ?? "")
+          : "";
+      if (errorMessage.includes("still has fields")) {
+        toast.error(t("specialties.sections.deleteBlocked"));
+        return;
+      }
+      toast.error(errorMessage || "تعذر حذف القسم");
+    }
   });
 
   const updateFieldMutation = useMutation({
     mutationFn: (fieldId: string) =>
       specialtyService.adminUpdateField(fieldId, {
-        key: String(editingField.key ?? ""),
         label: String(editingField.label ?? ""),
         labelAr: String(editingField.labelAr ?? ""),
-        section: String(editingField.section ?? ""),
-        sectionAr: String(editingField.sectionAr ?? ""),
+        sectionId: (editingField.sectionId as string | null | undefined) ?? undefined,
         fieldType: (editingField.fieldType ?? "TEXT") as SpecialtyTemplateField["fieldType"],
-        isRequired: Boolean(editingField.isRequired)
+        isRequired: Boolean(editingField.isRequired),
+        metadata: (editingField.metadata as SpecialtyTemplateField["metadata"]) ?? undefined
       }),
     onSuccess: async () => {
       toast.success("تم تحديث الحقل");
@@ -452,18 +687,23 @@ export default function SpecialtiesPage() {
   });
 
   const createRuleMutation = useMutation({
-    mutationFn: () =>
-      specialtyService.adminCreateRule(selectedTemplateId, {
-        key: newRule.key,
+    mutationFn: () => {
+      const usedRuleKeys = new Set(rules.map((rule) => rule.key));
+      const generatedRuleKey = ensureUniqueKey(sanitizeKeyBase(newRule.name, "rule"), usedRuleKeys);
+      return specialtyService.adminCreateRule(selectedTemplateId, {
+        key: generatedRuleKey,
         name: newRule.name,
         nameAr: newRule.nameAr,
         type: newRule.type,
         expression: buildExpression(newRule),
+        fieldId: newRuleFieldId ?? undefined,
         severity: newRule.type === "ALERT" ? newRule.severity : undefined
-      }),
+      });
+    },
     onSuccess: async () => {
       toast.success("تم إنشاء القاعدة");
       setNewRule(emptyRule);
+      setNewRuleFieldId(null);
       await refreshData();
     },
     onError: () => toast.error("تعذر إنشاء القاعدة")
@@ -472,7 +712,6 @@ export default function SpecialtiesPage() {
   const updateRuleMutation = useMutation({
     mutationFn: (ruleId: string) =>
       specialtyService.adminUpdateRule(ruleId, {
-        key: editingRule.key,
         name: editingRule.name,
         nameAr: editingRule.nameAr,
         type: editingRule.type,
@@ -492,6 +731,8 @@ export default function SpecialtiesPage() {
     mutationFn: (ruleId: string) => specialtyService.adminDeleteRule(ruleId),
     onSuccess: async () => {
       toast.success("تم حذف القاعدة");
+      setDeleteRuleTarget(null);
+      setEditingRuleId(null);
       await refreshData();
     },
     onError: () => toast.error("تعذر حذف القاعدة")
@@ -530,7 +771,6 @@ export default function SpecialtiesPage() {
 
     setEditingRuleId(rule.id);
     setEditingRule({
-      key: rule.key,
       name: rule.name,
       nameAr: rule.nameAr,
       type: rule.type,
@@ -540,6 +780,16 @@ export default function SpecialtiesPage() {
       message: expression.message ?? "",
       messageAr: expression.messageAr ?? ""
     });
+  };
+  const openNewRuleForField = (fieldId: string) => {
+    setNewRule(emptyRule);
+    setNewRuleFieldId(fieldId);
+    setEditingRuleId(null);
+  };
+  const openNewGlobalRule = () => {
+    setNewRule(emptyRule);
+    setNewRuleFieldId(null);
+    setEditingRuleId(null);
   };
 
   const reorderFieldsMutation = useMutation({
@@ -551,17 +801,6 @@ export default function SpecialtiesPage() {
       await refreshData();
     },
     onError: () => toast.error("تعذر إعادة ترتيب الحقول")
-  });
-
-  const reorderRulesMutation = useMutation({
-    mutationFn: async (orderedRuleIds: string[]) => {
-      if (!selectedTemplate) return;
-      await specialtyService.adminReorderRules(selectedTemplate.id, orderedRuleIds);
-    },
-    onSuccess: async () => {
-      await refreshData();
-    },
-    onError: () => toast.error("تعذر إعادة ترتيب القواعد")
   });
 
   const reorderOptionsMutation = useMutation({
@@ -790,21 +1029,31 @@ export default function SpecialtiesPage() {
                             </button>
                           </>
                         ) : (
-                          <button
-                            type="button"
-                            className={premiumIconButtonClass}
-                            onClick={() => {
-                              setEditingTemplateId(template.id);
-                              setEditingTemplate({
-                                title: template.title,
-                                titleAr: template.titleAr,
-                                isActive: template.isActive
-                              });
-                            }}
-                            aria-label="تعديل القالب"
-                          >
-                            <PencilLine size={16} />
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              className={premiumIconButtonClass}
+                              onClick={() => setPreviewTemplate(template)}
+                              aria-label={t("specialties.templates.preview")}
+                            >
+                              <Eye size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              className={premiumIconButtonClass}
+                              onClick={() => {
+                                setEditingTemplateId(template.id);
+                                setEditingTemplate({
+                                  title: template.title,
+                                  titleAr: template.titleAr,
+                                  isActive: template.isActive
+                                });
+                              }}
+                              aria-label="تعديل القالب"
+                            >
+                              <PencilLine size={16} />
+                            </button>
+                          </>
                         )}
                         {!template.isActive && editingTemplateId !== template.id ? (
                           <button type="button" className={premiumIconButtonClass} onClick={() => activateTemplateMutation.mutate(template.id)} aria-label="تفعيل القالب">
@@ -856,37 +1105,229 @@ export default function SpecialtiesPage() {
               </div>
               {selectedTemplate ? (
                 <>
+                  {mode === "templates" ? (
+                  <TooltipProvider delayDuration={120}>
                   <div className={dsPanelClass}>
-                    <p className="mb-2 text-base font-medium text-slate-700">إضافة حقل</p>
-                    <div className="grid gap-2 md:grid-cols-3">
-                      <input value={newField.key} onChange={(e) => setNewField((p) => ({ ...p, key: e.target.value }))} className={dsInputClass} placeholder="مفتاح الحقل (مثل: moasher_kotla_aljism)" />
-                      <input value={newField.label} onChange={(e) => setNewField((p) => ({ ...p, label: e.target.value }))} className={dsInputClass} placeholder="الاسم (إنجليزي)" />
-                      <input value={newField.labelAr} onChange={(e) => setNewField((p) => ({ ...p, labelAr: e.target.value }))} className={dsInputClass} placeholder="الاسم (عربي)" />
-                      <input value={newField.section} onChange={(e) => setNewField((p) => ({ ...p, section: e.target.value }))} className={dsInputClass} placeholder="القسم (إنجليزي)" />
-                      <input value={newField.sectionAr} onChange={(e) => setNewField((p) => ({ ...p, sectionAr: e.target.value }))} className={dsInputClass} placeholder="القسم (عربي)" />
-                      <select value={newField.fieldType} onChange={(e) => setNewField((p) => ({ ...p, fieldType: e.target.value as (typeof fieldTypes)[number] }))} className={dsInputClass}>
-                        {fieldTypes.map((fieldType) => <option key={fieldType} value={fieldType}>{fieldTypeLabels[fieldType]}</option>)}
-                      </select>
-                      <label className="inline-flex items-center gap-2 text-sm text-slate-700">
-                        <input type="checkbox" checked={newField.isRequired} onChange={(e) => setNewField((p) => ({ ...p, isRequired: e.target.checked }))} />
-                        مطلوب
-                      </label>
-                      <div className="md:col-span-2">
-                        <RippleButton type="button" disabled={!newField.key.trim() || !newField.label.trim() || !newField.labelAr.trim() || !newField.section.trim() || !newField.sectionAr.trim() || createFieldMutation.isPending} onClick={() => createFieldMutation.mutate()}>
-                          إضافة الحقل
-                        </RippleButton>
-                      </div>
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-base font-medium text-slate-700">شاشات الحقول</p>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={() => setCreateSectionDialogOpen(true)}
+                            className="inline-flex h-10 items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:border-orange-300 hover:text-orange-700"
+                          >
+                            <Plus size={14} />
+                            إنشاء شاشة
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">إنشاء شاشة جديدة</TooltipContent>
+                      </Tooltip>
                     </div>
-                  </div>
 
-                  <div className="space-y-4">
-                    {groupedFields.map((group, groupIndex) => (
-                      <div key={group.id} className="space-y-3">
-                        <div className={`rounded-xl border px-3 py-2 ${sectionColorClasses[groupIndex % sectionColorClasses.length]}`}>
-                          <p className="text-sm font-semibold">{group.label}</p>
-                        </div>
-                        <div className="space-y-3">
-                          {group.fields.map((field) => (
+                    <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm">
+                      <div className="grid grid-cols-[minmax(0,1.6fr)_120px_220px] items-center border-b border-slate-200 bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 px-4 py-3 text-sm font-semibold text-white">
+                        <span className="pe-2 text-right">الشاشة</span>
+                        <span className="text-center">عدد الحقول</span>
+                        <span className="text-right">إجراءات</span>
+                      </div>
+                      {sectionRows.map((row, rowIndex) => {
+                        const expanded = expandedSectionIds.includes(row.id);
+                        const isAddingHere = addFieldSectionId === row.id;
+                        return (
+                          <div key={row.id} className="border-b border-slate-200/90 last:border-b-0">
+                            <div className="grid grid-cols-[minmax(0,1.6fr)_120px_220px] items-center px-4 py-3">
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setExpandedSectionIds((prev) =>
+                                        prev.includes(row.id) ? prev.filter((id) => id !== row.id) : [...prev, row.id]
+                                      )
+                                    }
+                                    className="inline-flex w-full items-center gap-2 pe-2 text-right"
+                                    aria-label="توسيع أو طي الشاشة"
+                                  >
+                                    <ChevronDown size={14} className={cn("text-slate-500 transition", expanded ? "rotate-180" : "")} />
+                                    <span className={`rounded-lg border px-2.5 py-1 text-sm font-semibold ${sectionColorClasses[rowIndex % sectionColorClasses.length]}`}>
+                                      {row.label}
+                                    </span>
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">توسيع أو طي الشاشة</TooltipContent>
+                              </Tooltip>
+                              <span className="text-center text-base font-semibold text-slate-700">{row.fields.length}</span>
+                              <div className="flex items-center justify-end gap-2">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      className={premiumIconButtonClass}
+                                      aria-label="إضافة حقل داخل الشاشة"
+                                      onClick={() => {
+                                        setAddFieldSectionId(row.id);
+                                        setNewField((prev) => ({ ...prev, sectionId: row.id }));
+                                      }}
+                                    >
+                                      <Plus size={15} />
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">إضافة حقل داخل الشاشة</TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button
+                                      type="button"
+                                      className={premiumDeleteButtonClass}
+                                      aria-label="حذف الشاشة"
+                                      onClick={() => setSectionToDeleteId(row.id)}
+                                    >
+                                      <Trash2 size={15} />
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top">حذف الشاشة</TooltipContent>
+                                </Tooltip>
+                              </div>
+                            </div>
+
+                            {isAddingHere ? (
+                              <div className="space-y-3 border-t border-slate-100 bg-slate-50/70 p-3">
+                                <p className="text-sm font-semibold text-slate-700">إضافة حقل إلى شاشة: {row.label}</p>
+                                <div className="grid gap-2 md:grid-cols-3">
+                                  <input value={newField.label} onChange={(e) => setNewField((p) => ({ ...p, label: e.target.value }))} className={dsInputClass} placeholder="الاسم (إنجليزي)" />
+                                  <input value={newField.labelAr} onChange={(e) => setNewField((p) => ({ ...p, labelAr: e.target.value }))} className={dsInputClass} placeholder="الاسم (عربي)" />
+                                  <select value={newField.fieldType} onChange={(e) => setNewField((p) => ({ ...p, fieldType: e.target.value as (typeof fieldTypes)[number] }))} className={dsInputClass}>
+                                    {fieldTypes.map((fieldType) => <option key={fieldType} value={fieldType}>{fieldTypeLabels[fieldType]}</option>)}
+                                  </select>
+                                  <label className="inline-flex items-center gap-2 text-sm text-slate-700">
+                                    <input type="checkbox" checked={newField.isRequired} onChange={(e) => setNewField((p) => ({ ...p, isRequired: e.target.checked }))} />
+                                    مطلوب
+                                  </label>
+                                  <div className="md:col-span-2 flex items-center gap-2">
+                                    <RippleButton type="button" disabled={!newField.label.trim() || !newField.labelAr.trim() || !newField.sectionId || createFieldMutation.isPending} onClick={() => createFieldMutation.mutate()}>
+                                      إضافة الحقل
+                                    </RippleButton>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <button
+                                          type="button"
+                                          className={dsModalCancelButtonClass}
+                                          onClick={() => {
+                                            setAddFieldSectionId(null);
+                                            setNewField((prev) => ({ ...prev, sectionId: "" }));
+                                          }}
+                                        >
+                                          إلغاء
+                                        </button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top">إلغاء إضافة الحقل</TooltipContent>
+                                    </Tooltip>
+                                  </div>
+                                </div>
+                                {newField.fieldType === "GRID" ? (
+                                  <div className="space-y-3 rounded-xl border border-orange-200 bg-orange-50/40 p-3">
+                                    <p className="text-sm font-semibold text-slate-700">Grid Builder</p>
+                                    <div className="space-y-2">
+                                      <p className="text-xs font-medium text-slate-600">الأعمدة</p>
+                                      {gridColumns.map((column) => (
+                                        <div key={column.id} className="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+                                          <input
+                                            value={column.label}
+                                            onChange={(e) => setGridColumns((prev) => prev.map((item) => (item.id === column.id ? { ...item, label: e.target.value } : item)))}
+                                            className={dsInputCompactClass}
+                                            placeholder="Label"
+                                          />
+                                          <input
+                                            value={column.labelAr}
+                                            onChange={(e) => setGridColumns((prev) => prev.map((item) => (item.id === column.id ? { ...item, labelAr: e.target.value } : item)))}
+                                            className={dsInputCompactClass}
+                                            placeholder="الاسم العربي"
+                                          />
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <button
+                                                type="button"
+                                                className="h-9 rounded-lg border border-rose-200 bg-rose-50 px-2 text-xs text-rose-700"
+                                                disabled={gridColumns.length <= 1}
+                                                onClick={() => setGridColumns((prev) => prev.filter((item) => item.id !== column.id))}
+                                              >
+                                                حذف
+                                              </button>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="top">حذف العمود</TooltipContent>
+                                          </Tooltip>
+                                        </div>
+                                      ))}
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <button
+                                            type="button"
+                                            className="rounded border border-slate-200 px-2 py-1 text-sm text-slate-700"
+                                            onClick={() =>
+                                              setGridColumns((prev) => [...prev, { id: crypto.randomUUID(), label: "", labelAr: "" }])
+                                            }
+                                          >
+                                            + عمود
+                                          </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top">إضافة عمود</TooltipContent>
+                                      </Tooltip>
+                                    </div>
+                                    <div className="space-y-2">
+                                      <p className="text-xs font-medium text-slate-600">الصفوف</p>
+                                      {gridRows.map((rowItem) => (
+                                        <div key={rowItem.id} className="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+                                          <input
+                                            value={rowItem.label}
+                                            onChange={(e) => setGridRows((prev) => prev.map((item) => (item.id === rowItem.id ? { ...item, label: e.target.value } : item)))}
+                                            className={dsInputCompactClass}
+                                            placeholder="Label"
+                                          />
+                                          <input
+                                            value={rowItem.labelAr}
+                                            onChange={(e) => setGridRows((prev) => prev.map((item) => (item.id === rowItem.id ? { ...item, labelAr: e.target.value } : item)))}
+                                            className={dsInputCompactClass}
+                                            placeholder="الاسم العربي"
+                                          />
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <button
+                                                type="button"
+                                                className="h-9 rounded-lg border border-rose-200 bg-rose-50 px-2 text-xs text-rose-700"
+                                                disabled={gridRows.length <= 1}
+                                                onClick={() => setGridRows((prev) => prev.filter((item) => item.id !== rowItem.id))}
+                                              >
+                                                حذف
+                                              </button>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="top">حذف الصف</TooltipContent>
+                                          </Tooltip>
+                                        </div>
+                                      ))}
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <button
+                                            type="button"
+                                            className="rounded border border-slate-200 px-2 py-1 text-sm text-slate-700"
+                                            onClick={() =>
+                                              setGridRows((prev) => [...prev, { id: crypto.randomUUID(), label: "", labelAr: "" }])
+                                            }
+                                          >
+                                            + صف
+                                          </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top">إضافة صف</TooltipContent>
+                                      </Tooltip>
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
+
+                            {expanded ? (
+                              <div className="space-y-3 border-t border-slate-100 bg-white p-3">
+                                {row.fields.map((field) => (
                             <div
                               key={field.id}
                               className="rounded-xl border border-slate-200 bg-white p-3"
@@ -910,11 +1351,22 @@ export default function SpecialtiesPage() {
                                 <div>
                                   {editingFieldId === field.id ? (
                                     <div className="grid gap-2 md:grid-cols-2">
-                                      <input value={String(editingField.key ?? "")} onChange={(e) => setEditingField((p) => ({ ...p, key: e.target.value }))} className={dsInputCompactClass} />
                                       <input value={String(editingField.label ?? "")} onChange={(e) => setEditingField((p) => ({ ...p, label: e.target.value }))} className={dsInputCompactClass} />
                                       <input value={String(editingField.labelAr ?? "")} onChange={(e) => setEditingField((p) => ({ ...p, labelAr: e.target.value }))} className={dsInputCompactClass} />
-                                      <input value={String(editingField.section ?? "")} onChange={(e) => setEditingField((p) => ({ ...p, section: e.target.value }))} className={dsInputCompactClass} />
-                                      <input value={String(editingField.sectionAr ?? "")} onChange={(e) => setEditingField((p) => ({ ...p, sectionAr: e.target.value }))} className={dsInputCompactClass} />
+                                      <select
+                                        value={String(editingField.sectionId ?? "")}
+                                        onChange={(e) => setEditingField((p) => ({ ...p, sectionId: e.target.value }))}
+                                        className={dsInputCompactClass}
+                                      >
+                                        <option value="" disabled>
+                                          اختر الشاشة
+                                        </option>
+                                        {selectedTemplateSections.map((section) => (
+                                          <option key={section.id} value={section.id}>
+                                            {section.nameAr}
+                                          </option>
+                                        ))}
+                                      </select>
                                       <select value={String(editingField.fieldType ?? field.fieldType)} onChange={(e) => setEditingField((p) => ({ ...p, fieldType: e.target.value as SpecialtyTemplateField["fieldType"] }))} className={dsInputCompactClass}>
                                         {fieldTypes.map((type) => <option key={type} value={type}>{fieldTypeLabels[type]}</option>)}
                                       </select>
@@ -929,17 +1381,52 @@ export default function SpecialtiesPage() {
                                 <div className="flex items-center gap-2">
                                   {editingFieldId === field.id ? (
                                     <>
-                                      <button type="button" className={dsTextActionSuccessClass} onClick={() => updateFieldMutation.mutate(field.id)}>حفظ</button>
-                                      <button type="button" className={dsTextActionClass} onClick={() => setEditingFieldId(null)}>إلغاء</button>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <button type="button" className={dsTextActionSuccessClass} onClick={() => updateFieldMutation.mutate(field.id)}>حفظ</button>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top">حفظ الحقل</TooltipContent>
+                                      </Tooltip>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <button type="button" className={dsTextActionClass} onClick={() => setEditingFieldId(null)}>إلغاء</button>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top">إلغاء تعديل الحقل</TooltipContent>
+                                      </Tooltip>
                                     </>
                                   ) : (
-                                    <button type="button" className={premiumIconButtonClass} onClick={() => { setEditingFieldId(field.id); setEditingField(field); }} aria-label="تعديل الحقل">
-                                      <PencilLine size={16} />
-                                    </button>
+                                    <>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <button
+                                            type="button"
+                                            className={premiumIconButtonClass}
+                                            onClick={() => openNewRuleForField(field.id)}
+                                            aria-label="إضافة قاعدة للحقل"
+                                          >
+                                            <ClipboardList size={16} />
+                                          </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top">إضافة قاعدة للحقل</TooltipContent>
+                                      </Tooltip>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <button type="button" className={premiumIconButtonClass} onClick={() => { setEditingFieldId(field.id); setEditingField(field); }} aria-label="تعديل الحقل">
+                                            <PencilLine size={16} />
+                                          </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top">تعديل الحقل</TooltipContent>
+                                      </Tooltip>
+                                    </>
                                   )}
-                                  <button type="button" className={premiumDeleteButtonClass} onClick={() => setDeleteFieldTarget(field)} aria-label="حذف الحقل">
-                                    <Trash2 size={16} />
-                                  </button>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <button type="button" className={premiumDeleteButtonClass} onClick={() => setDeleteFieldTarget(field)} aria-label="حذف الحقل">
+                                        <Trash2 size={16} />
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top">حذف الحقل</TooltipContent>
+                                  </Tooltip>
                                 </div>
                               </div>
 
@@ -981,14 +1468,24 @@ export default function SpecialtiesPage() {
                                         ) : (
                                           <>
                                             {option.value} ({option.labelAr})
-                                            <button type="button" className={premiumIconButtonClass} onClick={() => { setEditingOptionId(option.id); setEditingOption({ value: option.value, label: option.label, labelAr: option.labelAr }); }} aria-label="تعديل الخيار">
-                                              <PencilLine size={14} />
-                                            </button>
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <button type="button" className={premiumIconButtonClass} onClick={() => { setEditingOptionId(option.id); setEditingOption({ value: option.value, label: option.label, labelAr: option.labelAr }); }} aria-label="تعديل الخيار">
+                                                  <PencilLine size={14} />
+                                                </button>
+                                              </TooltipTrigger>
+                                              <TooltipContent side="top">تعديل الخيار</TooltipContent>
+                                            </Tooltip>
                                           </>
                                         )}
-                                        <button type="button" className={premiumDeleteButtonClass} onClick={() => deleteOptionMutation.mutate(option.id)} aria-label="حذف الخيار">
-                                          <Trash2 size={14} />
-                                        </button>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <button type="button" className={premiumDeleteButtonClass} onClick={() => deleteOptionMutation.mutate(option.id)} aria-label="حذف الخيار">
+                                              <Trash2 size={14} />
+                                            </button>
+                                          </TooltipTrigger>
+                                          <TooltipContent side="top">حذف الخيار</TooltipContent>
+                                        </Tooltip>
                                       </span>
                                     ))}
                                   </div>
@@ -1000,18 +1497,253 @@ export default function SpecialtiesPage() {
                                   </form>
                                 </div>
                               ) : null}
+                              <div className="mt-3 rounded-xl border border-orange-100 bg-orange-50/40 p-3">
+                                <div className="mb-2 flex items-center justify-between gap-2">
+                                  <p className="text-sm font-semibold text-slate-700">{t("specialties.rules.fieldSection")}</p>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <button
+                                        type="button"
+                                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-orange-200 bg-white px-2 text-xs font-medium text-orange-700 transition hover:bg-orange-50"
+                                        onClick={() => openNewRuleForField(field.id)}
+                                        aria-label={t("specialties.rules.addFieldRule")}
+                                      >
+                                        <Plus size={12} />
+                                        {t("specialties.rules.addFieldRule")}
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="top">{t("specialties.rules.addFieldRule")}</TooltipContent>
+                                  </Tooltip>
+                                </div>
+                                {newRuleFieldId === field.id ? (
+                                  <div className="mb-3 grid gap-2 rounded-lg border border-slate-200 bg-white p-2">
+                                    <div className="grid gap-2 md:grid-cols-2">
+                                      <input value={newRule.name} onChange={(e) => setNewRule((p) => ({ ...p, name: e.target.value }))} className={dsInputCompactClass} placeholder="اسم القاعدة (إنجليزي)" />
+                                      <input value={newRule.nameAr} onChange={(e) => setNewRule((p) => ({ ...p, nameAr: e.target.value }))} className={dsInputCompactClass} placeholder="اسم القاعدة (عربي)" />
+                                    </div>
+                                    <div className="grid gap-2 md:grid-cols-2">
+                                      <select value={newRule.type} onChange={(e) => setNewRule((p) => ({ ...p, type: e.target.value as RuleFormState["type"] }))} className={dsInputCompactClass}>
+                                        {ruleTypes.map((type) => <option key={type} value={type}>{ruleTypeLabels[type]}</option>)}
+                                      </select>
+                                      <select value={newRule.logic} onChange={(e) => setNewRule((p) => ({ ...p, logic: e.target.value as RuleFormState["logic"] }))} className={dsInputCompactClass}>
+                                        <option value="all">و (الكل)</option>
+                                        <option value="any">أو (أي شرط)</option>
+                                      </select>
+                                    </div>
+                                    <div className="space-y-2 rounded border border-slate-200 p-2">
+                                      {newRule.conditions.map((condition, index) => (
+                                        <div key={`field-new-condition-${field.id}-${index}`} className="grid gap-2 md:grid-cols-[1.3fr_0.8fr_1fr_auto]">
+                                          <input value={condition.field} onChange={(e) => updateRuleCondition(index, "field", e.target.value)} className={dsInputCompactClass} placeholder="مفتاح الحقل" />
+                                          <select value={condition.op} onChange={(e) => updateRuleCondition(index, "op", e.target.value)} className={dsInputCompactClass}>
+                                            {operators.map((op) => <option key={op} value={op}>{operatorLabels[op]}</option>)}
+                                          </select>
+                                          <input value={condition.value} onChange={(e) => updateRuleCondition(index, "value", e.target.value)} className={dsInputCompactClass} placeholder="القيمة" />
+                                          <button type="button" className="h-8 rounded border border-slate-200 px-2 text-xs text-rose-600" onClick={() => removeRuleCondition(index)}>
+                                            حذف
+                                          </button>
+                                        </div>
+                                      ))}
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <button type="button" className="rounded border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-50" onClick={() => addRuleCondition()}>
+                                            + إضافة شرط
+                                          </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top">إضافة شرط</TooltipContent>
+                                      </Tooltip>
+                                    </div>
+                                    {newRule.type === "ALERT" ? (
+                                      <div className="grid gap-2 md:grid-cols-3">
+                                        <input value={newRule.severity} onChange={(e) => setNewRule((p) => ({ ...p, severity: e.target.value }))} className={dsInputCompactClass} placeholder="درجة الأهمية" />
+                                        <input value={newRule.message} onChange={(e) => setNewRule((p) => ({ ...p, message: e.target.value }))} className={dsInputCompactClass} placeholder="رسالة التنبيه (En)" />
+                                        <input value={newRule.messageAr} onChange={(e) => setNewRule((p) => ({ ...p, messageAr: e.target.value }))} className={dsInputCompactClass} placeholder="رسالة التنبيه (Ar)" />
+                                      </div>
+                                    ) : null}
+                                    <div className="flex items-center gap-2">
+                                      <RippleButton type="button" className="h-9 text-xs" onClick={() => createRuleMutation.mutate()} disabled={createRuleMutation.isPending} title={t("specialties.rules.addFieldRule")}>
+                                        {t("specialties.rules.addFieldRule")}
+                                      </RippleButton>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <button type="button" className={dsTextActionClass} onClick={openNewGlobalRule}>
+                                            إلغاء
+                                          </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top">إلغاء</TooltipContent>
+                                      </Tooltip>
+                                    </div>
+                                  </div>
+                                ) : null}
+                                <div className="space-y-2">
+                                  {(fieldRulesByFieldId.get(field.id) ?? []).map((rule) => (
+                                    <div key={rule.id} className="rounded-lg border border-slate-200 bg-white p-2">
+                                      {editingRuleId === rule.id ? (
+                                        <div className="grid gap-2 md:grid-cols-3">
+                                          <input value={editingRule.name} onChange={(e) => setEditingRule((p) => ({ ...p, name: e.target.value }))} className={dsInputCompactClass} />
+                                          <input value={editingRule.nameAr} onChange={(e) => setEditingRule((p) => ({ ...p, nameAr: e.target.value }))} className={dsInputCompactClass} />
+                                          <select value={editingRule.type} onChange={(e) => setEditingRule((p) => ({ ...p, type: e.target.value as RuleFormState["type"] }))} className={dsInputCompactClass}>
+                                            {ruleTypes.map((type) => <option key={type} value={type}>{ruleTypeLabels[type]}</option>)}
+                                          </select>
+                                          <select value={editingRule.logic} onChange={(e) => setEditingRule((p) => ({ ...p, logic: e.target.value as RuleFormState["logic"] }))} className={dsInputCompactClass}>
+                                            <option value="all">و (الكل)</option>
+                                            <option value="any">أو (أي شرط)</option>
+                                          </select>
+                                          <div className="md:col-span-3 rounded border border-slate-200 bg-white p-2">
+                                            <div className="space-y-2">
+                                              {editingRule.conditions.map((condition, index) => (
+                                                <div key={`field-edit-condition-${rule.id}-${index}`} className="grid gap-2 md:grid-cols-[1.3fr_0.8fr_1fr_auto]">
+                                                  <input
+                                                    value={condition.field}
+                                                    onChange={(e) => updateRuleCondition(index, "field", e.target.value, true)}
+                                                    className={dsInputCompactClass}
+                                                  />
+                                                  <select
+                                                    value={condition.op}
+                                                    onChange={(e) => updateRuleCondition(index, "op", e.target.value, true)}
+                                                    className={dsInputCompactClass}
+                                                  >
+                                                    {operators.map((op) => (
+                                                      <option key={op} value={op}>
+                                                        {operatorLabels[op]}
+                                                      </option>
+                                                    ))}
+                                                  </select>
+                                                  <input
+                                                    value={condition.value}
+                                                    onChange={(e) => updateRuleCondition(index, "value", e.target.value, true)}
+                                                    className={dsInputCompactClass}
+                                                  />
+                                                  <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                      <button
+                                                        type="button"
+                                                        className="h-8 rounded border border-slate-200 px-2 text-xs text-rose-600"
+                                                        onClick={() => removeRuleCondition(index, true)}
+                                                      >
+                                                        حذف
+                                                      </button>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent side="top">حذف الشرط</TooltipContent>
+                                                  </Tooltip>
+                                        </div>
+                                      ))}
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <button
+                                            type="button"
+                                            className="rounded border border-slate-200 px-2 py-1 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                                            onClick={() => addRuleCondition(true)}
+                                          >
+                                            + إضافة شرط
+                                          </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent side="top">إضافة شرط</TooltipContent>
+                                      </Tooltip>
+                                            </div>
+                                          </div>
+                                          <input value={editingRule.severity} onChange={(e) => setEditingRule((p) => ({ ...p, severity: e.target.value }))} className={dsInputCompactClass} />
+                                          <input value={editingRule.message} onChange={(e) => setEditingRule((p) => ({ ...p, message: e.target.value }))} className={dsInputCompactClass} />
+                                          <input value={editingRule.messageAr} onChange={(e) => setEditingRule((p) => ({ ...p, messageAr: e.target.value }))} className={dsInputCompactClass} />
+                                          <div className="flex items-center gap-2">
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <button
+                                                  type="button"
+                                                  className={dsTextActionSuccessClass}
+                                                  onClick={() => updateRuleMutation.mutate(rule.id)}
+                                                >
+                                                  حفظ
+                                                </button>
+                                              </TooltipTrigger>
+                                              <TooltipContent side="top">حفظ القاعدة</TooltipContent>
+                                            </Tooltip>
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <button type="button" className={dsTextActionClass} onClick={() => setEditingRuleId(null)}>إلغاء</button>
+                                              </TooltipTrigger>
+                                              <TooltipContent side="top">إلغاء تعديل القاعدة</TooltipContent>
+                                            </Tooltip>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center justify-between gap-2">
+                                          <div>
+                                            <p className="text-sm font-semibold text-slate-800">{rule.nameAr}</p>
+                                            <p className="text-xs text-slate-500">{rule.key} - {ruleTypeLabels[rule.type]}</p>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <button type="button" className={premiumIconButtonClass} onClick={() => startEditRule(rule)} aria-label="تعديل قاعدة الحقل">
+                                                  <PencilLine size={14} />
+                                                </button>
+                                              </TooltipTrigger>
+                                              <TooltipContent side="top">تعديل قاعدة الحقل</TooltipContent>
+                                            </Tooltip>
+                                            <Tooltip>
+                                              <TooltipTrigger asChild>
+                                                <button type="button" className={premiumDeleteButtonClass} onClick={() => setDeleteRuleTarget(rule)} aria-label="حذف قاعدة الحقل">
+                                                  <Trash2 size={14} />
+                                                </button>
+                                              </TooltipTrigger>
+                                              <TooltipContent side="top">حذف قاعدة الحقل</TooltipContent>
+                                            </Tooltip>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                  {!(fieldRulesByFieldId.get(field.id) ?? []).length ? (
+                                    <p className="text-xs text-slate-500">{t("specialties.rules.noneForField")}</p>
+                                  ) : null}
+                                </div>
+                              </div>
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                    {!selectedTemplate.fields.length ? <p className="text-sm text-slate-500">لا توجد حقول بعد.</p> : null}
+                                ))}
+                                {!row.fields.length ? <p className="text-sm text-slate-500">لا توجد حقول في هذه الشاشة.</p> : null}
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                      {!sectionRows.length ? <p className="p-3 text-sm text-slate-500">لا توجد أقسام بعد.</p> : null}
+                    </div>
+                    {unassignedFields.length ? (
+                      <p className="mt-2 text-xs text-amber-700">
+                        يوجد {unassignedFields.length} حقل بدون قسم. يمكنك تعديل الحقول وربطها بقسم من داخل القائمة.
+                      </p>
+                    ) : null}
                   </div>
+                  </TooltipProvider>
+                  ) : null}
+
+                  {mode === "rules" ? (
+                  <div className="rounded-2xl border border-orange-200/80 bg-gradient-to-br from-orange-50 via-white to-slate-50 p-5 shadow-sm">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-lg font-semibold text-slate-900">{t("specialties.rules.globalBuilder")}</p>
+                        <p className="text-sm text-slate-600">{t("specialties.rules.globalDescription")}</p>
+                      </div>
+                      <button type="button" className={premiumIconButtonClass} onClick={openNewGlobalRule} aria-label={t("specialties.rules.addGlobalRule")}>
+                        <Plus size={16} />
+                      </button>
+                    </div>
 
                   <div className={dsPanelClass}>
-                    <p className="mb-2 text-base font-medium text-slate-700">منشئ القواعد</p>
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <p className="text-base font-medium text-slate-700">{t("specialties.rules.globalBuilder")}</p>
+                      <button type="button" className={premiumIconButtonClass} onClick={openNewGlobalRule} aria-label={t("specialties.rules.addGlobalRule")}>
+                        <Plus size={14} />
+                      </button>
+                    </div>
+                    <p className="mb-2 text-xs text-slate-500">{t("specialties.rules.globalDescription")}</p>
+                    {newRuleFieldId !== null ? (
+                      <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                        يتم الآن إعداد قاعدة مرتبطة بحقل. اضغط (+) هنا لإنشاء قاعدة عامة بدلًا من ذلك.
+                      </p>
+                    ) : null}
+                    {newRuleFieldId === null ? (
                     <div className="grid gap-2 md:grid-cols-3">
-                      <input value={newRule.key} onChange={(e) => setNewRule((p) => ({ ...p, key: e.target.value }))} className={dsInputClass} placeholder="مفتاح القاعدة" />
                       <input value={newRule.name} onChange={(e) => setNewRule((p) => ({ ...p, name: e.target.value }))} className={dsInputClass} placeholder="اسم القاعدة (إنجليزي)" />
                       <input value={newRule.nameAr} onChange={(e) => setNewRule((p) => ({ ...p, nameAr: e.target.value }))} className={dsInputClass} placeholder="اسم القاعدة (عربي)" />
                       <select value={newRule.type} onChange={(e) => setNewRule((p) => ({ ...p, type: e.target.value as RuleFormState["type"] }))} className={dsInputClass}>
@@ -1070,33 +1802,18 @@ export default function SpecialtiesPage() {
                       <input value={newRule.severity} onChange={(e) => setNewRule((p) => ({ ...p, severity: e.target.value }))} className={dsInputClass} placeholder="درجة الأهمية" />
                       <input value={newRule.message} onChange={(e) => setNewRule((p) => ({ ...p, message: e.target.value }))} className={dsInputClass} placeholder="رسالة التنبيه (إنجليزي)" />
                       <input value={newRule.messageAr} onChange={(e) => setNewRule((p) => ({ ...p, messageAr: e.target.value }))} className={dsInputClass} placeholder="رسالة التنبيه (عربي)" />
-                      <RippleButton type="button" className="h-10 text-sm" onClick={() => createRuleMutation.mutate()}>إضافة قاعدة</RippleButton>
+                      <RippleButton type="button" className="h-10 text-sm" onClick={() => createRuleMutation.mutate()}>{t("specialties.rules.addGlobalRule")}</RippleButton>
                     </div>
+                    ) : null}
 
                     <div className="mt-3 space-y-2">
-                      {rules.map((rule) => (
+                      {globalRules.map((rule) => (
                         <div
                           key={rule.id}
                           className="rounded-lg border border-slate-200 bg-white p-2"
-                          draggable
-                          onDragStart={() => setDragRuleId(rule.id)}
-                          onDragOver={(event) => event.preventDefault()}
-                          onDrop={() => {
-                            if (reorderRulesMutation.isPending) return;
-                            if (!dragRuleId || dragRuleId === rule.id) return;
-                            const ordered = [...rules];
-                            const fromIndex = ordered.findIndex((item) => item.id === dragRuleId);
-                            const toIndex = ordered.findIndex((item) => item.id === rule.id);
-                            if (fromIndex < 0 || toIndex < 0) return;
-                            const [moved] = ordered.splice(fromIndex, 1);
-                            ordered.splice(toIndex, 0, moved);
-                            reorderRulesMutation.mutate(ordered.map((item) => item.id));
-                            setDragRuleId(null);
-                          }}
                         >
                           {editingRuleId === rule.id ? (
                             <div className="grid gap-2 md:grid-cols-3">
-                              <input value={editingRule.key} onChange={(e) => setEditingRule((p) => ({ ...p, key: e.target.value }))} className={dsInputCompactClass} />
                               <input value={editingRule.name} onChange={(e) => setEditingRule((p) => ({ ...p, name: e.target.value }))} className={dsInputCompactClass} />
                               <input value={editingRule.nameAr} onChange={(e) => setEditingRule((p) => ({ ...p, nameAr: e.target.value }))} className={dsInputCompactClass} />
                               <select value={editingRule.type} onChange={(e) => setEditingRule((p) => ({ ...p, type: e.target.value as RuleFormState["type"] }))} className={dsInputCompactClass}>
@@ -1178,7 +1895,7 @@ export default function SpecialtiesPage() {
                                 >
                                   <PencilLine size={16} />
                                 </button>
-                                <button type="button" className={premiumDeleteButtonClass} onClick={() => deleteRuleMutation.mutate(rule.id)} aria-label="حذف القاعدة">
+                                <button type="button" className={premiumDeleteButtonClass} onClick={() => setDeleteRuleTarget(rule)} aria-label="حذف القاعدة">
                                   <Trash2 size={16} />
                                 </button>
                               </div>
@@ -1186,9 +1903,11 @@ export default function SpecialtiesPage() {
                           )}
                         </div>
                       ))}
-                      {!rules.length ? <p className="text-base text-slate-500">لا توجد قواعد بعد.</p> : null}
+                      {!globalRules.length ? <p className="text-base text-slate-500">{t("specialties.rules.noneGlobal")}</p> : null}
                     </div>
                   </div>
+                  </div>
+                  ) : null}
                 </>
               ) : (
                 <p className="text-base text-slate-500">اختر قالبًا أولًا.</p>
@@ -1196,6 +1915,127 @@ export default function SpecialtiesPage() {
             </section>
           </div>
         </section>
+        {createSectionDialogOpen ? (
+          <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+            <button
+              type="button"
+              aria-label="إغلاق نافذة إنشاء القسم"
+              className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+              onClick={() => setCreateSectionDialogOpen(false)}
+              disabled={createSectionMutation.isPending}
+            />
+            <section className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
+              <p className="mb-3 text-base font-semibold text-slate-800">إنشاء قسم جديد</p>
+              <div className="grid gap-2">
+                <input
+                  value={newSection.nameAr}
+                  onChange={(event) => setNewSection((prev) => ({ ...prev, nameAr: event.target.value }))}
+                  className={dsInputClass}
+                  placeholder="اسم القسم (عربي)"
+                />
+                <input
+                  value={newSection.name}
+                  onChange={(event) => setNewSection((prev) => ({ ...prev, name: event.target.value }))}
+                  className={dsInputClass}
+                  placeholder="Section name (English)"
+                />
+              </div>
+              <div className="mt-4 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  className={dsModalCancelButtonClass}
+                  onClick={() => setCreateSectionDialogOpen(false)}
+                  disabled={createSectionMutation.isPending}
+                >
+                  إلغاء
+                </button>
+                <RippleButton
+                  type="button"
+                  disabled={!newSection.name.trim() || !newSection.nameAr.trim() || createSectionMutation.isPending}
+                  onClick={() => createSectionMutation.mutate()}
+                >
+                  {createSectionMutation.isPending ? "جارٍ الإنشاء..." : "إنشاء"}
+                </RippleButton>
+              </div>
+            </section>
+          </div>
+        ) : null}
+        {sectionToDelete ? (
+          <div className="fixed inset-0 z-[86] flex items-center justify-center p-4">
+            <button
+              type="button"
+              aria-label="إغلاق نافذة حذف القسم"
+              className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+              onClick={() => setSectionToDeleteId(null)}
+              disabled={deleteSectionMutation.isPending}
+            />
+            <section className="relative w-full max-w-md rounded-3xl border border-rose-100 bg-gradient-to-br from-rose-50 via-orange-50 to-white p-5 shadow-premium">
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-slate-900">تأكيد حذف القسم</p>
+                  <p className="text-sm text-slate-600">
+                    أنت على وشك حذف القسم <span className="font-semibold text-slate-800">{sectionToDelete.nameAr}</span>.
+                  </p>
+                  <p className="text-xs text-rose-700">لن يتم الحذف إذا كان القسم يحتوي على حقول مرتبطة.</p>
+                </div>
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    className={dsModalCancelButtonClass}
+                    onClick={() => setSectionToDeleteId(null)}
+                    disabled={deleteSectionMutation.isPending}
+                  >
+                    إلغاء
+                  </button>
+                  <RippleButton
+                    type="button"
+                    className="from-rose-600 to-red-500 hover:shadow-rose-500/30"
+                    onClick={() => deleteSectionMutation.mutate(sectionToDelete.id)}
+                    disabled={deleteSectionMutation.isPending}
+                  >
+                    {deleteSectionMutation.isPending ? "جارٍ الحذف..." : "حذف القسم"}
+                  </RippleButton>
+                </div>
+              </div>
+            </section>
+          </div>
+        ) : null}
+        {previewTemplate ? (
+          <div className="fixed inset-0 z-[87] flex items-center justify-center p-4">
+            <button
+              type="button"
+              aria-label={t("specialties.templates.previewClose")}
+              className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+              onClick={() => setPreviewTemplate(null)}
+            />
+            <section className="relative flex max-h-[90vh] w-full max-w-6xl flex-col rounded-3xl border border-slate-200 bg-white p-5 shadow-premium">
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">{t("specialties.templates.previewTitle")}</p>
+                  <p className="text-sm text-slate-600">
+                    الإصدار {previewTemplate.version} - {previewTemplate.titleAr || previewTemplate.title}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className={dsModalCancelButtonClass}
+                  onClick={() => setPreviewTemplate(null)}
+                >
+                  {t("specialties.templates.previewClose")}
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto pe-1">
+                <SpecialtyAssessmentForm
+                  template={previewTemplate}
+                  initialValues={{}}
+                  onSubmit={async () => {}}
+                  readOnly
+                  hideSaveAction
+                />
+              </div>
+            </section>
+          </div>
+        ) : null}
         {deleteTemplateTarget ? (
           <div className="fixed inset-0 z-[85] flex items-center justify-center p-4">
             <button
@@ -1232,6 +2072,46 @@ export default function SpecialtiesPage() {
                     disabled={deleteTemplateMutation.isPending}
                   >
                     {deleteTemplateMutation.isPending ? "جارٍ الحذف..." : "تأكيد الحذف"}
+                  </RippleButton>
+                </div>
+              </div>
+            </section>
+          </div>
+        ) : null}
+        {deleteRuleTarget ? (
+          <div className="fixed inset-0 z-[81] flex items-center justify-center p-4">
+            <button
+              type="button"
+              aria-label="إغلاق نافذة تأكيد حذف القاعدة"
+              className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+              onClick={() => setDeleteRuleTarget(null)}
+              disabled={deleteRuleMutation.isPending}
+            />
+            <section className="relative w-full max-w-lg rounded-3xl border border-rose-100 bg-gradient-to-br from-rose-50 via-orange-50 to-white p-5 shadow-premium">
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-slate-900">تأكيد حذف القاعدة</p>
+                  <p className="text-sm text-slate-600">
+                    أنت على وشك حذف القاعدة <span className="font-semibold text-slate-800">{deleteRuleTarget.nameAr || deleteRuleTarget.name || deleteRuleTarget.key}</span>.
+                  </p>
+                  <p className="text-xs text-rose-700">لا يمكن التراجع عن هذا الإجراء.</p>
+                </div>
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    className={dsModalCancelButtonClass}
+                    onClick={() => setDeleteRuleTarget(null)}
+                    disabled={deleteRuleMutation.isPending}
+                  >
+                    إلغاء
+                  </button>
+                  <RippleButton
+                    type="button"
+                    className="from-rose-600 to-red-500 hover:shadow-rose-500/30"
+                    onClick={() => deleteRuleMutation.mutate(deleteRuleTarget.id)}
+                    disabled={deleteRuleMutation.isPending}
+                  >
+                    {deleteRuleMutation.isPending ? "جارٍ الحذف..." : "تأكيد الحذف"}
                   </RippleButton>
                 </div>
               </div>
@@ -1278,6 +2158,66 @@ export default function SpecialtiesPage() {
             </section>
           </div>
         ) : null}
+      </AppShell>
+    </RoleGate>
+  );
+}
+
+function SpecialtiesTemplateRulesPage() {
+  return <SpecialtiesTemplatesPage mode="rules" />;
+}
+
+export default function SpecialtiesLandingPage() {
+  const pathname = usePathname();
+  const { t } = useI18n();
+  if (pathname === "/specialties/templates") {
+    return <SpecialtiesTemplatesPage />;
+  }
+  if (pathname === "/specialties/rules") {
+    return <SpecialtiesTemplateRulesPage />;
+  }
+
+  return (
+    <RoleGate allowed={["SuperAdmin"]} fallback={<div className="card p-6 text-base text-slate-500">{t("common.notAllowed")}</div>}>
+      <AppShell>
+        <section className="space-y-4">
+          <div className="card space-y-3 p-6">
+            <h1 className="text-3xl font-semibold text-brand-navy">{t("nav.specialties")}</h1>
+            <p className="text-base text-slate-600">{t("specialties.landing.subtitle")}</p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            <Link
+              href="/specialties/templates"
+              className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-300 hover:shadow"
+            >
+              <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-orange-100 text-orange-700">
+                <FileStack size={18} />
+              </div>
+              <p className="text-lg font-semibold text-slate-800">{t("nav.specialtiesTemplates")}</p>
+              <p className="mt-1 text-sm text-slate-600">{t("specialties.landing.templatesDescription")}</p>
+            </Link>
+            <Link
+              href="/specialties/rules"
+              className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-300 hover:shadow"
+            >
+              <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+                <Sparkles size={18} />
+              </div>
+              <p className="text-lg font-semibold text-slate-800">{t("nav.specialtiesRulesBuilder")}</p>
+              <p className="mt-1 text-sm text-slate-600">{t("specialties.landing.rulesDescription")}</p>
+            </Link>
+            <Link
+              href="/specialties/lookup"
+              className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-300 hover:shadow"
+            >
+              <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-100 text-cyan-700">
+                <ClipboardList size={18} />
+              </div>
+              <p className="text-lg font-semibold text-slate-800">{t("nav.specialtiesLookup")}</p>
+              <p className="mt-1 text-sm text-slate-600">{t("specialties.landing.lookupDescription")}</p>
+            </Link>
+          </div>
+        </section>
       </AppShell>
     </RoleGate>
   );

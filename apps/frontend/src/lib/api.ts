@@ -12,6 +12,13 @@ export const api = axios.create({
   baseURL
 });
 
+const redirectToLogin = () => {
+  storage.clearSession();
+  if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+    window.location.assign("/login");
+  }
+};
+
 api.interceptors.request.use((config) => {
   const token = storage.getAccessToken();
   if (token) {
@@ -30,7 +37,7 @@ api.interceptors.response.use(
       const refreshToken = storage.getRefreshToken();
 
       if (!refreshToken) {
-        storage.clearSession();
+        redirectToLogin();
         return Promise.reject(error);
       }
 
@@ -43,7 +50,7 @@ api.interceptors.response.use(
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
         return api(originalRequest);
       } catch (refreshError) {
-        storage.clearSession();
+        redirectToLogin();
         return Promise.reject(refreshError);
       }
     }

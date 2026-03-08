@@ -74,5 +74,9 @@ export const adminService = {
   async updateUserRole(userId: string, roleId: string) {
     const res = await api.patch<{ data: ClinicUser }>(`/admin/users/${userId}/role`, { roleId });
     return res.data.data;
+  },
+
+  async deleteUser(userId: string) {
+    await api.delete(`/admin/users/${userId}`);
   }
 };

@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Bell, Building2, Calendar, ChevronDown, ChevronLeft, ClipboardList, CreditCard, LayoutDashboard, LogOut, Settings, Stethoscope, User, UserCog, Users, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -18,10 +19,35 @@ import { authService } from "@/lib/auth-service";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { LanguageToggle } from "@/components/ui/language-toggle";
 
-const links = [
+type SidebarChildLink = {
+  href: string;
+  labelKey: string;
+};
+
+type SidebarLink = {
+  href: string;
+  labelKey: string;
+  icon: typeof LayoutDashboard;
+  requiredPermissions: string[];
+  allowedRoles?: AuthUser["role"][];
+  children?: SidebarChildLink[];
+};
+
+const links: SidebarLink[] = [
   { href: "/dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard, requiredPermissions: ["dashboard.view"] },
   { href: "/clinics", labelKey: "nav.clinics", icon: Building2, requiredPermissions: ["clinics.read"] },
-  { href: "/specialties", labelKey: "nav.specialties", icon: ClipboardList, requiredPermissions: [], allowedRoles: ["SuperAdmin"] },
+  {
+    href: "/specialties",
+    labelKey: "nav.specialties",
+    icon: ClipboardList,
+    requiredPermissions: [],
+    allowedRoles: ["SuperAdmin"],
+    children: [
+      { href: "/specialties/templates", labelKey: "nav.specialtiesTemplates" },
+      { href: "/specialties/rules", labelKey: "nav.specialtiesRulesBuilder" },
+      { href: "/specialties/lookup", labelKey: "nav.specialtiesLookup" }
+    ]
+  },
   { href: "/users", labelKey: "nav.users", icon: UserCog, requiredPermissions: ["users.read"] },
   { href: "/doctors", labelKey: "nav.doctors", icon: Stethoscope, requiredPermissions: ["doctors.read"] },
   { href: "/patients", labelKey: "nav.patients", icon: Users, requiredPermissions: ["patients.read"] },
@@ -41,9 +67,11 @@ interface SidebarProps {
 export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { t } = useI18n();
   const [user, setUser] = useState<AuthUser | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [expandedParents, setExpandedParents] = useState<Record<string, boolean>>({});
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -71,12 +99,29 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
     });
   }, [user]);
 
+  useEffect(() => {
+    setExpandedParents((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      visibleLinks.forEach((link) => {
+        if (!link.children?.length) return;
+        const hasActiveChild = link.children.some((child) => pathname.startsWith(child.href));
+        if (hasActiveChild && !next[link.href]) {
+          next[link.href] = true;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [pathname, visibleLinks]);
+
   const handleLogout = async () => {
     try {
       await authService.logout();
     } catch {
       toast.error(t("common.logoutFailed"));
     } finally {
+      queryClient.clear();
       storage.clearSession();
       onNavigate?.();
       router.replace("/login");
@@ -113,23 +158,68 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
         {visibleLinks.map((link) => {
           const Icon = link.icon;
           const active = pathname.startsWith(link.href);
-          const item = (
-            <Link
-              href={link.href}
-              onClick={onNavigate}
-              className={cn(
-                "group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-all duration-300",
-                active
-                  ? "bg-gradient-to-r from-orange-600 to-orange-500 text-white shadow-md"
-                  : "text-slate-600 hover:bg-white hover:text-slate-900 hover:shadow-soft dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-slate-100"
-              )}
+          const hasActiveChild = Boolean(link.children?.some((child) => pathname.startsWith(child.href)));
+          const isActive = active || hasActiveChild;
+          const isExpandable = !collapsed && Boolean(link.children?.length);
+          const isExpanded = expandedParents[link.href] ?? hasActiveChild;
+          const itemBaseClass = cn(
+            "group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-base transition-all duration-300",
+            isActive
+              ? "bg-gradient-to-r from-orange-600 to-orange-500 text-white shadow-md"
+              : "text-slate-600 hover:bg-white hover:text-slate-900 hover:shadow-soft dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-slate-100"
+          );
+          const item = isExpandable ? (
+            <button
+              type="button"
+              aria-label="Toggle section"
+              onClick={() =>
+                setExpandedParents((prev) => ({
+                  ...prev,
+                  [link.href]: !(prev[link.href] ?? hasActiveChild)
+                }))
+              }
+              className={cn(itemBaseClass, "w-full text-right")}
             >
               <Icon size={16} className={cn(collapsed && "mx-auto")} />
-              {!collapsed ? t(link.labelKey) : null}
+              <span className="flex-1 text-right">{t(link.labelKey)}</span>
+              <ChevronDown size={14} className={cn("transition-transform", isExpanded ? "rotate-180" : "")} />
+            </button>
+          ) : (
+            <Link href={link.href} onClick={onNavigate} className={itemBaseClass}>
+              <Icon size={16} className={cn(collapsed && "mx-auto")} />
+              {!collapsed ? <span className="flex-1 text-right">{t(link.labelKey)}</span> : null}
             </Link>
           );
 
-          if (!collapsed) return <div key={link.href}>{item}</div>;
+          if (!collapsed) {
+            return (
+              <div key={link.href} className="space-y-1">
+                {item}
+                {link.children?.length && isExpanded ? (
+                  <div className="ms-4 space-y-1 border-s-2 border-slate-200 pe-1 ps-3 dark:border-slate-700">
+                    {link.children.map((child) => {
+                      const childActive = pathname.startsWith(child.href);
+                      return (
+                        <Link
+                          key={child.href}
+                          href={child.href}
+                          onClick={onNavigate}
+                          className={cn(
+                            "block rounded-xl px-3 py-2 text-sm font-medium transition",
+                            childActive
+                              ? "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-200"
+                              : "text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                          )}
+                        >
+                          {t(child.labelKey)}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            );
+          }
           return (
             <Tooltip key={link.href}>
               <TooltipTrigger asChild>{item}</TooltipTrigger>

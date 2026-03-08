@@ -1,4 +1,4 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, VisitEntryType } from "@prisma/client";
 import { prisma } from "../config/prisma";
 import { AppError } from "../utils/app-error";
 
@@ -10,6 +10,34 @@ type Condition = {
   value?: unknown;
   any?: Condition[];
   all?: Condition[];
+};
+
+interface RequesterContext {
+  userId?: string;
+  role?: string;
+}
+
+const assertDoctorPatientAccess = async (patientId: string, clinicId: string, requester?: RequesterContext) => {
+  if (!requester || requester.role !== "Doctor" || !requester.userId) return;
+
+  const linkedAppointment = await prisma.appointment.findFirst({
+    where: {
+      clinicId,
+      patientId,
+      deletedAt: null,
+      doctor: {
+        is: {
+          userId: requester.userId,
+          deletedAt: null
+        }
+      }
+    },
+    select: { id: true }
+  });
+
+  if (!linkedAppointment) {
+    throw new AppError("You are not allowed to access this patient's specialty assessment", 403);
+  }
 };
 
 const toNumber = (value: unknown) => {
@@ -114,7 +142,7 @@ const evaluateComputes = (rules: Array<{ key: string; expression: Dict }>, value
 };
 
 export const patientSpecialtyService = {
-  async getTemplate(patientId: string, clinicId: string | undefined, specialtyCode: string) {
+  async getTemplate(patientId: string, clinicId: string | undefined, specialtyCode: string, requester?: RequesterContext) {
     const patient = await prisma.patient.findFirst({
       where: {
         id: patientId,
@@ -124,6 +152,7 @@ export const patientSpecialtyService = {
       select: { id: true, clinicId: true }
     });
     if (!patient) throw new AppError("Patient not found", 404);
+    await assertDoctorPatientAccess(patient.id, patient.clinicId, requester);
 
     const specialty = await prisma.specialtyCatalog.findFirst({
       where: { code: specialtyCode.toUpperCase(), isActive: true, deletedAt: null },
@@ -167,11 +196,17 @@ export const patientSpecialtyService = {
     return { patient, specialty, template };
   },
 
-  async getAssessment(patientId: string, clinicId: string | undefined, specialtyCode: string) {
-    const { patient, specialty, template } = await this.getTemplate(patientId, clinicId, specialtyCode);
+  async getAssessment(
+    patientId: string,
+    clinicId: string | undefined,
+    specialtyCode: string,
+    entryType: VisitEntryType,
+    requester?: RequesterContext
+  ) {
+    const { patient, specialty, template } = await this.getTemplate(patientId, clinicId, specialtyCode, requester);
 
     const assessment = await prisma.patientSpecialtyAssessment.findFirst({
-      where: { patientId: patient.id, specialtyId: specialty.id }
+      where: { patientId: patient.id, specialtyId: specialty.id, entryType }
     });
 
     return {
@@ -181,8 +216,15 @@ export const patientSpecialtyService = {
     };
   },
 
-  async upsertAssessment(patientId: string, clinicId: string | undefined, specialtyCode: string, values: Dict) {
-    const { patient, specialty, template } = await this.getTemplate(patientId, clinicId, specialtyCode);
+  async upsertAssessment(
+    patientId: string,
+    clinicId: string | undefined,
+    specialtyCode: string,
+    values: Dict,
+    entryType: VisitEntryType,
+    requester?: RequesterContext
+  ) {
+    const { patient, specialty, template } = await this.getTemplate(patientId, clinicId, specialtyCode, requester);
 
     const computeRules = template.rules
       .filter((rule) => rule.type === "COMPUTE")
@@ -224,12 +266,14 @@ export const patientSpecialtyService = {
 
     return prisma.patientSpecialtyAssessment.upsert({
       where: {
-        patientId_specialtyId: {
+        patientId_specialtyId_entryType: {
           patientId: patient.id,
-          specialtyId: specialty.id
+          specialtyId: specialty.id,
+          entryType
         }
       },
       update: {
+        entryType,
         templateId: template.id,
         values: toJson(mergedValues),
         computed: toJson(computed),
@@ -240,6 +284,7 @@ export const patientSpecialtyService = {
         patientId: patient.id,
         clinicId: patient.clinicId,
         specialtyId: specialty.id,
+        entryType,
         templateId: template.id,
         values: toJson(mergedValues),
         computed: toJson(computed),

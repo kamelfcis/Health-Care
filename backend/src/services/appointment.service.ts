@@ -1,20 +1,34 @@
-import { AppointmentStatus } from "@prisma/client";
+import { AppointmentStatus, VisitEntryType } from "@prisma/client";
 import { prisma } from "../config/prisma";
+import { AppError } from "../utils/app-error";
 
 interface ListInput {
   clinicId?: string;
+  doctorUserId?: string;
   page: number;
   pageSize: number;
   search?: string;
   status?: AppointmentStatus;
+  entryType?: VisitEntryType;
 }
 
 export const appointmentService = {
   async list(input: ListInput) {
     const where = {
       ...(input.clinicId ? { clinicId: input.clinicId } : {}),
+      ...(input.doctorUserId
+        ? {
+            doctor: {
+              is: {
+                userId: input.doctorUserId,
+                deletedAt: null
+              }
+            }
+          }
+        : {}),
       deletedAt: null,
       ...(input.status ? { status: input.status } : {}),
+      ...(input.entryType ? { entryType: input.entryType } : {}),
       ...(input.search
         ? {
             OR: [
@@ -46,23 +60,42 @@ export const appointmentService = {
     return { data: items, total, page: input.page, pageSize: input.pageSize, totalPages };
   },
 
-  create(
+  async create(
     clinicId: string,
     data: {
       doctorId: string;
       patientId: string;
       startsAt: string;
       endsAt: string;
+      entryType?: VisitEntryType;
       reason?: string;
       notes?: string;
       status?: AppointmentStatus;
     }
   ) {
+    const [doctor, patient] = await Promise.all([
+      prisma.doctor.findFirst({
+        where: { id: data.doctorId, clinicId, deletedAt: null },
+        select: { id: true }
+      }),
+      prisma.patient.findFirst({
+        where: { id: data.patientId, clinicId, deletedAt: null },
+        select: { id: true }
+      })
+    ]);
+    if (!doctor) {
+      throw new AppError("Doctor not found in this clinic", 404);
+    }
+    if (!patient) {
+      throw new AppError("Patient not found in this clinic", 404);
+    }
+
     return prisma.appointment.create({
       data: {
         clinicId,
         doctorId: data.doctorId,
         patientId: data.patientId,
+        entryType: data.entryType ?? "EXAM",
         startsAt: new Date(data.startsAt),
         endsAt: new Date(data.endsAt),
         reason: data.reason || null,
@@ -72,16 +105,72 @@ export const appointmentService = {
     });
   },
 
-  update(id: string, clinicId: string, data: Record<string, unknown>) {
-    return prisma.appointment.updateMany({
+  async update(
+    id: string,
+    clinicId: string,
+    data: {
+      doctorId?: string;
+      patientId?: string;
+      startsAt?: string;
+      endsAt?: string;
+      entryType?: VisitEntryType;
+      reason?: string;
+      notes?: string;
+      status?: AppointmentStatus;
+    }
+  ) {
+    const appointment = await prisma.appointment.findFirst({
       where: { id, clinicId, deletedAt: null },
-      data
+      select: { id: true, clinicId: true }
+    });
+    if (!appointment) {
+      throw new AppError("Appointment not found", 404);
+    }
+
+    if (data.doctorId) {
+      const doctor = await prisma.doctor.findFirst({
+        where: { id: data.doctorId, clinicId, deletedAt: null },
+        select: { id: true }
+      });
+      if (!doctor) {
+        throw new AppError("Doctor not found in this clinic", 404);
+      }
+    }
+    if (data.patientId) {
+      const patient = await prisma.patient.findFirst({
+        where: { id: data.patientId, clinicId, deletedAt: null },
+        select: { id: true }
+      });
+      if (!patient) {
+        throw new AppError("Patient not found in this clinic", 404);
+      }
+    }
+
+    return prisma.appointment.update({
+      where: { id: appointment.id },
+      data: {
+        ...(data.doctorId ? { doctorId: data.doctorId } : {}),
+        ...(data.patientId ? { patientId: data.patientId } : {}),
+        ...(data.entryType ? { entryType: data.entryType } : {}),
+        ...(data.startsAt ? { startsAt: new Date(data.startsAt) } : {}),
+        ...(data.endsAt ? { endsAt: new Date(data.endsAt) } : {}),
+        ...(data.reason !== undefined ? { reason: data.reason || null } : {}),
+        ...(data.notes !== undefined ? { notes: data.notes || null } : {}),
+        ...(data.status ? { status: data.status } : {})
+      }
     });
   },
 
-  remove(id: string, clinicId: string) {
-    return prisma.appointment.updateMany({
+  async remove(id: string, clinicId: string) {
+    const appointment = await prisma.appointment.findFirst({
       where: { id, clinicId, deletedAt: null },
+      select: { id: true }
+    });
+    if (!appointment) {
+      throw new AppError("Appointment not found", 404);
+    }
+    return prisma.appointment.update({
+      where: { id: appointment.id },
       data: { deletedAt: new Date(), status: "CANCELLED" }
     });
   }

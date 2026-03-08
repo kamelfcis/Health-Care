@@ -6,6 +6,7 @@ interface InvoicePatient {
 
 export interface BillingListItem {
   id: string;
+  clinicId: string;
   invoiceNumber: string;
   amount: number;
   status: string;

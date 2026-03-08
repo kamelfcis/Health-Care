@@ -69,5 +69,6 @@ router.patch(
   validate(updateUserRoleSchema),
   asyncHandler(adminController.updateUserRole)
 );
+router.delete("/users/:id", requireAuth, requirePermissions("users.manage"), asyncHandler(adminController.deleteUser));
 
 export default router;

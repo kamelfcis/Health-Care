@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarClock, Stethoscope, Users, Wallet } from "lucide-react";
+import Link from "next/link";
+import { Building2, Calendar, CalendarClock, ClipboardList, CreditCard, LayoutDashboard, Settings, Stethoscope, UserCog, Users, Wallet } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { StatCard } from "@/components/ui/stat-card";
 import { AppShell } from "@/components/layout/app-shell";
@@ -12,6 +13,7 @@ import { RippleButton } from "@/components/ui/ripple-button";
 import { AdvancedSearch } from "@/components/ui/AdvancedSearch";
 import { adminService } from "@/lib/admin-service";
 import { clinicService } from "@/lib/clinic-service";
+import { formatCurrency } from "@/lib/currency-format";
 import { DashboardMetrics, dashboardService } from "@/lib/dashboard-service";
 import { storage } from "@/lib/storage";
 import { RoleDefinition, RoleName } from "@/types";
@@ -38,6 +40,14 @@ interface ClinicUserRow {
   createdAt?: string;
 }
 
+type QuickActionConfig = {
+  href: string;
+  labelKey: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  requiredPermission?: string;
+  allowedRoles?: RoleName[];
+};
+
 export default function DashboardPage() {
   const { t } = useI18n();
   const queryClient = useQueryClient();
@@ -53,7 +63,11 @@ export default function DashboardPage() {
     totalPatients: 0,
     appointmentsToday: 0,
     activeDoctors: 0,
-    outstandingInvoices: 0
+    outstandingInvoices: 0,
+    totalUsers: 0,
+    usersCreatedThisWeek: 0,
+    invoicesPaidCount: 0,
+    invoicesPendingCount: 0
   };
 
   const [form, setForm] = useState<NewUserForm>({
@@ -69,15 +83,21 @@ export default function DashboardPage() {
   const [usersFromDate, setUsersFromDate] = useState("");
   const [usersToDate, setUsersToDate] = useState("");
 
-  const metricsQuery = useQuery({
-    queryKey: ["dashboard", "metrics", selectedClinicId],
-    queryFn: () => dashboardService.getMetrics(selectedClinicId === "all" ? undefined : selectedClinicId)
-  });
-
   const clinicsQuery = useQuery({
     queryKey: ["clinics", "for-filter"],
     queryFn: () => clinicService.list(),
     enabled: isSuperAdmin
+  });
+  const myClinicQuery = useQuery({
+    queryKey: ["settings", "clinic-me"],
+    queryFn: () => clinicService.getMyClinic(),
+    enabled: !isSuperAdmin
+  });
+  const clinicScopeForMetrics = isSuperAdmin ? (selectedClinicId === "all" ? undefined : selectedClinicId) : myClinicQuery.data?.id;
+  const metricsQuery = useQuery({
+    queryKey: ["dashboard", "metrics", clinicScopeForMetrics ?? "mine-pending"],
+    queryFn: () => dashboardService.getMetrics(clinicScopeForMetrics),
+    enabled: isSuperAdmin || Boolean(myClinicQuery.data?.id)
   });
 
   const rolesQuery = useQuery({
@@ -137,6 +157,49 @@ export default function DashboardPage() {
     });
   }, [users, usersSearch, usersRoleFilter, usersFromDate, usersToDate]);
 
+  const selectedCurrencyCode = useMemo(() => {
+    if (isSuperAdmin) {
+      if (selectedClinicId === "all") return "USD";
+      const selectedClinic = (clinicsQuery.data ?? []).find((clinic) => clinic.id === selectedClinicId);
+      return (selectedClinic?.currencyCode ?? "USD").toUpperCase();
+    }
+    return (myClinicQuery.data?.currencyCode ?? "USD").toUpperCase();
+  }, [clinicsQuery.data, isSuperAdmin, myClinicQuery.data?.currencyCode, selectedClinicId]);
+
+  const outstandingInvoicesDisplay = useMemo(
+    () => formatCurrency(metrics.outstandingInvoices, selectedCurrencyCode),
+    [metrics.outstandingInvoices, selectedCurrencyCode]
+  );
+  const quickActionConfig = useMemo<QuickActionConfig[]>(
+    () => [
+      { href: "/dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard, requiredPermission: "dashboard.view" },
+      { href: "/clinics", labelKey: "nav.clinics", icon: Building2, requiredPermission: "clinics.read" },
+      { href: "/specialties", labelKey: "nav.specialties", icon: ClipboardList, allowedRoles: ["SuperAdmin"] },
+      { href: "/specialties/templates", labelKey: "nav.specialtiesTemplates", icon: ClipboardList, allowedRoles: ["SuperAdmin"] },
+      { href: "/specialties/rules", labelKey: "nav.specialtiesRulesBuilder", icon: ClipboardList, allowedRoles: ["SuperAdmin"] },
+      { href: "/specialties/lookup", labelKey: "nav.specialtiesLookup", icon: ClipboardList, allowedRoles: ["SuperAdmin"] },
+      { href: "/users", labelKey: "nav.users", icon: UserCog, requiredPermission: "users.read" },
+      { href: "/doctors", labelKey: "nav.doctors", icon: Stethoscope, requiredPermission: "doctors.read" },
+      { href: "/patients", labelKey: "nav.patients", icon: Users, requiredPermission: "patients.read" },
+      { href: "/appointments", labelKey: "nav.appointments", icon: Calendar, requiredPermission: "appointments.read" },
+      { href: "/billing", labelKey: "nav.billing", icon: CreditCard, requiredPermission: "billing.read" },
+      { href: "/payments", labelKey: "nav.payments", icon: Wallet, requiredPermission: "payments.read" },
+      { href: "/dashboard/leads", labelKey: "nav.leads", icon: ClipboardList, requiredPermission: "leads.read" },
+      { href: "/settings", labelKey: "nav.settings", icon: Settings }
+    ],
+    []
+  );
+  const quickActions = useMemo(() => {
+    return quickActionConfig.filter((action) => {
+      if (!currentUser) return false;
+      if (action.allowedRoles?.length && !action.allowedRoles.includes(currentUser.role)) {
+        return false;
+      }
+      if (!action.requiredPermission) return true;
+      return hasPermission(currentUser, action.requiredPermission);
+    });
+  }, [currentUser, quickActionConfig]);
+
   useEffect(() => {
     if (!form.roleId && roles.length) {
       setForm((prev) => ({ ...prev, roleId: roles[0].id }));
@@ -174,6 +237,33 @@ export default function DashboardPage() {
           </div>
         </section>
       ) : null}
+      <section className="mb-4 card bg-white/80 p-5">
+        <h2 className="text-lg font-semibold text-brand-navy">{t("dashboard.quickActionsTitle")}</h2>
+        <p className="mt-1 text-sm text-slate-600">{t("dashboard.quickActionsDescription")}</p>
+        {quickActions.length ? (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {quickActions.map((action) => {
+              const ActionIcon = action.icon;
+              return (
+                <Link
+                  key={action.href}
+                  href={action.href}
+                  className="group flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-700 transition hover:border-orange-300 hover:shadow-soft"
+                >
+                  <span className="text-sm font-semibold">{t(action.labelKey)}</span>
+                  <span className="rounded-xl bg-orange-100 p-2 text-orange-600 transition group-hover:bg-orange-500 group-hover:text-white">
+                    <ActionIcon size={16} />
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+            {t("dashboard.quickActionsEmpty")}
+          </div>
+        )}
+      </section>
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {loading ? (
           <Skeleton className="h-28 rounded-2xl" />
@@ -202,8 +292,7 @@ export default function DashboardPage() {
         ) : (
           <StatCard
             title={t("dashboard.outstandingInvoices")}
-            value={metrics.outstandingInvoices}
-            prefix="$"
+            value={outstandingInvoicesDisplay}
             icon={<Wallet size={17} />}
             gradientClassName="bg-gradient-to-br from-amber-50 via-white to-orange-100"
             iconClassName="bg-orange-500"
@@ -223,11 +312,51 @@ export default function DashboardPage() {
           )}
         </RoleGate>
       </section>
-      <section className="mt-4 card bg-white/75 p-6 backdrop-blur-xl">
-        <h2 className="text-lg font-semibold text-brand-navy">{t("dashboard.operationalOverview")}</h2>
-        <p className="mt-2 text-sm text-slate-600">
-          {t("dashboard.operationalOverviewBody")}
-        </p>
+      <section className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {loading ? (
+          <Skeleton className="h-24 rounded-2xl" />
+        ) : (
+          <StatCard
+            title={t("dashboard.totalUsers")}
+            value={metrics.totalUsers}
+            icon={<UserCog size={17} />}
+            gradientClassName="bg-gradient-to-br from-indigo-50 via-white to-blue-100"
+            iconClassName="bg-indigo-500"
+          />
+        )}
+        {loading ? (
+          <Skeleton className="h-24 rounded-2xl" />
+        ) : (
+          <StatCard
+            title={t("dashboard.usersCreatedThisWeek")}
+            value={metrics.usersCreatedThisWeek}
+            icon={<Users size={17} />}
+            gradientClassName="bg-gradient-to-br from-sky-50 via-white to-cyan-100"
+            iconClassName="bg-sky-500"
+          />
+        )}
+        {loading ? (
+          <Skeleton className="h-24 rounded-2xl" />
+        ) : (
+          <StatCard
+            title={t("dashboard.invoicesPaidCount")}
+            value={metrics.invoicesPaidCount}
+            icon={<CreditCard size={17} />}
+            gradientClassName="bg-gradient-to-br from-emerald-50 via-white to-lime-100"
+            iconClassName="bg-emerald-500"
+          />
+        )}
+        {loading ? (
+          <Skeleton className="h-24 rounded-2xl" />
+        ) : (
+          <StatCard
+            title={t("dashboard.invoicesPendingCount")}
+            value={metrics.invoicesPendingCount}
+            icon={<Wallet size={17} />}
+            gradientClassName="bg-gradient-to-br from-rose-50 via-white to-orange-100"
+            iconClassName="bg-rose-500"
+          />
+        )}
       </section>
       <RoleGate requiredPermissions={["users.manage"]}>
         <section className="mt-4 grid gap-4 xl:grid-cols-3">

@@ -23,6 +23,7 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   { key: "appointments.manage", label: "Manage appointments", category: "appointments" },
   { key: "medical_records.read", label: "View medical records", category: "medical_records" },
   { key: "medical_records.manage", label: "Manage medical records", category: "medical_records" },
+  { key: "specialty_assessments.manage", label: "Manage specialty assessments", category: "medical_records" },
   { key: "billing.read", label: "View billing", category: "billing" },
   { key: "billing.manage", label: "Manage billing", category: "billing" },
   { key: "payments.read", label: "View payments", category: "payments" },
@@ -64,6 +65,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     "appointments.manage",
     "medical_records.read",
     "medical_records.manage",
+    "specialty_assessments.manage",
     "leads.read"
   ],
   Nurse: [

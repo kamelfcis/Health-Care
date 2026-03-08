@@ -5,8 +5,10 @@ export const dashboardService = {
     const now = new Date();
     const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - 7);
 
-    const [totalPatients, appointmentsToday, activeDoctors, outstandingInvoiceAgg] = await Promise.all([
+    const [totalPatients, appointmentsToday, activeDoctors, outstandingInvoiceAgg, totalUsers, usersCreatedThisWeek, invoicesPaidCount, invoicesPendingCount] = await Promise.all([
       prisma.patient.count({
         where: { ...(clinicId ? { clinicId } : {}), deletedAt: null }
       }),
@@ -27,6 +29,38 @@ export const dashboardService = {
           status: { not: "PAID" }
         },
         _sum: { amount: true }
+      }),
+      prisma.user.count({
+        where: {
+          ...(clinicId ? { clinicId } : {}),
+          deletedAt: null
+        }
+      }),
+      prisma.user.count({
+        where: {
+          ...(clinicId ? { clinicId } : {}),
+          deletedAt: null,
+          createdAt: {
+            gte: weekStart,
+            lt: now
+          }
+        }
+      }),
+      prisma.invoice.count({
+        where: {
+          ...(clinicId ? { clinicId } : {}),
+          deletedAt: null,
+          status: "PAID"
+        }
+      }),
+      prisma.invoice.count({
+        where: {
+          ...(clinicId ? { clinicId } : {}),
+          deletedAt: null,
+          status: {
+            in: ["PENDING", "OVERDUE", "DRAFT"]
+          }
+        }
       })
     ]);
 
@@ -34,7 +68,11 @@ export const dashboardService = {
       totalPatients,
       appointmentsToday,
       activeDoctors,
-      outstandingInvoices: outstandingInvoiceAgg._sum.amount ?? 0
+      outstandingInvoices: outstandingInvoiceAgg._sum.amount ?? 0,
+      totalUsers,
+      usersCreatedThisWeek,
+      invoicesPaidCount,
+      invoicesPendingCount
     };
   }
 };

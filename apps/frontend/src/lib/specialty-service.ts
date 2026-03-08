@@ -7,6 +7,7 @@ export interface SpecialtyCatalogItem {
   nameAr: string;
   description?: string | null;
   isActive: boolean;
+  deletedAt?: string | null;
 }
 
 export interface ClinicSpecialtyItem {
@@ -26,8 +27,30 @@ export interface SpecialtyTemplateFieldOption {
   displayOrder: number;
 }
 
+export interface GridColumnConfig {
+  key: string;
+  label: string;
+  labelAr: string;
+  order: number;
+}
+
+export interface GridMetadata {
+  rowKey: string;
+  columns: GridColumnConfig[];
+}
+
+export interface SpecialtyTemplateSection {
+  id: string;
+  templateId: string;
+  key: string;
+  name: string;
+  nameAr: string;
+  displayOrder: number;
+}
+
 export interface SpecialtyTemplateField {
   id: string;
+  sectionId?: string | null;
   key: string;
   label: string;
   labelAr: string;
@@ -39,12 +62,13 @@ export interface SpecialtyTemplateField {
   helpText?: string | null;
   helpTextAr?: string | null;
   visibleWhen?: Record<string, unknown> | null;
-  metadata?: Record<string, unknown> | null;
+  metadata?: (Record<string, unknown> & { grid?: GridMetadata }) | null;
   options: SpecialtyTemplateFieldOption[];
 }
 
 export interface SpecialtyTemplateRule {
   id: string;
+  fieldId?: string | null;
   key: string;
   name: string;
   nameAr: string;
@@ -60,6 +84,7 @@ export interface SpecialtyRulePayload {
   nameAr: string;
   type: "ALERT" | "DIAGNOSIS" | "COMPUTE";
   expression: Record<string, unknown>;
+  fieldId?: string;
   severity?: string;
   displayOrder?: number;
 }
@@ -71,6 +96,7 @@ export interface SpecialtyTemplate {
   isActive: boolean;
   title: string;
   titleAr: string;
+  sections: SpecialtyTemplateSection[];
   fields: SpecialtyTemplateField[];
   rules: SpecialtyTemplateRule[];
 }
@@ -86,10 +112,46 @@ export interface SpecialtyAssessment {
   updatedAt: string;
 }
 
+export type VisitEntryType = "EXAM" | "CONSULTATION";
+
 export const specialtyService = {
   async listCatalog() {
     const res = await api.get<{ data: SpecialtyCatalogItem[] }>("/specialties/catalog");
     return res.data.data;
+  },
+
+  async adminListCatalog() {
+    const res = await api.get<{ data: SpecialtyCatalogItem[] }>("/specialties/admin/catalog");
+    return res.data.data;
+  },
+
+  async adminCreateCatalog(payload: {
+    code: string;
+    name: string;
+    nameAr: string;
+    description?: string;
+    isActive?: boolean;
+  }) {
+    const res = await api.post<{ data: SpecialtyCatalogItem }>("/specialties/admin/catalog", payload);
+    return res.data.data;
+  },
+
+  async adminUpdateCatalog(
+    specialtyId: string,
+    payload: Partial<{
+      code: string;
+      name: string;
+      nameAr: string;
+      description: string | null;
+      isActive: boolean;
+    }>
+  ) {
+    const res = await api.patch<{ data: SpecialtyCatalogItem }>(`/specialties/admin/catalog/${specialtyId}`, payload);
+    return res.data.data;
+  },
+
+  async adminDeleteCatalog(specialtyId: string) {
+    await api.delete(`/specialties/admin/catalog/${specialtyId}`);
   },
 
   async listMyClinicSpecialties(clinicId?: string) {
@@ -124,10 +186,15 @@ export const specialtyService = {
     return res.data.data;
   },
 
-  async getPatientSpecialtyAssessment(patientId: string, specialtyCode: string, clinicId?: string) {
+  async getPatientSpecialtyAssessment(
+    patientId: string,
+    specialtyCode: string,
+    entryType: VisitEntryType = "EXAM",
+    clinicId?: string
+  ) {
     const res = await api.get<{ data: { specialty: SpecialtyCatalogItem; template: SpecialtyTemplate; assessment: SpecialtyAssessment | null } }>(
       `/patients/${patientId}/specialties/${specialtyCode}/assessment`,
-      { params: clinicId ? { clinicId } : undefined }
+      { params: { entryType, ...(clinicId ? { clinicId } : {}) } }
     );
     return res.data.data;
   },
@@ -136,11 +203,12 @@ export const specialtyService = {
     patientId: string,
     specialtyCode: string,
     values: Record<string, unknown>,
+    entryType: VisitEntryType = "EXAM",
     clinicId?: string
   ) {
     const res = await api.put<{ data: SpecialtyAssessment }>(
       `/patients/${patientId}/specialties/${specialtyCode}/assessment`,
-      { values },
+      { values, entryType },
       { params: clinicId ? { clinicId } : undefined }
     );
     return res.data.data;
@@ -188,13 +256,13 @@ export const specialtyService = {
       key: string;
       label: string;
       labelAr: string;
-      section: string;
-      sectionAr: string;
+      sectionId: string;
       fieldType: SpecialtyTemplateField["fieldType"];
       isRequired?: boolean;
       displayOrder?: number;
       helpText?: string;
       helpTextAr?: string;
+      metadata?: SpecialtyTemplateField["metadata"];
     }
   ) {
     const res = await api.post<{ data: SpecialtyTemplateField }>(
@@ -210,6 +278,7 @@ export const specialtyService = {
       key: string;
       label: string;
       labelAr: string;
+      sectionId: string | null;
       section: string;
       sectionAr: string;
       fieldType: SpecialtyTemplateField["fieldType"];
@@ -217,6 +286,7 @@ export const specialtyService = {
       displayOrder: number;
       helpText: string;
       helpTextAr: string;
+      metadata: SpecialtyTemplateField["metadata"] | null;
     }>
   ) {
     const res = await api.patch<{ data: SpecialtyTemplateField }>(`/specialties/admin/fields/${fieldId}`, payload);
@@ -276,9 +346,57 @@ export const specialtyService = {
     return res.data.data;
   },
 
-  async adminListRules(templateId: string) {
-    const res = await api.get<{ data: SpecialtyTemplateRule[] }>(`/specialties/admin/templates/${templateId}/rules`);
+  async adminListRules(templateId: string, fieldId?: string) {
+    const res = await api.get<{ data: SpecialtyTemplateRule[] }>(`/specialties/admin/templates/${templateId}/rules`, {
+      params: fieldId ? { fieldId } : undefined
+    });
     return res.data.data;
+  },
+
+  async adminListSections(templateId: string) {
+    const res = await api.get<{ data: SpecialtyTemplateSection[] }>(`/specialties/admin/templates/${templateId}/sections`);
+    return res.data.data;
+  },
+
+  async adminCreateSection(
+    templateId: string,
+    payload: {
+      key: string;
+      name: string;
+      nameAr: string;
+      displayOrder?: number;
+    }
+  ) {
+    const res = await api.post<{ data: SpecialtyTemplateSection }>(
+      `/specialties/admin/templates/${templateId}/sections`,
+      payload
+    );
+    return res.data.data;
+  },
+
+  async adminUpdateSection(
+    sectionId: string,
+    payload: Partial<{
+      key: string;
+      name: string;
+      nameAr: string;
+      displayOrder: number;
+    }>
+  ) {
+    const res = await api.patch<{ data: SpecialtyTemplateSection }>(`/specialties/admin/sections/${sectionId}`, payload);
+    return res.data.data;
+  },
+
+  async adminReorderSections(templateId: string, sectionIds: string[]) {
+    const res = await api.patch<{ data: SpecialtyTemplateSection[] }>(
+      `/specialties/admin/templates/${templateId}/sections/reorder`,
+      { sectionIds }
+    );
+    return res.data.data;
+  },
+
+  async adminDeleteSection(sectionId: string) {
+    await api.delete(`/specialties/admin/sections/${sectionId}`);
   },
 
   async adminCreateRule(templateId: string, payload: SpecialtyRulePayload) {
@@ -294,6 +412,7 @@ export const specialtyService = {
       nameAr: string;
       type: "ALERT" | "DIAGNOSIS" | "COMPUTE";
       expression: Record<string, unknown>;
+      fieldId: string | null;
       severity: string | null;
       displayOrder: number;
     }>

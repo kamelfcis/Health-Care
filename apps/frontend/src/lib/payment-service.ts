@@ -6,6 +6,7 @@ interface PaymentInvoice {
 
 export interface PaymentListItem {
   id: string;
+  clinicId: string;
   amount: number;
   method: string;
   status: string;

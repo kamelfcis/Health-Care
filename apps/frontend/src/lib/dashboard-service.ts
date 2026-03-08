@@ -5,6 +5,10 @@ export interface DashboardMetrics {
   appointmentsToday: number;
   activeDoctors: number;
   outstandingInvoices: number;
+  totalUsers: number;
+  usersCreatedThisWeek: number;
+  invoicesPaidCount: number;
+  invoicesPendingCount: number;
 }
 
 export const dashboardService = {

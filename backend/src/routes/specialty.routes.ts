@@ -15,7 +15,31 @@ const replaceSchema = z.object({
 });
 
 router.get("/catalog", asyncHandler(specialtyController.listCatalog));
-router.get("/clinic/me", requireAuth, allowRoles("ClinicAdmin", "SuperAdmin"), asyncHandler(specialtyController.myClinicSpecialties));
+router.get(
+  "/admin/catalog",
+  requireAuth,
+  allowRoles("SuperAdmin"),
+  asyncHandler(specialtyController.adminListCatalog)
+);
+router.post(
+  "/admin/catalog",
+  requireAuth,
+  allowRoles("SuperAdmin"),
+  asyncHandler(specialtyController.adminCreateCatalog)
+);
+router.patch(
+  "/admin/catalog/:specialtyId",
+  requireAuth,
+  allowRoles("SuperAdmin"),
+  asyncHandler(specialtyController.adminUpdateCatalog)
+);
+router.delete(
+  "/admin/catalog/:specialtyId",
+  requireAuth,
+  allowRoles("SuperAdmin"),
+  asyncHandler(specialtyController.adminDeleteCatalog)
+);
+router.get("/clinic/me", requireAuth, asyncHandler(specialtyController.myClinicSpecialties));
 router.put(
   "/clinic/me",
   requireAuth,
@@ -65,6 +89,36 @@ router.post(
   requireAuth,
   allowRoles("SuperAdmin"),
   asyncHandler(specialtyController.adminCreateField)
+);
+router.get(
+  "/admin/templates/:templateId/sections",
+  requireAuth,
+  allowRoles("SuperAdmin"),
+  asyncHandler(specialtyController.adminListSections)
+);
+router.post(
+  "/admin/templates/:templateId/sections",
+  requireAuth,
+  allowRoles("SuperAdmin"),
+  asyncHandler(specialtyController.adminCreateSection)
+);
+router.patch(
+  "/admin/sections/:sectionId",
+  requireAuth,
+  allowRoles("SuperAdmin"),
+  asyncHandler(specialtyController.adminUpdateSection)
+);
+router.patch(
+  "/admin/templates/:templateId/sections/reorder",
+  requireAuth,
+  allowRoles("SuperAdmin"),
+  asyncHandler(specialtyController.adminReorderSections)
+);
+router.delete(
+  "/admin/sections/:sectionId",
+  requireAuth,
+  allowRoles("SuperAdmin"),
+  asyncHandler(specialtyController.adminRemoveSection)
 );
 router.patch(
   "/admin/templates/:templateId/fields/reorder",

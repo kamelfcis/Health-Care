@@ -6,7 +6,7 @@ import { Bell, ChevronDown, LogOut, Menu, Search, User } from "lucide-react";
 import { AvatarIcon } from "@radix-ui/react-icons";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { storage } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { AuthUser } from "@/types";
@@ -22,6 +22,7 @@ export function TopNavbar() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [mounted, setMounted] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const queryClient = useQueryClient();
   const { toggleCollapsed, openMobile } = useSidebar();
   const { t } = useI18n();
   const router = useRouter();
@@ -70,6 +71,7 @@ export function TopNavbar() {
     } catch {
       toast.error(t("common.logoutFailed"));
     } finally {
+      queryClient.clear();
       storage.clearSession();
       router.replace("/login");
     }

@@ -7,15 +7,32 @@ interface ListInput {
   page: number;
   pageSize: number;
   search?: string;
+  requesterRole?: string;
+  requesterUserId?: string;
 }
 
 export const patientService = {
   async list(input: ListInput) {
     const normalizedSearch = input.search?.trim();
     const isShortSearch = Boolean(normalizedSearch && normalizedSearch.length <= 3);
+    const doctorScope =
+      input.requesterRole === "Doctor" && input.requesterUserId
+        ? {
+            appointments: {
+              some: {
+                deletedAt: null,
+                doctor: {
+                  userId: input.requesterUserId,
+                  deletedAt: null
+                }
+              }
+            }
+          }
+        : {};
     const where = {
       ...(input.clinicId ? { clinicId: input.clinicId } : {}),
       deletedAt: null,
+      ...doctorScope,
       ...(normalizedSearch
         ? {
             OR: [

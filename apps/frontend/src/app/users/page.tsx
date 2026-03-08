@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/app-shell";
 import { RoleGate } from "@/components/auth/role-gate";
+import { ConfirmDeleteModal } from "@/components/ui/confirm-delete-modal";
 import { FloatingInput } from "@/components/ui/floating-input";
 import { RippleButton } from "@/components/ui/ripple-button";
 import { useI18n } from "@/components/providers/i18n-provider";
@@ -50,6 +52,7 @@ export default function UsersPage() {
   });
   const [formResetKey, setFormResetKey] = useState(0);
   const [selectedRoleId, setSelectedRoleId] = useState<string>("");
+  const [deleteTarget, setDeleteTarget] = useState<ClinicUserRow | null>(null);
 
   const rolesQuery = useQuery({
     queryKey: ["users-page", "roles"],
@@ -69,6 +72,7 @@ export default function UsersPage() {
     mutationFn: (payload: NewUserForm) => adminService.createUser(payload),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["users-page", "users"] });
+      void queryClient.invalidateQueries({ queryKey: ["doctors"] });
       setForm({
         firstName: "",
         lastName: "",
@@ -126,10 +130,23 @@ export default function UsersPage() {
     mutationFn: ({ userId, roleId }: { userId: string; roleId: string }) => adminService.updateUserRole(userId, roleId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["users-page", "users"] });
+      void queryClient.invalidateQueries({ queryKey: ["doctors"] });
       toast.success("User role updated");
     },
     onError: () => {
       toast.error("User role update failed");
+    }
+  });
+  const deleteUserMutation = useMutation({
+    mutationFn: (userId: string) => adminService.deleteUser(userId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["users-page", "users"] });
+      void queryClient.invalidateQueries({ queryKey: ["doctors"] });
+      setDeleteTarget(null);
+      toast.success(t("users.deleted"));
+    },
+    onError: () => {
+      toast.error(t("users.deleteFailed"));
     }
   });
 
@@ -374,6 +391,7 @@ export default function UsersPage() {
                   <th className="px-4 py-3">{t("table.role")}</th>
                   <th className="px-4 py-3">Assign role</th>
                   <th className="px-4 py-3">{t("table.permissions")}</th>
+                  <th className="px-4 py-3">{t("table.actions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -413,11 +431,22 @@ export default function UsersPage() {
                         ))}
                       </div>
                     </td>
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        onClick={() => setDeleteTarget(user)}
+                        aria-label={t("users.delete")}
+                        disabled={user.role === "ClinicAdmin" || user.role === "SuperAdmin"}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {!users.length ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
+                    <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
                       {t("dashboard.noClinicUsers")}
                     </td>
                   </tr>
@@ -426,6 +455,19 @@ export default function UsersPage() {
             </table>
           </div>
         </section>
+        <ConfirmDeleteModal
+          open={Boolean(deleteTarget)}
+          title={t("users.deleteConfirmTitle")}
+          message={t("users.deleteConfirmMessage", { name: `${deleteTarget?.firstName ?? ""} ${deleteTarget?.lastName ?? ""}`.trim() })}
+          confirmLabel={t("users.delete")}
+          confirmingLabel={t("users.deleting")}
+          isPending={deleteUserMutation.isPending}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => {
+            if (!deleteTarget) return;
+            deleteUserMutation.mutate(deleteTarget.id);
+          }}
+        />
       </RoleGate>
     </AppShell>
   );

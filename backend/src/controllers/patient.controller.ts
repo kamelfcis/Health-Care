@@ -39,7 +39,9 @@ export const patientController = {
           clinicId,
           page,
           pageSize,
-          search
+          search,
+          requesterRole: req.user?.role,
+          requesterUserId: req.user?.sub
         })
     );
     res.json(apiSuccess({

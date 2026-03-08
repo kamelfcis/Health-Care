@@ -3,7 +3,24 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ColumnDef } from "@tanstack/react-table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Calendar, ChevronDown, ClipboardList, Loader2, MapPin, PhoneCall, PhoneOff, PhoneOutgoing, SquarePen, Trash2, TriangleAlert, User, UserPlus, Users } from "lucide-react";
+import {
+  Calendar,
+  ChevronDown,
+  ClipboardList,
+  Loader2,
+  MapPin,
+  Mic,
+  PhoneCall,
+  PhoneOff,
+  PhoneOutgoing,
+  Square,
+  SquarePen,
+  Trash2,
+  TriangleAlert,
+  User,
+  UserPlus,
+  Users
+} from "lucide-react";
 import { FaWhatsapp } from "react-icons/fa";
 import { AppShell } from "@/components/layout/app-shell";
 import { PatientForm, PatientFormValues } from "@/components/forms/patient-form";
@@ -18,7 +35,7 @@ import { storage } from "@/lib/storage";
 import { StatCard } from "@/components/ui/stat-card";
 import { RoleGate } from "@/components/auth/role-gate";
 import { cn } from "@/lib/utils";
-import { specialtyService } from "@/lib/specialty-service";
+import { specialtyService, VisitEntryType } from "@/lib/specialty-service";
 
 type PatientRow = {
   id: string;
@@ -38,6 +55,24 @@ type PatientRow = {
   lastVisit: string;
 };
 
+type SpeechRecognitionAlternativeLike = { transcript?: string };
+type SpeechRecognitionResultLike = { isFinal: boolean; 0?: SpeechRecognitionAlternativeLike };
+type SpeechRecognitionEventLike = { resultIndex?: number; results: ArrayLike<SpeechRecognitionResultLike> };
+type SpeechRecognitionErrorEventLike = { error?: string };
+type BrowserSpeechRecognition = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  maxAlternatives: number;
+  onstart: (() => void) | null;
+  onend: (() => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+type SpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
+
 export default function PatientsPage() {
   const { locale, t } = useI18n();
   const queryClient = useQueryClient();
@@ -51,9 +86,21 @@ export default function PatientsPage() {
   const [editing, setEditing] = useState<PatientRow | null>(null);
   const [assessmentPatient, setAssessmentPatient] = useState<PatientRow | null>(null);
   const [selectedAssessmentSpecialtyCode, setSelectedAssessmentSpecialtyCode] = useState<string>("");
+  const [selectedAssessmentEntryType, setSelectedAssessmentEntryType] = useState<VisitEntryType>("EXAM");
   const [deleteTarget, setDeleteTarget] = useState<PatientRow | null>(null);
   const [whatsappTarget, setWhatsappTarget] = useState<PatientRow | null>(null);
   const [whatsappMessage, setWhatsappMessage] = useState("");
+  const [isWhatsappSpeechSupported, setIsWhatsappSpeechSupported] = useState(false);
+  const [isWhatsappListening, setIsWhatsappListening] = useState(false);
+  const [whatsappVoiceLevel, setWhatsappVoiceLevel] = useState(0);
+  const whatsappSpeechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const whatsappSpeechBaseMessageRef = useRef("");
+  const whatsappMessageInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const whatsappListeningRequestedRef = useRef(false);
+  const whatsappAudioContextRef = useRef<AudioContext | null>(null);
+  const whatsappAnalyserRef = useRef<AnalyserNode | null>(null);
+  const whatsappAudioStreamRef = useRef<MediaStream | null>(null);
+  const whatsappRafRef = useRef<number | null>(null);
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const formRef = useRef<HTMLElement | null>(null);
   const assessmentRef = useRef<HTMLElement | null>(null);
@@ -176,11 +223,20 @@ export default function PatientsPage() {
   });
 
   const specialtyAssessmentQuery = useQuery({
-    queryKey: ["patients", "specialty", selectedAssessmentSpecialtyCode, "assessment", assessmentPatient?.id, specialtyClinicScope],
+    queryKey: [
+      "patients",
+      "specialty",
+      selectedAssessmentSpecialtyCode,
+      "assessment",
+      selectedAssessmentEntryType,
+      assessmentPatient?.id,
+      specialtyClinicScope
+    ],
     queryFn: () =>
       specialtyService.getPatientSpecialtyAssessment(
         String(assessmentPatient?.id),
         selectedAssessmentSpecialtyCode,
+        selectedAssessmentEntryType,
         specialtyClinicScope
       ),
     enabled: Boolean(assessmentPatient) && Boolean(selectedAssessmentSpecialtyCode) && assessmentScopeReady
@@ -221,7 +277,24 @@ export default function PatientsPage() {
         : t(`patients.leadSource.${row.leadSource}`),
     [t]
   );
-  const normalizeWhatsappNumber = useCallback((value: string) => value.replace(/[^\d]/g, ""), []);
+  const normalizeWhatsappNumber = useCallback((value: string) => {
+    const DEFAULT_COUNTRY_CODE = "20"; // Egypt default; accepts explicit international numbers too.
+    const sanitized = value.replace(/[^\d+]/g, "");
+    if (!sanitized) return "";
+
+    let digits = sanitized.startsWith("+") ? sanitized.slice(1) : sanitized;
+    digits = digits.replace(/[^\d]/g, "");
+    if (digits.startsWith("00")) {
+      digits = digits.slice(2);
+    }
+    if (digits.startsWith("0")) {
+      digits = `${DEFAULT_COUNTRY_CODE}${digits.slice(1)}`;
+    }
+    if (!digits.startsWith(DEFAULT_COUNTRY_CODE) && digits.length <= 10) {
+      digits = `${DEFAULT_COUNTRY_CODE}${digits}`;
+    }
+    return digits;
+  }, []);
   const openWhatsappPopup = useCallback(
     (row: PatientRow) => {
       if (!row.whatsapp || row.whatsapp === "-") {
@@ -243,11 +316,191 @@ export default function PatientsPage() {
     const message = (whatsappMessage || "").trim();
     const encodedMessage = encodeURIComponent(message);
     const url = encodedMessage
-      ? `https://wa.me/${normalizedNumber}?text=${encodedMessage}`
-      : `https://wa.me/${normalizedNumber}`;
+      ? `https://api.whatsapp.com/send/?phone=${normalizedNumber}&text=${encodedMessage}&type=phone_number&app_absent=0`
+      : `https://api.whatsapp.com/send/?phone=${normalizedNumber}&type=phone_number&app_absent=0`;
     window.open(url, "_blank", "noopener,noreferrer");
     setWhatsappTarget(null);
   }, [normalizeWhatsappNumber, t, whatsappMessage, whatsappTarget]);
+  const stopWhatsappSpeechInput = useCallback(() => {
+    whatsappListeningRequestedRef.current = false;
+    if (whatsappRafRef.current !== null) {
+      cancelAnimationFrame(whatsappRafRef.current);
+      whatsappRafRef.current = null;
+    }
+    whatsappAnalyserRef.current = null;
+    if (whatsappAudioStreamRef.current) {
+      whatsappAudioStreamRef.current.getTracks().forEach((track) => track.stop());
+      whatsappAudioStreamRef.current = null;
+    }
+    if (whatsappAudioContextRef.current) {
+      void whatsappAudioContextRef.current.close();
+      whatsappAudioContextRef.current = null;
+    }
+    setWhatsappVoiceLevel(0);
+    try {
+      whatsappSpeechRecognitionRef.current?.stop();
+    } catch {
+      // Ignore stop errors (already stopped, etc).
+    }
+  }, []);
+  const closeWhatsappPopup = useCallback(() => {
+    stopWhatsappSpeechInput();
+    setWhatsappTarget(null);
+  }, [stopWhatsappSpeechInput]);
+  useEffect(() => {
+    if (!whatsappTarget) {
+      stopWhatsappSpeechInput();
+    }
+  }, [stopWhatsappSpeechInput, whatsappTarget]);
+  const startWhatsappSpeechInput = useCallback(() => {
+    if (!isWhatsappSpeechSupported) {
+      toast.error(t("patients.whatsappPopup.speechNotSupported"));
+      return;
+    }
+    if (isWhatsappListening) return;
+    const recognition = whatsappSpeechRecognitionRef.current;
+    if (!recognition) {
+      toast.error(t("patients.whatsappPopup.speechNotSupported"));
+      return;
+    }
+    whatsappListeningRequestedRef.current = true;
+    whatsappSpeechBaseMessageRef.current = "";
+    setWhatsappMessage("");
+    recognition.lang = locale === "ar" ? "ar-EG" : "en-US";
+    recognition.interimResults = true;
+    recognition.continuous = true;
+    recognition.maxAlternatives = 1;
+    try {
+      const textarea = whatsappMessageInputRef.current;
+      if (textarea) {
+        textarea.focus();
+        const textLength = textarea.value.length;
+        textarea.setSelectionRange(textLength, textLength);
+      }
+      void (async () => {
+        try {
+          if (whatsappRafRef.current !== null) {
+            cancelAnimationFrame(whatsappRafRef.current);
+            whatsappRafRef.current = null;
+          }
+          if (whatsappAudioStreamRef.current) {
+            whatsappAudioStreamRef.current.getTracks().forEach((track) => track.stop());
+          }
+          if (whatsappAudioContextRef.current) {
+            await whatsappAudioContextRef.current.close();
+          }
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 }
+          });
+          const audioContext = new AudioContext();
+          const analyser = audioContext.createAnalyser();
+          analyser.fftSize = 1024;
+          analyser.smoothingTimeConstant = 0.7;
+          const source = audioContext.createMediaStreamSource(stream);
+          source.connect(analyser);
+          const buffer = new Uint8Array(analyser.fftSize);
+          whatsappAudioStreamRef.current = stream;
+          whatsappAudioContextRef.current = audioContext;
+          whatsappAnalyserRef.current = analyser;
+          const tick = () => {
+            const activeAnalyser = whatsappAnalyserRef.current;
+            if (!activeAnalyser || !whatsappListeningRequestedRef.current) {
+              setWhatsappVoiceLevel(0);
+              return;
+            }
+            activeAnalyser.getByteTimeDomainData(buffer);
+            let sum = 0;
+            for (let i = 0; i < buffer.length; i += 1) {
+              const normalized = (buffer[i] - 128) / 128;
+              sum += normalized * normalized;
+            }
+            const rms = Math.sqrt(sum / buffer.length);
+            const boosted = Math.min(1, rms * 6);
+            setWhatsappVoiceLevel(boosted);
+            whatsappRafRef.current = requestAnimationFrame(tick);
+          };
+          whatsappRafRef.current = requestAnimationFrame(tick);
+        } catch {
+          setWhatsappVoiceLevel(0);
+        }
+      })();
+      recognition.start();
+    } catch {
+      whatsappListeningRequestedRef.current = false;
+      toast.error(t("patients.whatsappPopup.speechFailed"));
+    }
+  }, [isWhatsappListening, isWhatsappSpeechSupported, locale, t]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const SpeechRecognitionCtor =
+      ((window as unknown as { SpeechRecognition?: SpeechRecognitionConstructor }).SpeechRecognition ??
+        (window as unknown as { webkitSpeechRecognition?: SpeechRecognitionConstructor }).webkitSpeechRecognition) ||
+      null;
+    if (!SpeechRecognitionCtor) {
+      setIsWhatsappSpeechSupported(false);
+      whatsappSpeechRecognitionRef.current = null;
+      return;
+    }
+    const recognition = new SpeechRecognitionCtor();
+    recognition.onstart = () => setIsWhatsappListening(true);
+    recognition.onend = () => {
+      setIsWhatsappListening(false);
+      if (!whatsappListeningRequestedRef.current) return;
+      window.setTimeout(() => {
+        try {
+          recognition.start();
+        } catch {
+          // Ignore auto-restart errors if already restarting.
+        }
+      }, 80);
+    };
+    recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
+      setIsWhatsappListening(false);
+      if (event?.error !== "aborted") {
+        toast.error(t("patients.whatsappPopup.speechFailed"));
+      }
+    };
+    recognition.onresult = (event: SpeechRecognitionEventLike) => {
+      let finalTranscript = "";
+      let interimTranscript = "";
+      const startIndex = Number(event.resultIndex ?? 0);
+      for (let i = startIndex; i < event.results.length; i += 1) {
+        const result = event.results[i];
+        const chunk = String(result?.[0]?.transcript ?? "").trim();
+        if (!chunk) continue;
+        if (result.isFinal) {
+          finalTranscript += `${chunk} `;
+        } else {
+          interimTranscript += `${chunk} `;
+        }
+      }
+      const mergedSpeech = `${finalTranscript}${interimTranscript}`.trim();
+      const base = whatsappSpeechBaseMessageRef.current;
+      setWhatsappMessage(base && mergedSpeech ? `${base} ${mergedSpeech}` : base || mergedSpeech);
+    };
+    whatsappSpeechRecognitionRef.current = recognition;
+    setIsWhatsappSpeechSupported(true);
+    return () => {
+      try {
+        recognition.stop();
+      } catch {
+        // Ignore cleanup stop errors.
+      }
+      if (whatsappRafRef.current !== null) {
+        cancelAnimationFrame(whatsappRafRef.current);
+      }
+      if (whatsappAudioStreamRef.current) {
+        whatsappAudioStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+      if (whatsappAudioContextRef.current) {
+        void whatsappAudioContextRef.current.close();
+      }
+      whatsappListeningRequestedRef.current = false;
+      setWhatsappVoiceLevel(0);
+      whatsappSpeechRecognitionRef.current = null;
+      setIsWhatsappListening(false);
+    };
+  }, [t]);
 
   const createMutation = useMutation({
     mutationFn: patientService.create,
@@ -292,12 +545,21 @@ export default function PatientsPage() {
         assessmentPatient.id,
         selectedAssessmentSpecialtyCode,
         values,
+        selectedAssessmentEntryType,
         specialtyClinicScope
       );
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: ["patients", "specialty", selectedAssessmentSpecialtyCode, "assessment", assessmentPatient?.id, specialtyClinicScope]
+        queryKey: [
+          "patients",
+          "specialty",
+          selectedAssessmentSpecialtyCode,
+          "assessment",
+          selectedAssessmentEntryType,
+          assessmentPatient?.id,
+          specialtyClinicScope
+        ]
       });
       toast.success(t("patients.assessment.saved"));
     },
@@ -350,6 +612,7 @@ export default function PatientsPage() {
                   toast.error(t("patients.assessment.selectClinicScope"));
                   return;
                 }
+                setSelectedAssessmentEntryType("EXAM");
                 setAssessmentPatient(row.original);
               }}
             >
@@ -479,6 +742,14 @@ export default function PatientsPage() {
               {t("patients.assessment.specialty")}: <span className="font-semibold text-slate-700">{selectedAssessmentSpecialtyName}</span>
             </p>
             <p className="text-xs text-slate-600">
+              {t("patients.assessment.entryType")}:{" "}
+              <span className="font-semibold text-slate-700">
+                {selectedAssessmentEntryType === "EXAM"
+                  ? t("appointments.entryType.exam")
+                  : t("appointments.entryType.consultation")}
+              </span>
+            </p>
+            <p className="text-xs text-slate-600">
               {t("patients.assessment.activeTemplate")}:{" "}
               <span className="font-semibold text-slate-700">
                 {specialtyTemplateQuery.data?.template
@@ -499,20 +770,34 @@ export default function PatientsPage() {
         </div>
       </div>
       <div className="space-y-4 p-6">
-        <div className="max-w-sm space-y-1">
-          <label className="text-sm font-semibold text-slate-700">{t("patients.assessment.specialty")}</label>
-          <select
-            className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
-            value={selectedAssessmentSpecialtyCode}
-            onChange={(event) => setSelectedAssessmentSpecialtyCode(event.target.value)}
-            disabled={!assessmentSpecialties.length || saveAssessmentMutation.isPending}
-          >
-            {assessmentSpecialties.map((specialty) => (
-              <option key={specialty.id} value={specialty.code}>
-                {locale === "ar" ? specialty.nameAr : specialty.name}
-              </option>
-            ))}
-          </select>
+        <div className="grid max-w-2xl gap-3 md:grid-cols-2">
+          <div className="space-y-1">
+            <label className="text-sm font-semibold text-slate-700">{t("patients.assessment.specialty")}</label>
+            <select
+              className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+              value={selectedAssessmentSpecialtyCode}
+              onChange={(event) => setSelectedAssessmentSpecialtyCode(event.target.value)}
+              disabled={!assessmentSpecialties.length || saveAssessmentMutation.isPending}
+            >
+              {assessmentSpecialties.map((specialty) => (
+                <option key={specialty.id} value={specialty.code}>
+                  {locale === "ar" ? specialty.nameAr : specialty.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <label className="text-sm font-semibold text-slate-700">{t("patients.assessment.entryType")}</label>
+            <select
+              className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+              value={selectedAssessmentEntryType}
+              onChange={(event) => setSelectedAssessmentEntryType(event.target.value as VisitEntryType)}
+              disabled={saveAssessmentMutation.isPending}
+            >
+              <option value="EXAM">{t("appointments.entryType.exam")}</option>
+              <option value="CONSULTATION">{t("appointments.entryType.consultation")}</option>
+            </select>
+          </div>
         </div>
         {!assessmentSpecialties.length ? (
           <p className="text-sm text-rose-600">{t("patients.assessment.noSpecialtiesEnabled")}</p>
@@ -521,7 +806,7 @@ export default function PatientsPage() {
         ) : specialtyTemplateQuery.data?.template ? (
           <>
             <SpecialtyAssessmentForm
-              key={`${assessmentPatient.id}-${selectedAssessmentSpecialtyCode}-${specialtyAssessmentQuery.data?.assessment?.updatedAt ?? "new"}`}
+              key={`${assessmentPatient.id}-${selectedAssessmentSpecialtyCode}-${selectedAssessmentEntryType}-${specialtyAssessmentQuery.data?.assessment?.updatedAt ?? "new"}`}
               template={specialtyTemplateQuery.data.template}
               initialValues={specialtyAssessmentQuery.data?.assessment?.values as Record<string, unknown> | undefined}
               isSubmitting={saveAssessmentMutation.isPending}
@@ -655,7 +940,7 @@ export default function PatientsPage() {
             getStatus={(row) => row.leadSource}
             getDate={(row) => row.lastVisit}
             renderCard={(row) => (
-              <div className="relative overflow-hidden rounded-2xl border border-orange-100/70 bg-gradient-to-br from-white via-orange-50/40 to-cyan-50/30 p-4">
+              <div className="relative overflow-hidden rounded-2xl border border-orange-100/70 border-l-4 border-l-orange-500 bg-gradient-to-br from-white via-orange-50/40 to-cyan-50/30 p-4">
                 <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-orange-200/30 blur-xl" />
                 <div className="pointer-events-none absolute -bottom-8 -left-8 h-24 w-24 rounded-full bg-cyan-200/20 blur-xl" />
                 <div className="relative space-y-3">
@@ -806,7 +1091,7 @@ export default function PatientsPage() {
             type="button"
             aria-label={t("patients.whatsappPopup.closeAria")}
             className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
-            onClick={() => setWhatsappTarget(null)}
+            onClick={closeWhatsappPopup}
           />
           <section className="relative w-full max-w-lg rounded-3xl border border-emerald-100 bg-gradient-to-br from-emerald-50 via-white to-cyan-50 p-5 shadow-premium">
             <div className="space-y-4">
@@ -826,8 +1111,41 @@ export default function PatientsPage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">{t("patients.whatsappPopup.messageLabel")}</label>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-sm font-medium text-slate-700">{t("patients.whatsappPopup.messageLabel")}</label>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-white px-2 py-1 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={isWhatsappListening ? stopWhatsappSpeechInput : startWhatsappSpeechInput}
+                    disabled={!isWhatsappSpeechSupported}
+                  >
+                    {isWhatsappListening ? <Square size={12} /> : <Mic size={12} />}
+                    {isWhatsappListening
+                      ? t("patients.whatsappPopup.stopRecording")
+                      : t("patients.whatsappPopup.startRecording")}
+                  </button>
+                </div>
+                {isWhatsappListening ? (
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-2">
+                    <div className="flex items-end gap-1">
+                      {Array.from({ length: 20 }).map((_, idx) => {
+                        const wave = Math.max(0.12, Math.min(1, whatsappVoiceLevel * (0.5 + (idx % 5) * 0.14)));
+                        return (
+                          <span
+                            key={`voice-bar-${idx}`}
+                            className="w-1 rounded-full bg-emerald-500/90 transition-all duration-75"
+                            style={{ height: `${Math.round(6 + wave * 22)}px` }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+                {!isWhatsappSpeechSupported ? (
+                  <p className="text-xs text-slate-500">{t("patients.whatsappPopup.speechNotSupported")}</p>
+                ) : null}
                 <textarea
+                  ref={whatsappMessageInputRef}
                   value={whatsappMessage}
                   onChange={(event) => setWhatsappMessage(event.target.value)}
                   rows={4}
@@ -840,7 +1158,7 @@ export default function PatientsPage() {
                 <button
                   type="button"
                   className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-                  onClick={() => setWhatsappTarget(null)}
+                  onClick={closeWhatsappPopup}
                 >
                   {t("patients.whatsappPopup.cancel")}
                 </button>

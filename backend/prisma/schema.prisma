@@ -16,6 +16,11 @@ enum AppointmentStatus {
   NO_SHOW
 }
 
+enum VisitEntryType {
+  EXAM
+  CONSULTATION
+}
+
 enum InvoiceStatus {
   DRAFT
   PENDING
@@ -91,6 +96,8 @@ model Clinic {
   address        String?
   city           String?
   country        String?
+  countryCode    String          @default("US")
+  currencyCode   String          @default("USD")
   timezone       String          @default("UTC")
   isActive       Boolean         @default(true)
   createdAt      DateTime        @default(now())
@@ -256,6 +263,7 @@ model Appointment {
   clinicId  String
   doctorId  String
   patientId String
+  entryType VisitEntryType    @default(EXAM)
   startsAt  DateTime
   endsAt    DateTime
   reason    String?
@@ -467,6 +475,7 @@ model SpecialtyTemplate {
   createdAt   DateTime            @default(now())
   updatedAt   DateTime            @updatedAt
   specialty   SpecialtyCatalog    @relation(fields: [specialtyId], references: [id], onDelete: Cascade)
+  sections    SpecialtyTemplateSection[]
   fields      SpecialtyTemplateField[]
   rules       SpecialtyRule[]
   assessments PatientSpecialtyAssessment[]
@@ -476,9 +485,26 @@ model SpecialtyTemplate {
   @@index([specialtyId, isActive])
 }
 
+model SpecialtyTemplateSection {
+  id          String            @id @default(cuid())
+  templateId  String
+  key         String
+  name        String
+  nameAr      String
+  displayOrder Int
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  template    SpecialtyTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  fields      SpecialtyTemplateField[]
+
+  @@unique([templateId, key])
+  @@index([templateId, displayOrder])
+}
+
 model SpecialtyTemplateField {
   id                  String             @id @default(cuid())
   templateId          String
+  sectionId           String?
   key                 String
   label               String
   labelAr             String
@@ -495,11 +521,14 @@ model SpecialtyTemplateField {
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
   template            SpecialtyTemplate  @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  sectionRef          SpecialtyTemplateSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
   options             SpecialtyTemplateOption[]
+  rules               SpecialtyRule[]
 
   @@unique([templateId, key])
   @@index([templateId, displayOrder])
   @@index([section, displayOrder])
+  @@index([sectionId])
 }
 
 model SpecialtyTemplateOption {
@@ -520,6 +549,7 @@ model SpecialtyTemplateOption {
 model SpecialtyRule {
   id          String            @id @default(cuid())
   templateId  String
+  fieldId     String?
   key         String
   name        String
   nameAr      String
@@ -530,9 +560,11 @@ model SpecialtyRule {
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
   template    SpecialtyTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  field       SpecialtyTemplateField? @relation(fields: [fieldId], references: [id], onDelete: SetNull)
 
   @@unique([templateId, key])
   @@index([templateId, type, displayOrder])
+  @@index([fieldId])
 }
 
 model PatientSpecialtyAssessment {
@@ -540,6 +572,7 @@ model PatientSpecialtyAssessment {
   patientId     String
   clinicId      String
   specialtyId   String
+  entryType     VisitEntryType   @default(EXAM)
   templateId    String
   values        Json
   computed      Json?
@@ -552,7 +585,7 @@ model PatientSpecialtyAssessment {
   specialty     SpecialtyCatalog @relation(fields: [specialtyId], references: [id], onDelete: Cascade)
   template      SpecialtyTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
-  @@unique([patientId, specialtyId])
+  @@unique([patientId, specialtyId, entryType])
   @@index([clinicId])
   @@index([specialtyId])
 }

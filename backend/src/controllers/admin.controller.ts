@@ -3,6 +3,7 @@ import { adminService } from "../services/admin.service";
 import { AuthenticatedRequest } from "../types/auth";
 import { apiSuccess } from "../utils/api-response";
 import { getScopedClinicId } from "../utils/tenant";
+import { buildCacheKey, invalidateCacheByPrefix } from "../utils/response-cache";
 
 export const adminController = {
   async listRoles(req: AuthenticatedRequest, res: Response) {
@@ -21,7 +22,10 @@ export const adminController = {
   },
 
   async createUser(req: AuthenticatedRequest, res: Response) {
-    const data = await adminService.createClinicUser(getScopedClinicId(req), req.body);
+    const clinicId = getScopedClinicId(req);
+    const data = await adminService.createClinicUser(clinicId, req.body);
+    invalidateCacheByPrefix(buildCacheKey("doctors", clinicId));
+    invalidateCacheByPrefix(buildCacheKey("dashboard", clinicId));
     res.status(201).json(apiSuccess(data, "User created"));
   },
 
@@ -44,7 +48,19 @@ export const adminController = {
 
   async updateUserRole(req: AuthenticatedRequest, res: Response) {
     const userId = String(req.params.id);
-    const data = await adminService.updateUserRole(getScopedClinicId(req), userId, req.body.roleId);
+    const clinicId = getScopedClinicId(req);
+    const data = await adminService.updateUserRole(clinicId, userId, req.body.roleId);
+    invalidateCacheByPrefix(buildCacheKey("doctors", clinicId));
+    invalidateCacheByPrefix(buildCacheKey("dashboard", clinicId));
     res.status(200).json(apiSuccess(data, "User role updated"));
+  },
+
+  async deleteUser(req: AuthenticatedRequest, res: Response) {
+    const userId = String(req.params.id);
+    const clinicId = getScopedClinicId(req);
+    await adminService.deleteUser(clinicId, userId, String(req.user?.sub ?? ""));
+    invalidateCacheByPrefix(buildCacheKey("doctors", clinicId));
+    invalidateCacheByPrefix(buildCacheKey("dashboard", clinicId));
+    res.status(200).json(apiSuccess(null, "User deleted"));
   }
 };

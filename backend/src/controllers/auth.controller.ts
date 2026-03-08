@@ -29,5 +29,10 @@ export const authController = {
   async me(req: AuthenticatedRequest, res: Response) {
     const data = await authService.me(req.user!.sub);
     res.status(200).json(apiSuccess(data));
+  },
+
+  async changePassword(req: AuthenticatedRequest, res: Response) {
+    await authService.changePassword(req.user!.sub, req.body);
+    res.status(200).json(apiSuccess(null, "Password changed successfully"));
   }
 };
