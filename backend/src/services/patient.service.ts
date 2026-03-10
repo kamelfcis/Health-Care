@@ -223,5 +223,112 @@ export const patientService = {
       withContactInfo,
       withoutContactInfo
     };
+  },
+
+  async listAssessments(
+    patientId: string,
+    clinicId: string | undefined,
+    requesterRole?: string,
+    requesterUserId?: string
+  ) {
+    const patient = await prisma.patient.findFirst({
+      where: { id: patientId, ...(clinicId ? { clinicId } : {}), deletedAt: null },
+      select: { id: true, clinicId: true, fullName: true }
+    });
+    if (!patient) {
+      throw new AppError("Patient not found", 404);
+    }
+
+    if (requesterRole === "Doctor" && requesterUserId) {
+      const linked = await prisma.appointment.findFirst({
+        where: {
+          patientId: patient.id,
+          clinicId: patient.clinicId,
+          deletedAt: null,
+          doctor: {
+            userId: requesterUserId,
+            deletedAt: null
+          }
+        },
+        select: { id: true }
+      });
+      if (!linked) {
+        throw new AppError("You are not allowed to access this patient's assessments", 403);
+      }
+    }
+
+    const assessments = await prisma.patientSpecialtyAssessment.findMany({
+      where: { patientId: patient.id, clinicId: patient.clinicId },
+      include: {
+        specialty: true,
+        appointment: {
+          include: {
+            doctor: {
+              include: {
+                user: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: { updatedAt: "desc" }
+    });
+
+    const appointmentAssessments = assessments
+      .filter((item) => item.appointmentId && item.appointment)
+      .map((item) => ({
+        id: item.id,
+        source: "appointment" as const,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+        entryType: item.entryType,
+        appointment: {
+          id: item.appointment!.id,
+          startsAt: item.appointment!.startsAt,
+          endsAt: item.appointment!.endsAt,
+          status: item.appointment!.status,
+          reason: item.appointment!.reason,
+          notes: item.appointment!.notes,
+          doctor: {
+            id: item.appointment!.doctor.id,
+            name: `${item.appointment!.doctor.user.firstName} ${item.appointment!.doctor.user.lastName}`.trim(),
+            specialty: item.appointment!.doctor.specialty
+          }
+        },
+        specialty: {
+          id: item.specialty.id,
+          code: item.specialty.code,
+          name: item.specialty.name,
+          nameAr: item.specialty.nameAr
+        },
+        values: item.values,
+        diagnoses: item.diagnoses,
+        alerts: item.alerts
+      }));
+
+    const legacyAssessments = assessments
+      .filter((item) => !item.appointmentId)
+      .map((item) => ({
+        id: item.id,
+        source: "legacy" as const,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+        entryType: item.entryType,
+        appointment: null,
+        specialty: {
+          id: item.specialty.id,
+          code: item.specialty.code,
+          name: item.specialty.name,
+          nameAr: item.specialty.nameAr
+        },
+        values: item.values,
+        diagnoses: item.diagnoses,
+        alerts: item.alerts
+      }));
+
+    return {
+      patient,
+      assessments: [...appointmentAssessments, ...legacyAssessments]
+    };
   }
 };

@@ -48,6 +48,15 @@ export const appointmentController = {
     res.status(201).json(apiSuccess(data, "Appointment created"));
   },
 
+  async getAssessment(req: AuthenticatedRequest, res: Response) {
+    const clinicId = req.user?.role === "SuperAdmin" ? getRequiredClinicScope(req) : getScopedClinicId(req);
+    const data = await appointmentService.getAssessmentByAppointment(String(req.params.id), clinicId, {
+      role: req.user?.role,
+      userId: req.user?.sub
+    });
+    res.json(apiSuccess(data));
+  },
+
   async update(req: AuthenticatedRequest, res: Response) {
     const clinicId = req.user?.role === "SuperAdmin" ? getRequiredClinicScope(req) : getScopedClinicId(req);
     const data = await appointmentService.update(String(req.params.id), clinicId, req.body);

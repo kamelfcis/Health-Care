@@ -54,6 +54,17 @@ export const patientController = {
     }));
   },
 
+  async listAssessments(req: AuthenticatedRequest, res: Response) {
+    const clinicId = getOptionalClinicScope(req);
+    const data = await patientService.listAssessments(
+      String(req.params.id),
+      clinicId,
+      req.user?.role,
+      req.user?.sub
+    );
+    res.json(apiSuccess(data));
+  },
+
   async create(req: AuthenticatedRequest, res: Response) {
     const clinicId = getScopedClinicId(req);
     const data = await patientService.create(clinicId, req.body);

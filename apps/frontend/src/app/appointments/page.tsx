@@ -18,15 +18,17 @@ import { patientService } from "@/lib/patient-service";
 import { storage } from "@/lib/storage";
 import { RoleGate } from "@/components/auth/role-gate";
 import { hasPermission } from "@/lib/permissions";
-import { VisitEntryType } from "@/lib/specialty-service";
-import { AppointmentMedicalFileModal, AppointmentMedicalFileContext } from "@/components/appointments/appointment-medical-file-modal";
+import { specialtyService, VisitEntryType } from "@/lib/specialty-service";
+import { AppointmentMedicalRecordContext, MedicalRecordModal } from "@/components/appointments/medical-record-modal";
 
 type AppointmentRow = {
   id: string;
   patientId: string;
   doctorId: string;
+  specialtyCode: string;
   patient: string;
   doctor: string;
+  doctorSpecialty: string;
   startsAtIso: string;
   endsAtIso: string;
   start: string;
@@ -79,7 +81,7 @@ export default function AppointmentsPage() {
   const [selectedClinicId, setSelectedClinicId] = useState<string>("all");
   const [formExpanded, setFormExpanded] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [medicalFileAppointment, setMedicalFileAppointment] = useState<AppointmentMedicalFileContext | null>(null);
+  const [medicalFileAppointment, setMedicalFileAppointment] = useState<AppointmentMedicalRecordContext | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AppointmentRow | null>(null);
   const [whatsappTarget, setWhatsappTarget] = useState<{ name: string; whatsapp: string } | null>(null);
   const [whatsappMessage, setWhatsappMessage] = useState("");
@@ -90,12 +92,16 @@ export default function AppointmentsPage() {
   const whatsappSpeechBaseMessageRef = useRef("");
   const whatsappMessageInputRef = useRef<HTMLTextAreaElement | null>(null);
   const whatsappListeningRequestedRef = useRef(false);
+  const whatsappAutoRestartRef = useRef(false);
+  const whatsappRestartTimerRef = useRef<number | null>(null);
+  const whatsappLastSpeechErrorToastAtRef = useRef(0);
   const whatsappAudioContextRef = useRef<AudioContext | null>(null);
   const whatsappAnalyserRef = useRef<AnalyserNode | null>(null);
   const whatsappAudioStreamRef = useRef<MediaStream | null>(null);
   const whatsappRafRef = useRef<number | null>(null);
   const [form, setForm] = useState({
     patientId: "",
+    specialtyCode: "",
     doctorId: "",
     appointmentDate: "",
     appointmentTime: "",
@@ -129,13 +135,31 @@ export default function AppointmentsPage() {
     staleTime: 5_000,
     refetchOnMount: "always"
   });
+  const clinicSpecialtiesQuery = useQuery({
+    queryKey: ["appointments", "clinic-specialties", { clinicScope: queryScopeClinicId }],
+    queryFn: () => specialtyService.listMyClinicSpecialties(appointmentClinicScope),
+    enabled: formScopeReady
+  });
+  const selectedSpecialtyCode = form.specialtyCode.trim();
+  const selectedSpecialtyName = useMemo(
+    () =>
+      (clinicSpecialtiesQuery.data ?? [])
+        .map((item) => item.specialty)
+        .find((specialty) => specialty.code === selectedSpecialtyCode)?.name ?? "",
+    [clinicSpecialtiesQuery.data, selectedSpecialtyCode]
+  );
   const doctorsQuery = useQuery({
     queryKey: [
       "appointments",
       "doctors",
-      { clinicScope: queryScopeClinicId, viewerId: queryViewerId, viewerRole: queryViewerRole }
+      {
+        clinicScope: queryScopeClinicId,
+        viewerId: queryViewerId,
+        viewerRole: queryViewerRole,
+        specialtyCode: selectedSpecialtyCode || "all"
+      }
     ],
-    queryFn: () => doctorService.list(appointmentClinicScope),
+    queryFn: () => doctorService.list(appointmentClinicScope, selectedSpecialtyName || undefined),
     enabled: formScopeReady
   });
   const patientsQuery = useQuery({
@@ -153,6 +177,7 @@ export default function AppointmentsPage() {
   const resetForm = useCallback(() => {
     setForm({
       patientId: "",
+      specialtyCode: "",
       doctorId: "",
       appointmentDate: "",
       appointmentTime: "",
@@ -186,8 +211,10 @@ export default function AppointmentsPage() {
         id: item.id,
         patientId: item.patient?.id ?? "",
         doctorId: item.doctor?.id ?? "",
+        specialtyCode: item.specialty?.code ?? "",
         patient: item.patient?.fullName ?? "-",
         doctor: `${item.doctor?.user?.firstName ?? ""} ${item.doctor?.user?.lastName ?? ""}`.trim() || "-",
+        doctorSpecialty: item.doctor?.specialty ?? "",
         startsAtIso: item.startsAt,
         endsAtIso: item.endsAt,
         start: new Date(item.startsAt).toLocaleString(),
@@ -209,6 +236,17 @@ export default function AppointmentsPage() {
   );
 
   const statuses = useMemo(() => Array.from(new Set(data.map((item) => item.status))), [data]);
+  const specialtyOptions = useMemo(
+    () =>
+      (clinicSpecialtiesQuery.data ?? [])
+        .filter((item) => item.specialty?.isActive)
+        .map((item) => ({
+          code: item.specialty.code,
+          name: item.specialty.name,
+          label: locale === "ar" ? item.specialty.nameAr : item.specialty.name
+        })),
+    [clinicSpecialtiesQuery.data, locale]
+  );
   const statusLabel = (status: string) => {
     const key = `status.${status}`;
     const translated = t(key);
@@ -262,6 +300,11 @@ export default function AppointmentsPage() {
   }, [normalizeWhatsappNumber, t, whatsappMessage, whatsappTarget]);
   const stopWhatsappSpeechInput = useCallback(() => {
     whatsappListeningRequestedRef.current = false;
+    whatsappAutoRestartRef.current = false;
+    if (whatsappRestartTimerRef.current !== null) {
+      window.clearTimeout(whatsappRestartTimerRef.current);
+      whatsappRestartTimerRef.current = null;
+    }
     if (whatsappRafRef.current !== null) {
       cancelAnimationFrame(whatsappRafRef.current);
       whatsappRafRef.current = null;
@@ -303,6 +346,7 @@ export default function AppointmentsPage() {
       return;
     }
     whatsappListeningRequestedRef.current = true;
+    whatsappAutoRestartRef.current = true;
     whatsappSpeechBaseMessageRef.current = "";
     setWhatsappMessage("");
     recognition.lang = locale === "ar" ? "ar-EG" : "en-US";
@@ -384,8 +428,8 @@ export default function AppointmentsPage() {
     recognition.onstart = () => setIsWhatsappListening(true);
     recognition.onend = () => {
       setIsWhatsappListening(false);
-      if (!whatsappListeningRequestedRef.current) return;
-      window.setTimeout(() => {
+      if (!whatsappListeningRequestedRef.current || !whatsappAutoRestartRef.current) return;
+      whatsappRestartTimerRef.current = window.setTimeout(() => {
         try {
           recognition.start();
         } catch {
@@ -395,7 +439,16 @@ export default function AppointmentsPage() {
     };
     recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
       setIsWhatsappListening(false);
-      if (event?.error !== "aborted") {
+      const errorType = String(event?.error ?? "");
+      if (errorType === "aborted") return;
+      const fatalErrors = new Set(["not-allowed", "service-not-allowed", "audio-capture", "network"]);
+      if (fatalErrors.has(errorType)) {
+        whatsappListeningRequestedRef.current = false;
+        whatsappAutoRestartRef.current = false;
+      }
+      const now = Date.now();
+      if (fatalErrors.has(errorType) && now - whatsappLastSpeechErrorToastAtRef.current > 2000) {
+        whatsappLastSpeechErrorToastAtRef.current = now;
         toast.error(t("patients.whatsappPopup.speechFailed"));
       }
     };
@@ -428,6 +481,10 @@ export default function AppointmentsPage() {
       if (whatsappRafRef.current !== null) {
         cancelAnimationFrame(whatsappRafRef.current);
       }
+      if (whatsappRestartTimerRef.current !== null) {
+        window.clearTimeout(whatsappRestartTimerRef.current);
+        whatsappRestartTimerRef.current = null;
+      }
       if (whatsappAudioStreamRef.current) {
         whatsappAudioStreamRef.current.getTracks().forEach((track) => track.stop());
       }
@@ -435,6 +492,7 @@ export default function AppointmentsPage() {
         void whatsappAudioContextRef.current.close();
       }
       whatsappListeningRequestedRef.current = false;
+      whatsappAutoRestartRef.current = false;
       setWhatsappVoiceLevel(0);
       whatsappSpeechRecognitionRef.current = null;
       setIsWhatsappListening(false);
@@ -450,27 +508,7 @@ export default function AppointmentsPage() {
         toast.error(t("patients.assessment.selectClinicScope"));
         return;
       }
-      setMedicalFileAppointment({
-        id: row.id,
-        doctorName: row.doctor,
-        status: row.status,
-        startsAtIso: row.startsAtIso,
-        entryType: row.entryType,
-        reason: row.reason,
-        notes: row.notes,
-        patient: {
-          id: row.patientId,
-          name: row.patient,
-          fileNumber: row.patientFileNumber,
-          nationalId: row.patientNationalId,
-          phone: row.patientPhone,
-          dateOfBirth: row.patientDateOfBirth,
-          age: row.patientAge,
-          profession: row.patientProfession,
-          leadSource: row.patientLeadSource,
-          address: row.patientAddress
-        }
-      });
+      setMedicalFileAppointment({ id: row.id });
     },
     [isSuperAdmin, selectedClinicId, t]
   );
@@ -482,6 +520,7 @@ export default function AppointmentsPage() {
         {
           patientId: form.patientId,
           doctorId: form.doctorId,
+          specialtyCode: form.specialtyCode,
           startsAt,
           endsAt,
           entryType: form.entryType,
@@ -509,6 +548,7 @@ export default function AppointmentsPage() {
         {
           patientId: form.patientId,
           doctorId: form.doctorId,
+          specialtyCode: form.specialtyCode,
           startsAt,
           endsAt,
           entryType: form.entryType,
@@ -540,9 +580,15 @@ export default function AppointmentsPage() {
 
   const startEdit = useCallback((row: AppointmentRow) => {
     const localStart = toLocalInput(row.startsAtIso);
+    const selectedDoctor = (doctorsQuery.data ?? []).find((doctor) => doctor.id === row.doctorId);
+    const mappedSpecialtyCode =
+      row.specialtyCode ||
+      specialtyOptions.find((option) => option.name === (selectedDoctor?.specialty ?? row.doctorSpecialty))?.code ||
+      "";
     setEditingId(row.id);
     setForm({
       patientId: row.patientId,
+      specialtyCode: mappedSpecialtyCode,
       doctorId: row.doctorId,
       appointmentDate: localStart.slice(0, 10),
       appointmentTime: localStart.slice(11, 16),
@@ -552,7 +598,7 @@ export default function AppointmentsPage() {
       notes: row.notes
     });
     setFormExpanded(true);
-  }, []);
+  }, [doctorsQuery.data, specialtyOptions]);
 
   const columns: ColumnDef<AppointmentRow>[] = [
     { header: t("nav.patients"), accessorKey: "patient" },
@@ -629,15 +675,41 @@ export default function AppointmentsPage() {
         </select>
         <select
           className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+          value={form.specialtyCode}
+          onChange={(event) =>
+            setForm((prev) => ({
+              ...prev,
+              specialtyCode: event.target.value,
+              doctorId: ""
+            }))
+          }
+        >
+          <option value="">{t("appointments.chooseSpecialty")}</option>
+          {specialtyOptions.map((specialty) => (
+            <option key={specialty.code} value={specialty.code}>
+              {specialty.label}
+            </option>
+          ))}
+        </select>
+        <select
+          className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
           value={form.doctorId}
           onChange={(event) => setForm((prev) => ({ ...prev, doctorId: event.target.value }))}
+          disabled={!form.specialtyCode}
         >
-          <option value="">{t("appointments.chooseDoctor")}</option>
+          <option value="">
+            {form.specialtyCode ? t("appointments.chooseDoctor") : t("appointments.chooseSpecialty")}
+          </option>
           {(doctorsQuery.data ?? []).map((doctor) => (
             <option key={doctor.id} value={doctor.id}>
               {`${doctor.user?.firstName ?? ""} ${doctor.user?.lastName ?? ""}`.trim() || t("nav.doctors")}
             </option>
           ))}
+          {form.specialtyCode && !(doctorsQuery.data ?? []).length ? (
+            <option value="" disabled>
+              {t("appointments.noDoctorsForSpecialty")}
+            </option>
+          ) : null}
         </select>
         <input
           className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
@@ -690,6 +762,7 @@ export default function AppointmentsPage() {
           disabled={
             (isSuperAdmin && selectedClinicId === "all") ||
             !form.patientId ||
+            !form.specialtyCode ||
             !form.doctorId ||
             !form.appointmentDate ||
             !form.appointmentTime ||
@@ -843,9 +916,10 @@ export default function AppointmentsPage() {
           )}
         />
       )}
-      <AppointmentMedicalFileModal
+      <MedicalRecordModal
         open={Boolean(medicalFileAppointment)}
-        appointment={medicalFileAppointment}
+        mode="appointment"
+        appointmentContext={medicalFileAppointment}
         clinicScope={appointmentClinicScope}
         onClose={() => setMedicalFileAppointment(null)}
       />

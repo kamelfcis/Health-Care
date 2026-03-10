@@ -48,6 +48,7 @@ export const appointmentService = {
         where,
         include: {
           patient: true,
+          specialty: true,
           doctor: { include: { user: true } }
         },
         skip: (input.page - 1) * input.pageSize,
@@ -65,6 +66,7 @@ export const appointmentService = {
     data: {
       doctorId: string;
       patientId: string;
+      specialtyCode: string;
       startsAt: string;
       endsAt: string;
       entryType?: VisitEntryType;
@@ -73,13 +75,17 @@ export const appointmentService = {
       status?: AppointmentStatus;
     }
   ) {
-    const [doctor, patient] = await Promise.all([
+    const [doctor, patient, specialty] = await Promise.all([
       prisma.doctor.findFirst({
         where: { id: data.doctorId, clinicId, deletedAt: null },
         select: { id: true }
       }),
       prisma.patient.findFirst({
         where: { id: data.patientId, clinicId, deletedAt: null },
+        select: { id: true }
+      }),
+      prisma.specialtyCatalog.findFirst({
+        where: { code: data.specialtyCode.trim().toUpperCase(), deletedAt: null, isActive: true },
         select: { id: true }
       })
     ]);
@@ -89,12 +95,23 @@ export const appointmentService = {
     if (!patient) {
       throw new AppError("Patient not found in this clinic", 404);
     }
+    if (!specialty) {
+      throw new AppError("Specialty not found", 404);
+    }
+    const enabledClinicSpecialty = await prisma.clinicSpecialty.findFirst({
+      where: { clinicId, specialtyId: specialty.id, deletedAt: null },
+      select: { id: true }
+    });
+    if (!enabledClinicSpecialty) {
+      throw new AppError("Specialty is not enabled for this clinic", 403);
+    }
 
     return prisma.appointment.create({
       data: {
         clinicId,
         doctorId: data.doctorId,
         patientId: data.patientId,
+        specialtyId: specialty.id,
         entryType: data.entryType ?? "EXAM",
         startsAt: new Date(data.startsAt),
         endsAt: new Date(data.endsAt),
@@ -111,6 +128,7 @@ export const appointmentService = {
     data: {
       doctorId?: string;
       patientId?: string;
+      specialtyCode?: string;
       startsAt?: string;
       endsAt?: string;
       entryType?: VisitEntryType;
@@ -146,11 +164,31 @@ export const appointmentService = {
       }
     }
 
+    let nextSpecialtyId: string | undefined;
+    if (typeof data.specialtyCode === "string" && data.specialtyCode.trim()) {
+      const specialty = await prisma.specialtyCatalog.findFirst({
+        where: { code: data.specialtyCode.trim().toUpperCase(), deletedAt: null, isActive: true },
+        select: { id: true }
+      });
+      if (!specialty) {
+        throw new AppError("Specialty not found", 404);
+      }
+      const enabledClinicSpecialty = await prisma.clinicSpecialty.findFirst({
+        where: { clinicId, specialtyId: specialty.id, deletedAt: null },
+        select: { id: true }
+      });
+      if (!enabledClinicSpecialty) {
+        throw new AppError("Specialty is not enabled for this clinic", 403);
+      }
+      nextSpecialtyId = specialty.id;
+    }
+
     return prisma.appointment.update({
       where: { id: appointment.id },
       data: {
         ...(data.doctorId ? { doctorId: data.doctorId } : {}),
         ...(data.patientId ? { patientId: data.patientId } : {}),
+        ...(nextSpecialtyId ? { specialtyId: nextSpecialtyId } : {}),
         ...(data.entryType ? { entryType: data.entryType } : {}),
         ...(data.startsAt ? { startsAt: new Date(data.startsAt) } : {}),
         ...(data.endsAt ? { endsAt: new Date(data.endsAt) } : {}),
@@ -173,5 +211,85 @@ export const appointmentService = {
       where: { id: appointment.id },
       data: { deletedAt: new Date(), status: "CANCELLED" }
     });
+  },
+
+  async getAssessmentByAppointment(id: string, clinicId: string, requester?: { role?: string; userId?: string }) {
+    const appointment = await prisma.appointment.findFirst({
+      where: { id, clinicId, deletedAt: null },
+      include: {
+        patient: true,
+        specialty: true,
+        doctor: {
+          include: {
+            user: true
+          }
+        }
+      }
+    });
+    if (!appointment) {
+      throw new AppError("Appointment not found", 404);
+    }
+    if (requester?.role === "Doctor" && requester.userId && appointment.doctor.userId !== requester.userId) {
+      throw new AppError("You are not allowed to access this appointment assessment", 403);
+    }
+    if (!appointment.specialtyId || !appointment.specialty) {
+      throw new AppError("No specialty assigned to this appointment", 409);
+    }
+
+    const clinicSpecialty = await prisma.clinicSpecialty.findFirst({
+      where: { clinicId: appointment.clinicId, specialtyId: appointment.specialtyId, deletedAt: null },
+      select: { templateId: true }
+    });
+    if (!clinicSpecialty) {
+      throw new AppError("Appointment specialty is not enabled for this clinic", 403);
+    }
+    if (!clinicSpecialty.templateId) {
+      throw new AppError("No template assigned for appointment specialty", 404);
+    }
+
+    const template = await prisma.specialtyTemplate.findFirst({
+      where: { id: clinicSpecialty.templateId },
+      include: {
+        fields: { orderBy: { displayOrder: "asc" }, include: { options: { orderBy: { displayOrder: "asc" } } } },
+        rules: { orderBy: { displayOrder: "asc" } }
+      }
+    });
+    if (!template) {
+      throw new AppError("Assigned appointment specialty template was not found", 404);
+    }
+
+    const existingAssessment = await prisma.patientSpecialtyAssessment.findFirst({
+      where: { appointmentId: appointment.id, specialtyId: appointment.specialtyId },
+      include: {
+        specialty: true,
+        template: true
+      }
+    });
+
+    return {
+      appointment: {
+        id: appointment.id,
+        startsAt: appointment.startsAt,
+        endsAt: appointment.endsAt,
+        status: appointment.status,
+        entryType: appointment.entryType,
+        reason: appointment.reason,
+        notes: appointment.notes,
+        patient: appointment.patient,
+        doctor: {
+          id: appointment.doctor.id,
+          specialty: appointment.doctor.specialty,
+          user: appointment.doctor.user
+        }
+      },
+      specialty: {
+        id: appointment.specialty.id,
+        code: appointment.specialty.code,
+        name: appointment.specialty.name,
+        nameAr: appointment.specialty.nameAr
+      },
+      template,
+      assessment: existingAssessment
+    };
   }
 };

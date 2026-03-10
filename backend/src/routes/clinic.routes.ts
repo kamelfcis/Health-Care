@@ -30,6 +30,17 @@ const optionalNumberFromInput = z.preprocess((value) => {
   return value;
 }, z.number().positive().optional());
 
+const parseJsonInput = (value: unknown) => {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
+};
+
 const createSchema = z.object({
   body: z.object({
     name: z.string().min(2),
@@ -42,13 +53,14 @@ const createSchema = z.object({
     countryCode: z.string().trim().toUpperCase().length(2).optional(),
     currencyCode: z.string().trim().toUpperCase().length(3).optional(),
     timezone: z.string().optional(),
-    specialtyCodes: z.array(z.string().min(1)).min(1),
-    adminUser: z.object({
+    imageUrl: z.string().optional(),
+    specialtyCodes: z.preprocess(parseJsonInput, z.array(z.string().min(1)).min(1)),
+    adminUser: z.preprocess(parseJsonInput, z.object({
       firstName: z.string().min(1),
       lastName: z.string().min(1),
       email: z.string().email(),
       password: z.string().min(8)
-    })
+    }))
   })
 });
 
@@ -64,8 +76,9 @@ const updateSchema = z.object({
     countryCode: z.string().trim().toUpperCase().length(2).optional(),
     currencyCode: z.string().trim().toUpperCase().length(3).optional(),
     timezone: z.string().optional(),
-    isActive: z.boolean().optional(),
-    specialtyCodes: z.array(z.string().min(1)).optional(),
+    isActive: optionalBooleanFromInput,
+    imageUrl: z.string().optional().nullable(),
+    specialtyCodes: z.preprocess(parseJsonInput, z.array(z.string().min(1)).optional()),
     applyRetroactiveCurrencyConversion: optionalBooleanFromInput,
     conversionRate: optionalNumberFromInput
   })
@@ -104,10 +117,18 @@ router.post(
   "/",
   requireAuth,
   allowRoles("SuperAdmin"),
+  uploadClinicImage.single("clinicImage"),
   validate(createSchema),
   asyncHandler(clinicController.create)
 );
-router.patch("/:id", requireAuth, allowRoles("SuperAdmin"), validate(updateSchema), asyncHandler(clinicController.update));
+router.patch(
+  "/:id",
+  requireAuth,
+  allowRoles("SuperAdmin"),
+  uploadClinicImage.single("clinicImage"),
+  validate(updateSchema),
+  asyncHandler(clinicController.update)
+);
 router.delete("/:id", requireAuth, allowRoles("SuperAdmin"), asyncHandler(clinicController.remove));
 
 export default router;

@@ -40,20 +40,6 @@ const isVisible = (field: SectionField, values: Values) => {
   return values[condition.field] === condition.equals;
 };
 
-const getFieldSide = (field: SectionField): "right" | "left" | null => {
-  const meta = (field.metadata as { side?: unknown } | null | undefined)?.side;
-  if (meta === "right" || meta === "left") return meta;
-  if (/^right/i.test(field.key)) return "right";
-  if (/^left/i.test(field.key)) return "left";
-  return null;
-};
-
-const getGridRowKey = (field: SectionField) => {
-  const metaRow = (field.metadata as { row?: unknown } | null | undefined)?.row;
-  if (typeof metaRow === "string" && metaRow.trim()) return metaRow.trim().toLowerCase();
-  return field.key.replace(/^right/i, "").replace(/^left/i, "").trim().toLowerCase();
-};
-
 const cleanGridRowLabel = (field: SectionField, locale: "ar" | "en") => {
   const source = locale === "ar" ? field.labelAr : field.label;
   return source
@@ -69,7 +55,7 @@ const cleanGridRowLabel = (field: SectionField, locale: "ar" | "en") => {
 const getGridMetadata = (field: SectionField) => {
   const grid = (field.metadata as { grid?: unknown } | null | undefined)?.grid;
   if (!grid || typeof grid !== "object") return null;
-  const candidate = grid as { rowKey?: unknown; columns?: unknown };
+  const candidate = grid as { id?: unknown; rowKey?: unknown; columns?: unknown };
   if (!Array.isArray(candidate.columns)) return null;
   const columns = candidate.columns
     .map((column, index) => {
@@ -87,15 +73,35 @@ const getGridMetadata = (field: SectionField) => {
     .sort((a, b) => a.order - b.order);
   if (!columns.length) return null;
   return {
+    id: typeof candidate.id === "string" ? candidate.id.trim() : "",
     rowKey: typeof candidate.rowKey === "string" ? candidate.rowKey.trim() : "",
     columns
   };
 };
 
-const getFieldColumnKey = (field: SectionField) => {
+const getExplicitGridRowKey = (field: SectionField) => {
+  const fromMeta = (field.metadata as { row?: unknown } | null | undefined)?.row;
+  return typeof fromMeta === "string" && fromMeta.trim() ? fromMeta.trim().toLowerCase() : "";
+};
+
+const getExplicitGridColumnKey = (field: SectionField) => {
   const fromMeta = (field.metadata as { columnKey?: unknown } | null | undefined)?.columnKey;
-  if (typeof fromMeta === "string" && fromMeta.trim()) return fromMeta.trim();
-  return getFieldSide(field) ?? "value";
+  return typeof fromMeta === "string" && fromMeta.trim() ? fromMeta.trim() : "";
+};
+
+const getCellDisplayLabel = (field: SectionField, locale: "ar" | "en") => {
+  const meta = field.metadata as { cellLabel?: unknown; cellLabelAr?: unknown } | null | undefined;
+  const key = locale === "ar" ? "cellLabelAr" : "cellLabel";
+  if (meta && Object.prototype.hasOwnProperty.call(meta, key)) {
+    const custom = locale === "ar" ? meta.cellLabelAr : meta.cellLabel;
+    if (typeof custom === "string") return custom;
+  }
+  return locale === "ar" ? field.labelAr : field.label;
+};
+
+const isEmptyGridCell = (field: SectionField) => {
+  const meta = field.metadata as { cellType?: unknown } | null | undefined;
+  return meta?.cellType === "EMPTY" || field.fieldType === "EMPTY";
 };
 
 export function SpecialtyAssessmentForm({
@@ -157,20 +163,48 @@ export function SpecialtyAssessmentForm({
     () => (activeSection?.fields.filter((field) => isVisible(field, values)) ?? []),
     [activeSection, values]
   );
-  const dynamicGridColumns = useMemo(() => {
-    const firstWithGrid = activeSectionVisibleFields.find((field) => Boolean(getGridMetadata(field)));
-    return firstWithGrid ? (getGridMetadata(firstWithGrid)?.columns ?? []) : [];
-  }, [activeSectionVisibleFields]);
-  const gridRows = useMemo(() => {
-    const rowsMap = new Map<string, GridRow>();
-    const unpairedRows: GridRow[] = [];
-    const useDynamicGrid = dynamicGridColumns.length > 0;
+  const explicitGridFields = useMemo(
+    () =>
+      activeSectionVisibleFields.filter((field) => {
+        const meta = getGridMetadata(field);
+        return Boolean(meta?.id && getExplicitGridRowKey(field) && getExplicitGridColumnKey(field));
+      }),
+    [activeSectionVisibleFields]
+  );
+  const gridGroups = useMemo(() => {
+    const byGridId = new Map<string, SectionField[]>();
+    explicitGridFields.forEach((field) => {
+      const meta = getGridMetadata(field);
+      if (!meta?.id) return;
+      const existing = byGridId.get(meta.id);
+      if (existing) {
+        existing.push(field);
+      } else {
+        byGridId.set(meta.id, [field]);
+      }
+    });
 
-    activeSectionVisibleFields.forEach((field, index) => {
-      if (useDynamicGrid) {
-        const rowKey = getGridRowKey(field);
+    return Array.from(byGridId.entries()).map(([gridId, fields]) => {
+      const firstMeta = getGridMetadata(fields[0]);
+      const columns = firstMeta?.columns?.length
+        ? firstMeta.columns
+        : Array.from(
+            new Set(
+              fields
+                .map((field) => getExplicitGridColumnKey(field))
+                .filter(Boolean)
+            )
+          ).map((key, index) => ({
+            key,
+            label: key,
+            labelAr: key,
+            order: index + 1
+          }));
+      const rowsMap = new Map<string, GridRow>();
+      fields.forEach((field, index) => {
+        const rowKey = getExplicitGridRowKey(field);
+        const cellKey = getExplicitGridColumnKey(field);
         const existing = rowsMap.get(rowKey);
-        const cellKey = getFieldColumnKey(field);
         if (!existing) {
           rowsMap.set(rowKey, {
             id: rowKey || `row-${field.id}-${index}`,
@@ -181,54 +215,20 @@ export function SpecialtyAssessmentForm({
         }
         existing.cells[cellKey] = field;
         if (!existing.label) existing.label = cleanGridRowLabel(field, locale);
-        return;
-      }
-
-      const side = getFieldSide(field);
-      if (!side) {
-        unpairedRows.push({
-          id: `single-${field.id}-${index}`,
-          label: locale === "ar" ? field.labelAr : field.label,
-          cells: { right: field }
-        });
-        return;
-      }
-
-      const rowKey = getGridRowKey(field);
-      const existing = rowsMap.get(rowKey);
-      if (!existing) {
-        rowsMap.set(rowKey, {
-          id: rowKey || `row-${field.id}-${index}`,
-          label: cleanGridRowLabel(field, locale),
-          cells: {
-            right: side === "right" ? field : undefined,
-            left: side === "left" ? field : undefined
-          }
-        });
-        return;
-      }
-
-      if (side === "right") existing.cells.right = field;
-      if (side === "left") existing.cells.left = field;
-      if (!existing.label) existing.label = cleanGridRowLabel(field, locale);
+      });
+      return {
+        id: gridId,
+        columns,
+        rows: Array.from(rowsMap.values())
+      };
     });
-
-    return [...Array.from(rowsMap.values()), ...unpairedRows];
-  }, [activeSectionVisibleFields, dynamicGridColumns.length, locale]);
-  const useGridTable =
-    activeSectionVisibleFields.some((field) => field.fieldType === "GRID") ||
-    activeSectionVisibleFields.some((field) => getFieldSide(field) !== null) ||
-    dynamicGridColumns.length > 0;
-  const gridColumnsToRender = useMemo(
-    () =>
-      dynamicGridColumns.length
-        ? dynamicGridColumns
-        : [
-            { key: "right", label: "Right", labelAr: "يمين", order: 1 },
-            { key: "left", label: "Left", labelAr: "شمال", order: 2 }
-          ],
-    [dynamicGridColumns]
+  }, [explicitGridFields, locale]);
+  const gridFieldIds = useMemo(() => new Set(explicitGridFields.map((field) => field.id)), [explicitGridFields]);
+  const nonGridVisibleFields = useMemo(
+    () => activeSectionVisibleFields.filter((field) => !gridFieldIds.has(field.id)),
+    [activeSectionVisibleFields, gridFieldIds]
   );
+  const useGridTable = gridGroups.length > 0;
   const hasPrev = activeIndex > 0;
   const hasNext = activeIndex >= 0 && activeIndex < groupedSections.length - 1;
   const goPrev = () => {
@@ -246,11 +246,21 @@ export function SpecialtyAssessmentForm({
   };
 
   const renderFieldControl = (field: SectionField, compact = false) => {
-    const label = locale === "ar" ? field.labelAr : field.label;
+    const label = getCellDisplayLabel(field, locale);
     const help = locale === "ar" ? field.helpTextAr : field.helpText;
     const inputClass = compact
       ? "h-10 w-full rounded-xl border border-slate-300/80 bg-white/95 px-3 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
       : "h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-orange-500";
+
+    if (isEmptyGridCell(field)) {
+      return (
+        <div className="space-y-1">
+          <label className={compact ? "text-sm font-semibold text-slate-700" : "text-sm font-medium text-slate-600"}>
+            {label}
+          </label>
+        </div>
+      );
+    }
 
     if (field.fieldType === "AUTO") {
       return (
@@ -388,32 +398,43 @@ export function SpecialtyAssessmentForm({
         <section key={activeSection.id} className="space-y-3 rounded-2xl border border-slate-200/80 bg-white/80 p-4">
           <h4 className="text-sm font-semibold text-slate-800">{activeSection.title}</h4>
           {useGridTable ? (
-            <div className="overflow-x-auto rounded-2xl border-2 border-slate-300 bg-gradient-to-b from-white to-slate-50/70 shadow-[0_10px_30px_rgba(15,23,42,0.08)]">
-              <table className="min-w-full border-separate border-spacing-0 text-right text-sm">
-                <thead className="bg-gradient-to-r from-orange-600 to-orange-500">
-                  <tr>
-                    {gridColumnsToRender.map((column) => (
-                      <th
-                        key={column.key}
-                        className="border-x-2 border-b-2 border-orange-300/70 px-4 py-3 align-middle text-center text-base font-semibold text-white"
-                      >
-                        {locale === "ar" ? column.labelAr : column.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {gridRows.map((row) => (
-                    <tr key={row.id} className="align-middle transition-colors even:bg-slate-50/60 hover:bg-orange-50/40">
-                      {gridColumnsToRender.map((column) => (
-                        <td key={`${row.id}-${column.key}`} className="border-x-2 border-b-2 border-slate-200 px-4 py-3">
-                          {row.cells[column.key] ? renderFieldControl(row.cells[column.key]!, true) : <span className="text-sm text-slate-400">-</span>}
-                        </td>
+            <div className="space-y-3">
+              {gridGroups.map((group) => (
+                <div key={`grid-group-${group.id}`} className="overflow-x-auto rounded-2xl border-2 border-slate-300 bg-gradient-to-b from-white to-slate-50/70 shadow-[0_10px_30px_rgba(15,23,42,0.08)]">
+                  <table className="min-w-full border-separate border-spacing-0 text-right text-sm">
+                    <thead className="bg-gradient-to-r from-orange-600 to-orange-500">
+                      <tr>
+                        {group.columns.map((column) => (
+                          <th
+                            key={`${group.id}-${column.key}`}
+                            className="border-x-2 border-b-2 border-orange-300/70 px-4 py-3 align-middle text-center text-base font-semibold text-white"
+                          >
+                            {locale === "ar" ? column.labelAr : column.label}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.rows.map((row) => (
+                        <tr key={`${group.id}-${row.id}`} className="align-middle transition-colors even:bg-slate-50/60 hover:bg-orange-50/40">
+                          {group.columns.map((column) => (
+                            <td key={`${group.id}-${row.id}-${column.key}`} className="border-x-2 border-b-2 border-slate-200 px-4 py-3">
+                              {row.cells[column.key] ? renderFieldControl(row.cells[column.key]!, true) : <span className="text-sm text-slate-400">-</span>}
+                            </td>
+                          ))}
+                        </tr>
                       ))}
-                    </tr>
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+              {nonGridVisibleFields.length ? (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {nonGridVisibleFields.map((field) => (
+                    <div key={field.id}>{renderFieldControl(field)}</div>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="grid gap-3 md:grid-cols-2">

@@ -263,6 +263,7 @@ model Appointment {
   clinicId  String
   doctorId  String
   patientId String
+  specialtyId String?
   entryType VisitEntryType    @default(EXAM)
   startsAt  DateTime
   endsAt    DateTime
@@ -275,8 +276,11 @@ model Appointment {
   clinic    Clinic            @relation(fields: [clinicId], references: [id])
   doctor    Doctor            @relation(fields: [doctorId], references: [id])
   patient   Patient           @relation(fields: [patientId], references: [id])
+  specialty SpecialtyCatalog? @relation(fields: [specialtyId], references: [id], onDelete: SetNull)
+  specialtyAssessments PatientSpecialtyAssessment[]
 
   @@index([clinicId])
+  @@index([specialtyId])
   @@index([doctorId, startsAt])
   @@index([patientId, startsAt])
   @@index([clinicId, deletedAt, createdAt])
@@ -443,6 +447,7 @@ model SpecialtyCatalog {
   clinics     ClinicSpecialty[]
   templates   SpecialtyTemplate[]
   assessments PatientSpecialtyAssessment[]
+  appointments Appointment[]
 
   @@index([isActive])
 }
@@ -521,7 +526,7 @@ model SpecialtyTemplateField {
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
   template            SpecialtyTemplate  @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  sectionRef          SpecialtyTemplateSection? @relation(fields: [sectionId], references: [id], onDelete: SetNull)
+  sectionRef          SpecialtyTemplateSection? @relation(fields: [sectionId], references: [id], onDelete: Cascade)
   options             SpecialtyTemplateOption[]
   rules               SpecialtyRule[]
 
@@ -569,6 +574,7 @@ model SpecialtyRule {
 
 model PatientSpecialtyAssessment {
   id            String           @id @default(cuid())
+  appointmentId String?
   patientId     String
   clinicId      String
   specialtyId   String
@@ -581,11 +587,13 @@ model PatientSpecialtyAssessment {
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
   patient       Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  appointment   Appointment?     @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
   clinic        Clinic           @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   specialty     SpecialtyCatalog @relation(fields: [specialtyId], references: [id], onDelete: Cascade)
   template      SpecialtyTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
-  @@unique([patientId, specialtyId, entryType])
+  @@unique([appointmentId])
   @@index([clinicId])
   @@index([specialtyId])
+  @@index([patientId, specialtyId, entryType])
 }

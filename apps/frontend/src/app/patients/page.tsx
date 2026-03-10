@@ -36,6 +36,7 @@ import { StatCard } from "@/components/ui/stat-card";
 import { RoleGate } from "@/components/auth/role-gate";
 import { cn } from "@/lib/utils";
 import { specialtyService, VisitEntryType } from "@/lib/specialty-service";
+import { MedicalRecordModal, PatientMedicalRecordContext } from "@/components/appointments/medical-record-modal";
 
 type PatientRow = {
   id: string;
@@ -85,6 +86,7 @@ export default function PatientsPage() {
   const [formExpanded, setFormExpanded] = useState(false);
   const [editing, setEditing] = useState<PatientRow | null>(null);
   const [assessmentPatient, setAssessmentPatient] = useState<PatientRow | null>(null);
+  const [medicalRecordPatient, setMedicalRecordPatient] = useState<PatientMedicalRecordContext | null>(null);
   const [selectedAssessmentSpecialtyCode, setSelectedAssessmentSpecialtyCode] = useState<string>("");
   const [selectedAssessmentEntryType, setSelectedAssessmentEntryType] = useState<VisitEntryType>("EXAM");
   const [deleteTarget, setDeleteTarget] = useState<PatientRow | null>(null);
@@ -97,6 +99,9 @@ export default function PatientsPage() {
   const whatsappSpeechBaseMessageRef = useRef("");
   const whatsappMessageInputRef = useRef<HTMLTextAreaElement | null>(null);
   const whatsappListeningRequestedRef = useRef(false);
+  const whatsappAutoRestartRef = useRef(false);
+  const whatsappRestartTimerRef = useRef<number | null>(null);
+  const whatsappLastSpeechErrorToastAtRef = useRef(0);
   const whatsappAudioContextRef = useRef<AudioContext | null>(null);
   const whatsappAnalyserRef = useRef<AnalyserNode | null>(null);
   const whatsappAudioStreamRef = useRef<MediaStream | null>(null);
@@ -323,6 +328,11 @@ export default function PatientsPage() {
   }, [normalizeWhatsappNumber, t, whatsappMessage, whatsappTarget]);
   const stopWhatsappSpeechInput = useCallback(() => {
     whatsappListeningRequestedRef.current = false;
+    whatsappAutoRestartRef.current = false;
+    if (whatsappRestartTimerRef.current !== null) {
+      window.clearTimeout(whatsappRestartTimerRef.current);
+      whatsappRestartTimerRef.current = null;
+    }
     if (whatsappRafRef.current !== null) {
       cancelAnimationFrame(whatsappRafRef.current);
       whatsappRafRef.current = null;
@@ -364,6 +374,7 @@ export default function PatientsPage() {
       return;
     }
     whatsappListeningRequestedRef.current = true;
+    whatsappAutoRestartRef.current = true;
     whatsappSpeechBaseMessageRef.current = "";
     setWhatsappMessage("");
     recognition.lang = locale === "ar" ? "ar-EG" : "en-US";
@@ -445,8 +456,8 @@ export default function PatientsPage() {
     recognition.onstart = () => setIsWhatsappListening(true);
     recognition.onend = () => {
       setIsWhatsappListening(false);
-      if (!whatsappListeningRequestedRef.current) return;
-      window.setTimeout(() => {
+      if (!whatsappListeningRequestedRef.current || !whatsappAutoRestartRef.current) return;
+      whatsappRestartTimerRef.current = window.setTimeout(() => {
         try {
           recognition.start();
         } catch {
@@ -456,7 +467,16 @@ export default function PatientsPage() {
     };
     recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
       setIsWhatsappListening(false);
-      if (event?.error !== "aborted") {
+      const errorType = String(event?.error ?? "");
+      if (errorType === "aborted") return;
+      const fatalErrors = new Set(["not-allowed", "service-not-allowed", "audio-capture", "network"]);
+      if (fatalErrors.has(errorType)) {
+        whatsappListeningRequestedRef.current = false;
+        whatsappAutoRestartRef.current = false;
+      }
+      const now = Date.now();
+      if (fatalErrors.has(errorType) && now - whatsappLastSpeechErrorToastAtRef.current > 2000) {
+        whatsappLastSpeechErrorToastAtRef.current = now;
         toast.error(t("patients.whatsappPopup.speechFailed"));
       }
     };
@@ -489,6 +509,10 @@ export default function PatientsPage() {
       if (whatsappRafRef.current !== null) {
         cancelAnimationFrame(whatsappRafRef.current);
       }
+      if (whatsappRestartTimerRef.current !== null) {
+        window.clearTimeout(whatsappRestartTimerRef.current);
+        whatsappRestartTimerRef.current = null;
+      }
       if (whatsappAudioStreamRef.current) {
         whatsappAudioStreamRef.current.getTracks().forEach((track) => track.stop());
       }
@@ -496,6 +520,7 @@ export default function PatientsPage() {
         void whatsappAudioContextRef.current.close();
       }
       whatsappListeningRequestedRef.current = false;
+      whatsappAutoRestartRef.current = false;
       setWhatsappVoiceLevel(0);
       whatsappSpeechRecognitionRef.current = null;
       setIsWhatsappListening(false);
@@ -613,7 +638,7 @@ export default function PatientsPage() {
                   return;
                 }
                 setSelectedAssessmentEntryType("EXAM");
-                setAssessmentPatient(row.original);
+                setMedicalRecordPatient({ id: row.original.id, name: row.original.name });
               }}
             >
               <ClipboardList size={12} />
@@ -979,7 +1004,7 @@ export default function PatientsPage() {
                                 toast.error(t("patients.assessment.selectClinicScope"));
                                 return;
                               }
-                              setAssessmentPatient(row);
+                              setMedicalRecordPatient({ id: row.id, name: row.name });
                             }}
                           >
                             <ClipboardList size={13} />
@@ -1235,6 +1260,13 @@ export default function PatientsPage() {
           </section>
         </div>
       ) : null}
+      <MedicalRecordModal
+        open={Boolean(medicalRecordPatient)}
+        mode="patient"
+        patientContext={medicalRecordPatient}
+        clinicScope={specialtyClinicScope}
+        onClose={() => setMedicalRecordPatient(null)}
+      />
     </AppShell>
     </RoleGate>
   );

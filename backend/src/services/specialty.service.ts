@@ -307,17 +307,9 @@ export const specialtyService = {
 
   async removeTemplateSection(sectionId: string) {
     const section = await prisma.specialtyTemplateSection.findUnique({
-      where: { id: sectionId },
-      include: {
-        _count: {
-          select: { fields: true }
-        }
-      }
+      where: { id: sectionId }
     });
     if (!section) throw new AppError("Section not found", 404);
-    if (section._count.fields > 0) {
-      throw new AppError("Cannot delete section that still has fields", 400);
-    }
 
     await prisma.specialtyTemplateSection.delete({ where: { id: sectionId } });
     return { id: sectionId };

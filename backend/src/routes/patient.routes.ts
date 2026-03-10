@@ -73,6 +73,7 @@ const updateSchema = z.object({
 
 router.get("/", requireAuth, requirePermissions("patients.read"), asyncHandler(patientController.list));
 router.get("/stats", requireAuth, requirePermissions("patients.read"), asyncHandler(patientController.stats));
+router.get("/:id/assessments", requireAuth, requirePermissions("patients.read"), asyncHandler(patientController.listAssessments));
 router.post(
   "/",
   requireAuth,

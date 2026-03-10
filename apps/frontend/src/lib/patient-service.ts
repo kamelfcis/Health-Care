@@ -49,6 +49,45 @@ export interface PatientStats {
   withoutContactInfo: number;
 }
 
+export interface PatientAssessmentHistoryItem {
+  id: string;
+  source: "appointment" | "legacy";
+  createdAt: string;
+  updatedAt: string;
+  entryType: "EXAM" | "CONSULTATION";
+  appointment: {
+    id: string;
+    startsAt: string;
+    endsAt: string;
+    status: string;
+    reason?: string | null;
+    notes?: string | null;
+    doctor: {
+      id: string;
+      name: string;
+      specialty: string;
+    };
+  } | null;
+  specialty: {
+    id: string;
+    code: string;
+    name: string;
+    nameAr: string;
+  };
+  values: Record<string, unknown>;
+  diagnoses?: Array<Record<string, unknown>> | null;
+  alerts?: Array<Record<string, unknown>> | null;
+}
+
+export interface PatientAssessmentsResponse {
+  patient: {
+    id: string;
+    clinicId: string;
+    fullName: string;
+  };
+  assessments: PatientAssessmentHistoryItem[];
+}
+
 export const patientService = {
   async list(clinicId?: string) {
     const res = await api.get<{ data: PatientListPayload }>("/patients", {
@@ -75,5 +114,12 @@ export const patientService = {
 
   async remove(id: string) {
     await api.delete(`/patients/${id}`);
+  },
+
+  async listAssessments(id: string, clinicId?: string) {
+    const res = await api.get<{ data: PatientAssessmentsResponse }>(`/patients/${id}/assessments`, {
+      params: clinicId ? { clinicId } : undefined
+    });
+    return res.data.data;
   }
 };

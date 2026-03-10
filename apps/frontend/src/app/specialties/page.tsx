@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronDown, ClipboardList, Eye, FileStack, PencilLine, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { motion } from "framer-motion";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/app-shell";
 import { RoleGate } from "@/components/auth/role-gate";
@@ -28,6 +29,10 @@ const fieldTypeLabels: Record<(typeof fieldTypes)[number], string> = {
   MULTI_SELECT: "اختيار متعدد",
   AUTO: "تلقائي",
   GRID: "شبكة"
+};
+const gridCellTypeLabels: Record<GridCellFieldType, string> = {
+  ...fieldTypeLabels,
+  EMPTY: "فارغ"
 };
 const ruleTypeLabels: Record<(typeof ruleTypes)[number], string> = {
   ALERT: "تنبيه",
@@ -67,6 +72,18 @@ const dsTextActionClass = "text-sm font-medium text-slate-600 transition hover:t
 const dsTextActionSuccessClass = "text-sm font-medium text-emerald-700 transition hover:text-emerald-800";
 const dsModalCancelButtonClass =
   "inline-flex h-10 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60";
+const modalPanelVariants = {
+  hidden: { opacity: 0, y: 14 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.24, ease: "easeOut", staggerChildren: 0.08 }
+  }
+};
+const modalPanelItemVariants = {
+  hidden: { opacity: 0, y: 10 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.2, ease: "easeOut" } }
+};
 
 type RuleCondition = {
   field: string;
@@ -97,6 +114,45 @@ type GridRowDraft = {
   labelAr: string;
 };
 
+type PersistedGridColumn = {
+  key: string;
+  label: string;
+  labelAr: string;
+  order: number;
+};
+
+type PersistedGridRow = {
+  key: string;
+  label: string;
+  labelAr: string;
+  order: number;
+};
+
+type GridGroup = {
+  id: string;
+  name: string;
+  nameAr: string;
+  sectionId: string;
+  fields: SpecialtyTemplateField[];
+  columns: PersistedGridColumn[];
+  rows: PersistedGridRow[];
+};
+
+type GridCellFieldType = "TEXT" | "NUMBER" | "YES_NO" | "DATE" | "DROPDOWN" | "MULTI_SELECT" | "AUTO" | "EMPTY";
+type GridCellOptionDraft = {
+  id?: string;
+  value: string;
+  label: string;
+  labelAr: string;
+};
+type GridCellConfig = {
+  type: GridCellFieldType;
+  label: string;
+  labelAr: string;
+  options: GridCellOptionDraft[];
+};
+const gridCellFieldTypes: GridCellFieldType[] = ["TEXT", "NUMBER", "YES_NO", "DATE", "DROPDOWN", "MULTI_SELECT", "AUTO", "EMPTY"];
+
 const toSlug = (value: string) =>
   value
     .trim()
@@ -122,6 +178,40 @@ const ensureUniqueKey = (base: string, usedKeys: Set<string>) => {
   }
   usedKeys.add(candidate);
   return candidate;
+};
+
+const getGridCellKey = (rowId: string, columnId: string) => `${rowId}:${columnId}`;
+
+const readGridMeta = (field: SpecialtyTemplateField) => {
+  const metadata = field.metadata as Record<string, unknown> | null | undefined;
+  const grid = metadata?.grid as Record<string, unknown> | undefined;
+  const gridId = typeof grid?.id === "string" ? grid.id.trim() : "";
+  const rowKey = typeof metadata?.row === "string" ? metadata.row.trim() : "";
+  const columnKey = typeof metadata?.columnKey === "string" ? metadata.columnKey.trim() : "";
+  const columns = Array.isArray(grid?.columns)
+    ? (grid.columns
+        .map((column, index) => {
+          if (!column || typeof column !== "object") return null;
+          const item = column as Record<string, unknown>;
+          const key = typeof item.key === "string" ? item.key.trim() : "";
+          if (!key) return null;
+          return {
+            key,
+            label: typeof item.label === "string" ? item.label : key,
+            labelAr: typeof item.labelAr === "string" ? item.labelAr : key,
+            order: typeof item.order === "number" ? item.order : index + 1
+          } satisfies PersistedGridColumn;
+        })
+        .filter((item): item is PersistedGridColumn => Boolean(item))
+        .sort((a, b) => a.order - b.order))
+    : [];
+  return { gridId, rowKey, columnKey, columns };
+};
+
+const splitCellLabel = (value: string, fallback: string) => {
+  const source = value.trim() || fallback;
+  const parts = source.split(" - ");
+  return parts[0]?.trim() || source;
 };
 
 const emptyRule: RuleFormState = {
@@ -185,7 +275,15 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
   const [newSection, setNewSection] = useState({ name: "", nameAr: "" });
   const [gridColumns, setGridColumns] = useState<GridColumnDraft[]>([{ id: "col-1", label: "", labelAr: "" }]);
   const [gridRows, setGridRows] = useState<GridRowDraft[]>([{ id: "row-1", label: "", labelAr: "" }]);
+  const [gridCellConfigs, setGridCellConfigs] = useState<Record<string, GridCellConfig>>({});
   const [gridPreviewValues, setGridPreviewValues] = useState<Record<string, string>>({});
+  const [gridEditTarget, setGridEditTarget] = useState<GridGroup | null>(null);
+  const [gridDeleteTarget, setGridDeleteTarget] = useState<GridGroup | null>(null);
+  const [gridEditColumns, setGridEditColumns] = useState<PersistedGridColumn[]>([]);
+  const [gridEditRows, setGridEditRows] = useState<PersistedGridRow[]>([]);
+  const [gridEditCellConfigs, setGridEditCellConfigs] = useState<Record<string, GridCellConfig>>({});
+  const [activeGridCellKey, setActiveGridCellKey] = useState<string>("");
+  const [gridOptionPopupCellKey, setGridOptionPopupCellKey] = useState<string | null>(null);
   const [newRule, setNewRule] = useState<RuleFormState>(emptyRule);
   const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<Partial<SpecialtyTemplateField>>({});
@@ -357,6 +455,65 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
       fields: fieldsBySection.get(section.id) ?? []
     }));
   }, [selectedTemplate, selectedTemplateSections]);
+  const gridGroupsBySection = useMemo(() => {
+    const grouped = new Map<string, GridGroup[]>();
+    sectionRows.forEach((section) => {
+      const byGridId = new Map<string, SpecialtyTemplateField[]>();
+      section.fields.forEach((field) => {
+        const { gridId, rowKey, columnKey } = readGridMeta(field);
+        if (!gridId || !rowKey || !columnKey) return;
+        const existing = byGridId.get(gridId);
+        if (existing) {
+          existing.push(field);
+        } else {
+          byGridId.set(gridId, [field]);
+        }
+      });
+      const groups: GridGroup[] = Array.from(byGridId.entries()).map(([id, fields], groupIndex) => {
+        const firstMeta = readGridMeta(fields[0]);
+        const columns = firstMeta.columns.length
+          ? firstMeta.columns
+          : Array.from(
+              new Set(
+                fields
+                  .map((field) => readGridMeta(field).columnKey)
+                  .filter(Boolean)
+              )
+            ).map((key, index) => ({ key, label: key, labelAr: key, order: index + 1 }));
+        const rowMap = new Map<string, PersistedGridRow>();
+        fields.forEach((field, index) => {
+          const { rowKey, columnKey } = readGridMeta(field);
+          if (!rowKey || rowMap.has(rowKey)) return;
+          const column = columns.find((item) => item.key === columnKey);
+          rowMap.set(rowKey, {
+            key: rowKey,
+            label: splitCellLabel(field.label, `Row ${index + 1}`),
+            labelAr: splitCellLabel(field.labelAr, `صف ${index + 1}`),
+            order: rowMap.size + 1
+          });
+          if (column) {
+            rowMap.set(rowKey, {
+              key: rowKey,
+              label: splitCellLabel(field.label.replace(` - ${column.label}`, ""), `Row ${index + 1}`),
+              labelAr: splitCellLabel(field.labelAr.replace(` - ${column.labelAr}`, ""), `صف ${index + 1}`),
+              order: rowMap.size
+            });
+          }
+        });
+        return {
+          id,
+          name: `Grid ${groupIndex + 1}`,
+          nameAr: `شبكة ${groupIndex + 1}`,
+          sectionId: section.id,
+          fields,
+          columns,
+          rows: Array.from(rowMap.values())
+        };
+      });
+      grouped.set(section.id, groups);
+    });
+    return grouped;
+  }, [sectionRows]);
   const unassignedFields = useMemo(
     () => selectedTemplate?.fields.filter((field) => !field.sectionId) ?? [],
     [selectedTemplate]
@@ -512,12 +669,20 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
         throw new Error("Grid rows and columns are required");
       }
 
+      const gridId = `${generatedBaseFieldKey}_grid`;
       const createCalls = normalizedRows.flatMap((row) =>
         normalizedColumns.map((column) => {
+          const cellDraftKey = getGridCellKey(row.id, column.id);
+          const selectedCellType = gridCellConfigs[cellDraftKey]?.type ?? "TEXT";
+          const cellType = (selectedCellType === "EMPTY" ? "TEXT" : selectedCellType) as SpecialtyTemplateField["fieldType"];
           const metadata: Record<string, unknown> = {
             row: row.key,
             columnKey: column.key,
+            cellType: selectedCellType,
+            cellLabel: gridCellConfigs[cellDraftKey]?.label?.trim() || `${row.label} - ${column.label}`,
+            cellLabelAr: gridCellConfigs[cellDraftKey]?.labelAr?.trim() || `${row.labelAr} - ${column.labelAr}`,
             grid: {
+              id: gridId,
               rowKey: row.key,
               columns: normalizedColumns.map((item) => ({
                 key: item.key,
@@ -535,7 +700,7 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
             label: `${row.label} - ${column.label}`,
             labelAr: `${row.labelAr} - ${column.labelAr}`,
             sectionId: newField.sectionId,
-            fieldType: "TEXT",
+            fieldType: cellType,
             isRequired: newField.isRequired,
             metadata
           });
@@ -559,6 +724,7 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
         { id: "col-1", label: "", labelAr: "" }
       ]);
       setGridRows([{ id: "row-1", label: "", labelAr: "" }]);
+      setGridCellConfigs({});
       setGridPreviewValues({});
       await refreshData();
     },
@@ -611,12 +777,252 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
         typeof (error as { response?: { data?: { message?: unknown } } }).response?.data?.message === "string"
           ? ((error as { response?: { data?: { message?: string } } }).response?.data?.message ?? "")
           : "";
-      if (errorMessage.includes("still has fields")) {
-        toast.error(t("specialties.sections.deleteBlocked"));
-        return;
-      }
       toast.error(errorMessage || "تعذر حذف القسم");
     }
+  });
+
+  const openGridEditDialog = (group: GridGroup) => {
+    setGridEditTarget(group);
+    setGridEditColumns(group.columns.map((column) => ({ ...column })));
+    setGridEditRows(group.rows.map((row) => ({ ...row })));
+    const initialCellConfigs: Record<string, GridCellConfig> = {};
+    group.fields.forEach((field) => {
+      const { rowKey, columnKey } = readGridMeta(field);
+      if (!rowKey || !columnKey) return;
+      const metadata = field.metadata as Record<string, unknown> | null | undefined;
+      const cellType = (typeof metadata?.cellType === "string" ? metadata.cellType : field.fieldType) as GridCellFieldType;
+      const label = typeof metadata?.cellLabel === "string" ? metadata.cellLabel : field.label;
+      const labelAr = typeof metadata?.cellLabelAr === "string" ? metadata.cellLabelAr : field.labelAr;
+      initialCellConfigs[getGridCellKey(rowKey, columnKey)] = {
+        type: cellType,
+        label,
+        labelAr,
+        options: field.options.map((option) => ({
+          id: option.id,
+          value: option.value,
+          label: option.label,
+          labelAr: option.labelAr
+        }))
+      };
+    });
+    setGridEditCellConfigs(initialCellConfigs);
+    const firstRow = group.rows[0]?.key ?? "";
+    const firstColumn = group.columns[0]?.key ?? "";
+    setActiveGridCellKey(firstRow && firstColumn ? getGridCellKey(firstRow, firstColumn) : "");
+  };
+
+  const closeGridEditDialog = () => {
+    setGridEditTarget(null);
+    setGridEditColumns([]);
+    setGridEditRows([]);
+    setGridEditCellConfigs({});
+    setActiveGridCellKey("");
+    setGridOptionPopupCellKey(null);
+  };
+
+  useEffect(() => {
+    if (!gridEditTarget) return;
+    const firstRow = gridEditRows[0]?.key ?? "";
+    const firstColumn = gridEditColumns[0]?.key ?? "";
+    const fallback = firstRow && firstColumn ? getGridCellKey(firstRow, firstColumn) : "";
+    if (!activeGridCellKey) {
+      setActiveGridCellKey(fallback);
+      return;
+    }
+    const [rowKey, columnKey] = activeGridCellKey.split(":");
+    const rowExists = gridEditRows.some((row) => row.key === rowKey);
+    const columnExists = gridEditColumns.some((column) => column.key === columnKey);
+    if (!rowExists || !columnExists) {
+      setActiveGridCellKey(fallback);
+    }
+  }, [gridEditTarget, gridEditRows, gridEditColumns, activeGridCellKey]);
+
+  const saveGridEditMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedTemplateId) throw new Error("Template is required");
+      if (!gridEditTarget) throw new Error("Grid is required");
+      if (!gridEditColumns.length || !gridEditRows.length) throw new Error("Grid must have at least one row and one column");
+
+      const previousColumns = gridEditTarget.columns;
+      const previousRows = gridEditTarget.rows;
+      const previousColumnKeys = new Set(previousColumns.map((item) => item.key));
+      const previousRowKeys = new Set(previousRows.map((item) => item.key));
+
+      const usedColumnKeys = new Set<string>();
+      const normalizedColumns = gridEditColumns.map((column, index) => ({
+        ...column,
+        key: previousColumnKeys.has(column.key)
+          ? ensureUniqueKey(column.key, usedColumnKeys)
+          : ensureUniqueKey(sanitizeKeyBase(column.label || `col_${index + 1}`, `col_${index + 1}`), usedColumnKeys),
+        label: column.label.trim() || `Column ${index + 1}`,
+        labelAr: column.labelAr.trim() || `عمود ${index + 1}`,
+        order: index + 1
+      }));
+      const usedRowKeys = new Set<string>();
+      const normalizedRows = gridEditRows.map((row, index) => ({
+        ...row,
+        key: previousRowKeys.has(row.key)
+          ? ensureUniqueKey(row.key, usedRowKeys)
+          : ensureUniqueKey(sanitizeKeyBase(row.label || `row_${index + 1}`, `row_${index + 1}`), usedRowKeys),
+        label: row.label.trim() || `Row ${index + 1}`,
+        labelAr: row.labelAr.trim() || `صف ${index + 1}`,
+        order: index + 1
+      }));
+
+      const nextColumnKeys = new Set(normalizedColumns.map((item) => item.key));
+      const nextRowKeys = new Set(normalizedRows.map((item) => item.key));
+      const removedRowKeys = new Set(previousRows.map((item) => item.key).filter((key) => !nextRowKeys.has(key)));
+      const removedColumnKeys = new Set(previousColumns.map((item) => item.key).filter((key) => !nextColumnKeys.has(key)));
+
+      const existingCellMap = new Map<string, SpecialtyTemplateField>();
+      gridEditTarget.fields.forEach((field) => {
+        const { rowKey, columnKey } = readGridMeta(field);
+        if (!rowKey || !columnKey) return;
+        existingCellMap.set(getGridCellKey(rowKey, columnKey), field);
+      });
+
+      const fieldsToDelete = gridEditTarget.fields.filter((field) => {
+        const { rowKey, columnKey } = readGridMeta(field);
+        return removedRowKeys.has(rowKey) || removedColumnKeys.has(columnKey);
+      });
+      await Promise.all(fieldsToDelete.map((field) => specialtyService.adminDeleteField(field.id)));
+
+      const gridColumnsMetadata = normalizedColumns.map((column) => ({
+        key: column.key,
+        label: column.label,
+        labelAr: column.labelAr,
+        order: column.order
+      }));
+
+      const usedFieldKeys = new Set((selectedTemplate?.fields ?? []).map((field) => field.key));
+      fieldsToDelete.forEach((field) => usedFieldKeys.delete(field.key));
+
+      const upsertCalls: Promise<void>[] = [];
+
+      const syncFieldOptions = async (
+        fieldId: string,
+        existingOptions: SpecialtyTemplateField["options"],
+        nextOptions: GridCellOptionDraft[],
+        enabled: boolean
+      ) => {
+        if (!enabled) {
+          await Promise.all(existingOptions.map((option) => specialtyService.adminDeleteOption(option.id)));
+          return;
+        }
+        const normalized = nextOptions
+          .map((option, index) => ({
+            id: option.id,
+            value: option.value.trim() || `option_${index + 1}`,
+            label: option.label.trim() || option.value.trim() || `Option ${index + 1}`,
+            labelAr: option.labelAr.trim() || option.label.trim() || `خيار ${index + 1}`,
+            displayOrder: index + 1
+          }))
+          .filter((option) => option.value);
+
+        const nextIds = new Set(normalized.map((option) => option.id).filter(Boolean));
+        await Promise.all(
+          existingOptions
+            .filter((option) => !nextIds.has(option.id))
+            .map((option) => specialtyService.adminDeleteOption(option.id))
+        );
+        await Promise.all(
+          normalized.map((option) => {
+            if (option.id) {
+              return specialtyService.adminUpdateOption(option.id, {
+                value: option.value,
+                label: option.label,
+                labelAr: option.labelAr,
+                displayOrder: option.displayOrder
+              });
+            }
+            return specialtyService.adminCreateOption(fieldId, {
+              value: option.value,
+              label: option.label,
+              labelAr: option.labelAr,
+              displayOrder: option.displayOrder
+            });
+          })
+        );
+      };
+
+      normalizedRows.forEach((row) => {
+        normalizedColumns.forEach((column) => {
+          const cellKey = getGridCellKey(row.key, column.key);
+          const existingField = existingCellMap.get(cellKey);
+          const cellConfig = gridEditCellConfigs[cellKey] ?? {
+            type: "TEXT",
+            label: `${row.label} - ${column.label}`,
+            labelAr: `${row.labelAr} - ${column.labelAr}`,
+            options: []
+          };
+          const selectedType = cellConfig.type;
+          const persistedType = (selectedType === "EMPTY" ? "TEXT" : selectedType) as SpecialtyTemplateField["fieldType"];
+          const wantsOptions = selectedType === "DROPDOWN" || selectedType === "MULTI_SELECT";
+          const rawLabel = cellConfig.label.trim();
+          const rawLabelAr = cellConfig.labelAr.trim();
+          const label = rawLabel || `${row.label} - ${column.label}`;
+          const labelAr = rawLabelAr || `${row.labelAr} - ${column.labelAr}`;
+          const metadata = {
+            row: row.key,
+            columnKey: column.key,
+            cellType: selectedType,
+            cellLabel: rawLabel,
+            cellLabelAr: rawLabelAr,
+            grid: {
+              id: gridEditTarget.id,
+              rowKey: row.key,
+              columns: gridColumnsMetadata
+            }
+          };
+          upsertCalls.push(
+            (async () => {
+              if (existingField && !removedRowKeys.has(row.key) && !removedColumnKeys.has(column.key)) {
+                await specialtyService.adminUpdateField(existingField.id, {
+                  label,
+                  labelAr,
+                  fieldType: persistedType,
+                  metadata
+                });
+                await syncFieldOptions(existingField.id, existingField.options, cellConfig.options, wantsOptions);
+                return;
+              }
+              const createdField = await specialtyService.adminCreateField(selectedTemplateId, {
+                key: ensureUniqueKey(
+                  `${sanitizeKeyBase(gridEditTarget.id, "grid")}_${row.key}_${column.key}`,
+                  usedFieldKeys
+                ),
+                label,
+                labelAr,
+                sectionId: gridEditTarget.sectionId,
+                fieldType: persistedType,
+                metadata
+              });
+              await syncFieldOptions(createdField.id, createdField.options ?? [], cellConfig.options, wantsOptions);
+            })()
+          );
+        });
+      });
+
+      await Promise.all(upsertCalls);
+    },
+    onSuccess: async () => {
+      toast.success("تم تحديث الـ Grid");
+      closeGridEditDialog();
+      await refreshData();
+    },
+    onError: () => toast.error("تعذر تحديث الـ Grid")
+  });
+  const deleteGridMutation = useMutation({
+    mutationFn: async () => {
+      if (!gridDeleteTarget) throw new Error("Grid is required");
+      await Promise.all(gridDeleteTarget.fields.map((field) => specialtyService.adminDeleteField(field.id)));
+    },
+    onSuccess: async () => {
+      toast.success("تم حذف الـ Grid");
+      setGridDeleteTarget(null);
+      await refreshData();
+    },
+    onError: () => toast.error("تعذر حذف الـ Grid")
   });
 
   const updateFieldMutation = useMutation({
@@ -1213,6 +1619,7 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                                           onClick={() => {
                                             setAddFieldSectionId(null);
                                             setNewField((prev) => ({ ...prev, sectionId: "" }));
+                                            setGridCellConfigs({});
                                           }}
                                         >
                                           إلغاء
@@ -1341,20 +1748,44 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                                               {gridRows.map((rowItem, rowIndex) => (
                                                 <tr key={`preview-row-${rowItem.id}`}>
                                                   {gridColumns.map((column) => {
-                                                    const previewKey = `${rowItem.id}:${column.id}`;
+                                                    const previewKey = getGridCellKey(rowItem.id, column.id);
+                                                    const selectedType = gridCellConfigs[previewKey]?.type ?? "TEXT";
                                                     return (
                                                       <td key={`preview-cell-${rowItem.id}-${column.id}`} className="border-b border-slate-100 px-2 py-2">
-                                                        <input
-                                                          value={gridPreviewValues[previewKey] ?? ""}
-                                                          onChange={(event) =>
-                                                            setGridPreviewValues((prev) => ({
-                                                              ...prev,
-                                                              [previewKey]: event.target.value
-                                                            }))
-                                                          }
-                                                          placeholder={`${t("specialties.grid.sampleCell")} ${rowIndex + 1}`}
-                                                          className={dsInputCompactClass}
-                                                        />
+                                                        <div className="space-y-1.5">
+                                                          <select
+                                                            value={selectedType}
+                                                            onChange={(event) =>
+                                                              setGridCellConfigs((prev) => ({
+                                                                ...prev,
+                                                                [previewKey]: {
+                                                                  type: event.target.value as GridCellFieldType,
+                                                                  label: prev[previewKey]?.label ?? `${rowItem.label || `Row ${rowIndex + 1}`} - ${column.label || `Column`}`,
+                                                                  labelAr: prev[previewKey]?.labelAr ?? `${rowItem.labelAr || `صف ${rowIndex + 1}`} - ${column.labelAr || `عمود`}`,
+                                                                  options: prev[previewKey]?.options ?? []
+                                                                }
+                                                              }))
+                                                            }
+                                                            className={dsInputCompactClass}
+                                                          >
+                                                            {gridCellFieldTypes.map((fieldType) => (
+                                                              <option key={`${previewKey}-${fieldType}`} value={fieldType}>
+                                                                {gridCellTypeLabels[fieldType]}
+                                                              </option>
+                                                            ))}
+                                                          </select>
+                                                          <input
+                                                            value={gridPreviewValues[previewKey] ?? ""}
+                                                            onChange={(event) =>
+                                                              setGridPreviewValues((prev) => ({
+                                                                ...prev,
+                                                                [previewKey]: event.target.value
+                                                              }))
+                                                            }
+                                                            placeholder={`${t("specialties.grid.sampleCell")} ${rowIndex + 1}`}
+                                                            className={dsInputCompactClass}
+                                                          />
+                                                        </div>
                                                       </td>
                                                     );
                                                   })}
@@ -1376,7 +1807,35 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
 
                             {expanded ? (
                               <div className="space-y-3 border-t border-slate-100 bg-white p-3">
-                                {row.fields.map((field) => (
+                                {(gridGroupsBySection.get(row.id) ?? []).map((group) => (
+                                  <div key={`grid-group-${group.id}`} className="rounded-xl border border-orange-200 bg-orange-50/50 p-3">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div>
+                                        <p className="text-sm font-semibold text-slate-800">{group.nameAr}</p>
+                                        <p className="text-xs text-slate-600">
+                                          الصفوف: {group.rows.length} | الأعمدة: {group.columns.length} | الخلايا: {group.fields.length}
+                                        </p>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        className="inline-flex h-9 items-center rounded-lg border border-orange-200 bg-white px-3 text-sm font-medium text-orange-700 transition hover:bg-orange-50"
+                                        onClick={() => openGridEditDialog(group)}
+                                      >
+                                        تعديل الـ Grid
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="inline-flex h-9 items-center rounded-lg border border-rose-200 bg-rose-50 px-3 text-sm font-medium text-rose-700 transition hover:bg-rose-100"
+                                        onClick={() => setGridDeleteTarget(group)}
+                                      >
+                                        حذف الـ Grid
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                                {row.fields.map((field) => {
+                                  if (readGridMeta(field).gridId) return null;
+                                  return (
                             <div
                               key={field.id}
                               className="rounded-xl border border-slate-200 bg-white p-3"
@@ -1748,8 +2207,11 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                                 </div>
                               </div>
                             </div>
-                                ))}
-                                {!row.fields.length ? <p className="text-sm text-slate-500">لا توجد حقول في هذه الشاشة.</p> : null}
+                                  );
+                                })}
+                                {!row.fields.filter((field) => !readGridMeta(field).gridId).length && !(gridGroupsBySection.get(row.id) ?? []).length ? (
+                                  <p className="text-sm text-slate-500">لا توجد حقول في هذه الشاشة.</p>
+                                ) : null}
                               </div>
                             ) : null}
                           </div>
@@ -1989,7 +2451,7 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                   placeholder="Section name (English)"
                 />
               </div>
-              <div className="mt-4 flex items-center justify-end gap-2">
+              <div className="mt-4 flex items-center justify-end gap-2 rounded-2xl border border-slate-200/80 bg-white/95 px-4 py-3">
                 <button
                   type="button"
                   className={dsModalCancelButtonClass}
@@ -2005,6 +2467,447 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                 >
                   {createSectionMutation.isPending ? "جارٍ الإنشاء..." : "إنشاء"}
                 </RippleButton>
+              </div>
+            </section>
+          </div>
+        ) : null}
+        {gridEditTarget ? (
+          <motion.div
+            className="fixed inset-0 z-[91] flex items-center justify-center p-2 sm:p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <button
+              type="button"
+              aria-label="إغلاق نافذة تعديل الـ Grid"
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-xl"
+              onClick={closeGridEditDialog}
+              disabled={saveGridEditMutation.isPending}
+            />
+            <motion.section
+              dir="rtl"
+              role="dialog"
+              aria-modal="true"
+              className="relative flex max-h-[96vh] w-[min(96vw,96rem)] flex-col overflow-hidden rounded-3xl border border-orange-200/70 bg-gradient-to-br from-white via-orange-50/35 to-amber-50/40 p-3 sm:p-5 shadow-2xl"
+              style={{ boxShadow: "0 34px 120px rgba(234,88,12,0.18), 0 22px 60px rgba(15,23,42,0.22), inset 0 1px 0 rgba(255,255,255,0.9), inset 0 -1px 0 rgba(251,146,60,0.2)" }}
+              initial={{ opacity: 0, scale: 0.9, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 10 }}
+              transition={{ duration: 0.24, ease: "easeOut" }}
+            >
+              <div className="sticky top-0 z-10 mb-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-orange-200/70 bg-white/95 px-3 py-3 shadow-sm backdrop-blur">
+                <div>
+                  <p className="text-xl font-bold text-slate-800">تعديل {gridEditTarget.nameAr}</p>
+                  <p className="text-sm text-slate-600">واجهة هندسية واضحة: إدارة البنية يسارًا وتعديل الخلايا يمينًا.</p>
+                </div>
+                <div className="inline-flex flex-wrap items-center gap-2 rounded-xl border border-orange-200/70 bg-gradient-to-r from-orange-50 to-amber-50 px-2.5 py-1.5">
+                  <span className="text-xs font-semibold text-orange-800">Grid Overview</span>
+                  <span className="rounded-full border border-orange-200 bg-white px-2.5 py-1 text-xs font-medium text-orange-700">أعمدة: {gridEditColumns.length}</span>
+                  <span className="rounded-full border border-orange-200 bg-white px-2.5 py-1 text-xs font-medium text-orange-700">صفوف: {gridEditRows.length}</span>
+                  <button
+                    type="button"
+                    className={dsModalCancelButtonClass}
+                    onClick={closeGridEditDialog}
+                    disabled={saveGridEditMutation.isPending}
+                  >
+                    إغلاق
+                  </button>
+                </div>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto pe-1">
+                <div className="grid gap-4 2xl:grid-cols-[380px_minmax(0,1fr)]">
+                <motion.div className="space-y-4" variants={modalPanelVariants} initial="hidden" animate="show">
+                <motion.div className="rounded-2xl border border-orange-200/60 bg-white p-3 shadow-[0_10px_28px_rgba(15,23,42,0.08)]" variants={modalPanelItemVariants}>
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-sm font-semibold text-slate-700">الأعمدة</p>
+                    <button
+                      type="button"
+                      className="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                      onClick={() =>
+                        setGridEditColumns((prev) => [
+                          ...prev,
+                          { key: createClientId(), label: "", labelAr: "", order: prev.length + 1 }
+                        ])
+                      }
+                    >
+                      + عمود
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {gridEditColumns.map((column, index) => (
+                      <div key={`edit-column-${column.key}`} className="grid gap-2 rounded-xl border border-transparent p-1 transition duration-150 hover:-translate-y-0.5 hover:scale-[1.01] hover:border-orange-200 hover:bg-orange-50/40 hover:shadow-md md:grid-cols-[1fr_1fr_auto]">
+                        <input
+                          value={column.label}
+                          onChange={(event) =>
+                            setGridEditColumns((prev) =>
+                              prev.map((item, itemIndex) => (itemIndex === index ? { ...item, label: event.target.value } : item))
+                            )
+                          }
+                          className={`${dsInputCompactClass} h-10 text-base`}
+                          placeholder="الاسم (English)"
+                        />
+                        <input
+                          value={column.labelAr}
+                          onChange={(event) =>
+                            setGridEditColumns((prev) =>
+                              prev.map((item, itemIndex) => (itemIndex === index ? { ...item, labelAr: event.target.value } : item))
+                            )
+                          }
+                          className={`${dsInputCompactClass} h-10 text-base`}
+                          placeholder="الاسم العربي"
+                        />
+                        <button
+                          type="button"
+                          className="h-9 rounded-lg border border-rose-200 bg-rose-50 px-2 text-xs text-rose-700"
+                          disabled={gridEditColumns.length <= 1}
+                          onClick={() =>
+                            setGridEditColumns((prev) => prev.filter((_, itemIndex) => itemIndex !== index))
+                          }
+                        >
+                          حذف
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+                <motion.div className="rounded-2xl border border-orange-200/60 bg-white p-3 shadow-[0_10px_28px_rgba(15,23,42,0.08)]" variants={modalPanelItemVariants}>
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-sm font-semibold text-slate-700">الصفوف</p>
+                    <button
+                      type="button"
+                      className="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700"
+                      onClick={() =>
+                        setGridEditRows((prev) => [
+                          ...prev,
+                          { key: createClientId(), label: "", labelAr: "", order: prev.length + 1 }
+                        ])
+                      }
+                    >
+                      + صف
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {gridEditRows.map((row, index) => (
+                      <div key={`edit-row-${row.key}`} className="grid gap-2 rounded-xl border border-transparent p-1 transition duration-150 hover:-translate-y-0.5 hover:scale-[1.01] hover:border-orange-200 hover:bg-orange-50/40 hover:shadow-md md:grid-cols-[1fr_1fr_auto]">
+                        <input
+                          value={row.label}
+                          onChange={(event) =>
+                            setGridEditRows((prev) =>
+                              prev.map((item, itemIndex) => (itemIndex === index ? { ...item, label: event.target.value } : item))
+                            )
+                          }
+                          className={`${dsInputCompactClass} h-10 text-base`}
+                          placeholder="الاسم (English)"
+                        />
+                        <input
+                          value={row.labelAr}
+                          onChange={(event) =>
+                            setGridEditRows((prev) =>
+                              prev.map((item, itemIndex) => (itemIndex === index ? { ...item, labelAr: event.target.value } : item))
+                            )
+                          }
+                          className={`${dsInputCompactClass} h-10 text-base`}
+                          placeholder="الاسم العربي"
+                        />
+                        <button
+                          type="button"
+                          className="h-9 rounded-lg border border-rose-200 bg-rose-50 px-2 text-xs text-rose-700"
+                          disabled={gridEditRows.length <= 1}
+                          onClick={() =>
+                            setGridEditRows((prev) => prev.filter((_, itemIndex) => itemIndex !== index))
+                          }
+                        >
+                          حذف
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+                </motion.div>
+                <div className="space-y-3">
+                <div className="rounded-2xl border border-orange-200/70 bg-gradient-to-r from-orange-50 to-amber-50 px-3 py-2 text-xs text-slate-700">
+                  عدّل نوع كل خلية، واسمها الإنجليزي/العربي، وخياراتها إذا كانت من نوع قائمة. يفضّل إكمال أسماء الصفوف والأعمدة أولًا.
+                </div>
+                <div className="overflow-x-auto rounded-2xl border border-orange-200/60 bg-white shadow-[0_10px_34px_rgba(15,23,42,0.08)]">
+                  <div className="min-w-[760px] p-3">
+                    <div
+                      className="mb-2 grid gap-3"
+                      style={{ gridTemplateColumns: `repeat(${Math.max(gridEditColumns.length, 1)}, minmax(220px, 1fr))` }}
+                    >
+                      {gridEditColumns.map((column, columnIndex) => (
+                        <div key={`edit-grid-head-${column.key}`} className="rounded-xl border border-orange-200/60 bg-gradient-to-r from-orange-100/70 to-amber-50 px-3 py-2 text-center text-sm font-semibold text-slate-700">
+                          {column.labelAr.trim() || column.label.trim() || `عمود ${columnIndex + 1}`}
+                        </div>
+                      ))}
+                    </div>
+                    <div
+                      className="grid gap-3"
+                      style={{ gridTemplateColumns: `repeat(${Math.max(gridEditColumns.length, 1)}, minmax(220px, 1fr))` }}
+                    >
+                      {gridEditRows.flatMap((row, rowIndex) =>
+                        gridEditColumns.map((column) => {
+                          const cellKey = getGridCellKey(row.key, column.key);
+                          const fallbackLabel = `${row.label || `Row ${rowIndex + 1}`} - ${column.label || "Column"}`;
+                          const fallbackLabelAr = `${row.labelAr || `صف ${rowIndex + 1}`} - ${column.labelAr || "عمود"}`;
+                          const cellConfig = gridEditCellConfigs[cellKey] ?? {
+                            type: "TEXT",
+                            label: fallbackLabel,
+                            labelAr: fallbackLabelAr,
+                            options: []
+                          };
+                          const selectedType = cellConfig.type;
+                          const labelValue = cellConfig.label;
+                          const displayLabel = labelValue.trim() || fallbackLabel;
+                          return (
+                            <div
+                              key={`edit-grid-cell-${row.key}-${column.key}`}
+                              className="space-y-2 rounded-2xl border border-orange-200/70 bg-[hsl(var(--primary)/0.9)] p-3 transition duration-150 focus-within:scale-[1.015] focus-within:border-blue-300 focus-within:shadow-[0_12px_28px_rgba(59,130,246,0.20)]"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-xs font-medium text-slate-600">صف {rowIndex + 1}</span>
+                                <select
+                                  value={selectedType}
+                                  onChange={(event) =>
+                                    setGridEditCellConfigs((prev) => ({
+                                      ...prev,
+                                      [cellKey]: {
+                                        ...(prev[cellKey] ?? cellConfig),
+                                        type: event.target.value as GridCellFieldType
+                                      }
+                                    }))
+                                  }
+                                  className="h-10 rounded-lg border border-slate-200 bg-white px-2 text-sm outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                                >
+                                  {gridCellFieldTypes.map((type) => (
+                                    <option key={`edit-grid-type-${cellKey}-${type}`} value={type}>
+                                      {gridCellTypeLabels[type]}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <input
+                                value={labelValue}
+                                onChange={(event) =>
+                                  setGridEditCellConfigs((prev) => ({
+                                    ...prev,
+                                    [cellKey]: {
+                                      ...(prev[cellKey] ?? cellConfig),
+                                      label: event.target.value,
+                                      labelAr: event.target.value
+                                    }
+                                  }))
+                                }
+                                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-base text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                                placeholder={fallbackLabel}
+                              />
+                              {selectedType === "EMPTY" ? (
+                                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/70 px-3 py-2 text-sm font-medium text-slate-700">
+                                  {displayLabel}
+                                </div>
+                              ) : (
+                                <>
+                                  <input
+                                    value={gridCellTypeLabels[selectedType]}
+                                    readOnly
+                                    className="h-9 w-full rounded-xl border border-slate-200 bg-slate-100/80 px-3 text-sm text-slate-500 outline-none"
+                                  />
+                                  {(selectedType === "DROPDOWN" || selectedType === "MULTI_SELECT") ? (
+                                    <button
+                                      type="button"
+                                      className="h-10 rounded-xl border border-orange-200 bg-white px-3 text-sm font-medium text-orange-700 transition hover:bg-orange-50"
+                                      onClick={() => setGridOptionPopupCellKey(cellKey)}
+                                    >
+                                      إدارة خيارات القائمة
+                                    </button>
+                                  ) : null}
+                                </>
+                              )}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                </div>
+                </div>
+                </div>
+              </div>
+              {gridOptionPopupCellKey ? (
+                (() => {
+                  const [rowKey = "", columnKey = ""] = gridOptionPopupCellKey.split(":");
+                  const row = gridEditRows.find((item) => item.key === rowKey);
+                  const column = gridEditColumns.find((item) => item.key === columnKey);
+                  if (!row || !column) return null;
+                  const fallbackLabel = `${row.label || "Row"} - ${column.label || "Column"}`;
+                  const fallbackLabelAr = `${row.labelAr || "صف"} - ${column.labelAr || "عمود"}`;
+                  const cellConfig = gridEditCellConfigs[gridOptionPopupCellKey] ?? {
+                    type: "TEXT" as GridCellFieldType,
+                    label: fallbackLabel,
+                    labelAr: fallbackLabelAr,
+                    options: []
+                  };
+                  return (
+                    <div className="absolute inset-0 z-[2] flex items-center justify-center p-3 sm:p-6">
+                      <button
+                        type="button"
+                        className="absolute inset-0 bg-slate-900/45 backdrop-blur-sm"
+                        onClick={() => setGridOptionPopupCellKey(null)}
+                      />
+                      <section className="relative flex max-h-[80vh] w-full max-w-3xl flex-col rounded-3xl border border-orange-200/70 bg-white p-4 shadow-2xl sm:max-h-[88vh]">
+                        <div className="mb-3 flex items-center justify-between gap-2">
+                          <div>
+                            <p className="text-lg font-semibold text-slate-800">خيارات الخلية</p>
+                            <p className="text-sm text-slate-600">
+                              {row.labelAr || row.label} × {column.labelAr || column.label}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            className={dsModalCancelButtonClass}
+                            onClick={() => setGridOptionPopupCellKey(null)}
+                          >
+                            إغلاق
+                          </button>
+                        </div>
+                        <div className="min-h-0 flex-1 overflow-y-auto pe-1">
+                          <div className="space-y-2">
+                            {(cellConfig.options ?? []).map((option, optionIndex) => (
+                              <div key={`grid-cell-option-popup-${gridOptionPopupCellKey}-${option.id ?? optionIndex}`} className="grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto]">
+                                <input
+                                  value={option.value}
+                                  onChange={(event) =>
+                                    setGridEditCellConfigs((prev) => {
+                                      const base = prev[gridOptionPopupCellKey] ?? cellConfig;
+                                      const nextOptions = [...(base.options ?? [])];
+                                      nextOptions[optionIndex] = { ...nextOptions[optionIndex], value: event.target.value };
+                                      return { ...prev, [gridOptionPopupCellKey]: { ...base, options: nextOptions } };
+                                    })
+                                  }
+                                  className="h-10 rounded-xl border border-slate-200 px-3 text-sm"
+                                  placeholder="value"
+                                />
+                                <input
+                                  value={option.label}
+                                  onChange={(event) =>
+                                    setGridEditCellConfigs((prev) => {
+                                      const base = prev[gridOptionPopupCellKey] ?? cellConfig;
+                                      const nextOptions = [...(base.options ?? [])];
+                                      nextOptions[optionIndex] = { ...nextOptions[optionIndex], label: event.target.value };
+                                      return { ...prev, [gridOptionPopupCellKey]: { ...base, options: nextOptions } };
+                                    })
+                                  }
+                                  className="h-10 rounded-xl border border-slate-200 px-3 text-sm"
+                                  placeholder="label"
+                                />
+                                <input
+                                  value={option.labelAr}
+                                  onChange={(event) =>
+                                    setGridEditCellConfigs((prev) => {
+                                      const base = prev[gridOptionPopupCellKey] ?? cellConfig;
+                                      const nextOptions = [...(base.options ?? [])];
+                                      nextOptions[optionIndex] = { ...nextOptions[optionIndex], labelAr: event.target.value };
+                                      return { ...prev, [gridOptionPopupCellKey]: { ...base, options: nextOptions } };
+                                    })
+                                  }
+                                  className="h-10 rounded-xl border border-slate-200 px-3 text-sm"
+                                  placeholder="الاسم العربي"
+                                />
+                                <button
+                                  type="button"
+                                  className="h-10 rounded-xl border border-rose-200 px-3 text-sm text-rose-600"
+                                  onClick={() =>
+                                    setGridEditCellConfigs((prev) => {
+                                      const base = prev[gridOptionPopupCellKey] ?? cellConfig;
+                                      const nextOptions = (base.options ?? []).filter((_, itemIndex) => itemIndex !== optionIndex);
+                                      return { ...prev, [gridOptionPopupCellKey]: { ...base, options: nextOptions } };
+                                    })
+                                  }
+                                >
+                                  حذف
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="mt-3 border-t border-slate-100 pt-3">
+                          <button
+                            type="button"
+                            className="rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-sm font-medium text-orange-700"
+                            onClick={() =>
+                              setGridEditCellConfigs((prev) => ({
+                                ...prev,
+                                [gridOptionPopupCellKey]: {
+                                  ...(prev[gridOptionPopupCellKey] ?? cellConfig),
+                                  options: [...((prev[gridOptionPopupCellKey] ?? cellConfig).options ?? []), { value: "", label: "", labelAr: "" }]
+                                }
+                              }))
+                            }
+                          >
+                            + إضافة خيار
+                          </button>
+                        </div>
+                      </section>
+                    </div>
+                  );
+                })()
+              ) : null}
+              <div className="mt-4 flex flex-wrap items-center justify-end gap-2 rounded-2xl border border-orange-200/70 bg-white/95 px-3 py-3 shadow-sm">
+                <button
+                  type="button"
+                  className={dsModalCancelButtonClass}
+                  onClick={closeGridEditDialog}
+                  disabled={saveGridEditMutation.isPending}
+                >
+                  إلغاء
+                </button>
+                <RippleButton
+                  type="button"
+                  onClick={() => saveGridEditMutation.mutate()}
+                  disabled={saveGridEditMutation.isPending || !gridEditColumns.length || !gridEditRows.length}
+                >
+                  {saveGridEditMutation.isPending ? "جارٍ الحفظ..." : "حفظ التعديلات"}
+                </RippleButton>
+              </div>
+            </motion.section>
+          </motion.div>
+        ) : null}
+        {gridDeleteTarget ? (
+          <div className="fixed inset-0 z-[92] flex items-center justify-center p-4">
+            <button
+              type="button"
+              aria-label="إغلاق نافذة حذف الـ Grid"
+              className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+              onClick={() => setGridDeleteTarget(null)}
+              disabled={deleteGridMutation.isPending}
+            />
+            <section className="relative w-full max-w-md rounded-3xl border border-rose-100 bg-gradient-to-br from-rose-50 via-orange-50 to-white p-5 shadow-premium">
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-slate-900">تأكيد حذف الـ Grid</p>
+                  <p className="text-sm text-slate-600">
+                    أنت على وشك حذف <span className="font-semibold text-slate-800">{gridDeleteTarget.nameAr}</span> بالكامل.
+                  </p>
+                  <p className="text-xs text-rose-700">سيتم حذف كل خلايا هذا الـ Grid نهائيًا.</p>
+                </div>
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    className={dsModalCancelButtonClass}
+                    onClick={() => setGridDeleteTarget(null)}
+                    disabled={deleteGridMutation.isPending}
+                  >
+                    إلغاء
+                  </button>
+                  <RippleButton
+                    type="button"
+                    className="from-rose-600 to-red-500 hover:shadow-rose-500/30"
+                    onClick={() => deleteGridMutation.mutate()}
+                    disabled={deleteGridMutation.isPending}
+                  >
+                    {deleteGridMutation.isPending ? "جارٍ الحذف..." : "حذف الـ Grid"}
+                  </RippleButton>
+                </div>
               </div>
             </section>
           </div>

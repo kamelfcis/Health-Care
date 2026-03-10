@@ -35,6 +35,7 @@ export interface GridColumnConfig {
 }
 
 export interface GridMetadata {
+  id?: string;
   rowKey: string;
   columns: GridColumnConfig[];
 }
@@ -56,13 +57,13 @@ export interface SpecialtyTemplateField {
   labelAr: string;
   section: string;
   sectionAr: string;
-  fieldType: "TEXT" | "NUMBER" | "YES_NO" | "DATE" | "DROPDOWN" | "MULTI_SELECT" | "AUTO" | "GRID";
+  fieldType: "TEXT" | "NUMBER" | "YES_NO" | "DATE" | "DROPDOWN" | "MULTI_SELECT" | "AUTO" | "GRID" | "EMPTY";
   isRequired: boolean;
   displayOrder: number;
   helpText?: string | null;
   helpTextAr?: string | null;
   visibleWhen?: Record<string, unknown> | null;
-  metadata?: (Record<string, unknown> & { grid?: GridMetadata }) | null;
+  metadata?: (Record<string, unknown> & { grid?: GridMetadata; cellType?: string; cellLabel?: string; cellLabelAr?: string }) | null;
   options: SpecialtyTemplateFieldOption[];
 }
 
@@ -190,11 +191,12 @@ export const specialtyService = {
     patientId: string,
     specialtyCode: string,
     entryType: VisitEntryType = "EXAM",
-    clinicId?: string
+    clinicId?: string,
+    appointmentId?: string
   ) {
     const res = await api.get<{ data: { specialty: SpecialtyCatalogItem; template: SpecialtyTemplate; assessment: SpecialtyAssessment | null } }>(
       `/patients/${patientId}/specialties/${specialtyCode}/assessment`,
-      { params: { entryType, ...(clinicId ? { clinicId } : {}) } }
+      { params: { entryType, ...(clinicId ? { clinicId } : {}), ...(appointmentId ? { appointmentId } : {}) } }
     );
     return res.data.data;
   },
@@ -204,11 +206,12 @@ export const specialtyService = {
     specialtyCode: string,
     values: Record<string, unknown>,
     entryType: VisitEntryType = "EXAM",
-    clinicId?: string
+    clinicId?: string,
+    appointmentId?: string
   ) {
     const res = await api.put<{ data: SpecialtyAssessment }>(
       `/patients/${patientId}/specialties/${specialtyCode}/assessment`,
-      { values, entryType },
+      { values, entryType, ...(appointmentId ? { appointmentId } : {}) },
       { params: clinicId ? { clinicId } : undefined }
     );
     return res.data.data;

@@ -33,7 +33,11 @@ const signToken = (
   payload: { sub: string; clinicId: string; role: RoleName; permissions: string[] },
   secret: Secret,
   expiresIn: string
-) => jwt.sign(payload, secret, { expiresIn } as SignOptions);
+) => {
+  const normalizedExpiry = expiresIn.trim().toLowerCase() === "never" ? null : expiresIn;
+  const options: SignOptions = normalizedExpiry ? ({ expiresIn: normalizedExpiry } as SignOptions) : {};
+  return jwt.sign(payload, secret, options);
+};
 
 const signAccessToken = (sub: string, clinicId: string, role: RoleName, permissions: string[]) =>
   signToken({ sub, clinicId, role, permissions }, env.JWT_ACCESS_SECRET, env.JWT_ACCESS_EXPIRES_IN);

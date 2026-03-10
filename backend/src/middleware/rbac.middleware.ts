@@ -37,3 +37,24 @@ export const requirePermissions =
 
     next();
   };
+
+export const requireAnyPermissions =
+  (...permissions: string[]) =>
+  (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
+    if (!req.user) {
+      throw new AppError("Unauthorized", 401);
+    }
+
+    if (req.user.role === "SuperAdmin") {
+      next();
+      return;
+    }
+
+    const granted = new Set(req.user.permissions ?? []);
+    const hasAny = permissions.some((permission) => granted.has(permission));
+    if (!hasAny) {
+      throw new AppError("Forbidden", 403);
+    }
+
+    next();
+  };

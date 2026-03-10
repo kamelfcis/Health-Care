@@ -25,9 +25,9 @@ interface DoctorListPayload {
 }
 
 export const doctorService = {
-  async list(clinicId?: string) {
+  async list(clinicId?: string, specialty?: string) {
     const res = await api.get<{ data: DoctorListPayload }>("/doctors", {
-      params: { page: 1, pageSize: 500, ...(clinicId ? { clinicId } : {}) }
+      params: { page: 1, pageSize: 500, ...(clinicId ? { clinicId } : {}), ...(specialty ? { specialty } : {}) }
     });
     return res.data.data.data;
   },

@@ -49,6 +49,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     "appointments.manage",
     "medical_records.read",
     "medical_records.manage",
+    "specialty_assessments.manage",
     "billing.read",
     "billing.manage",
     "payments.read",

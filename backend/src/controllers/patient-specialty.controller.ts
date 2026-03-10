@@ -9,7 +9,8 @@ import { invalidateCacheByPrefix, buildCacheKey } from "../utils/response-cache"
 
 const upsertSchema = z.object({
   values: z.record(z.string(), z.unknown()),
-  entryType: z.nativeEnum(VisitEntryType).optional()
+  entryType: z.nativeEnum(VisitEntryType).optional(),
+  appointmentId: z.string().optional()
 });
 
 export const patientSpecialtyController = {
@@ -26,6 +27,7 @@ export const patientSpecialtyController = {
 
   async getAssessment(req: AuthenticatedRequest, res: Response) {
     const clinicId = getOptionalClinicScope(req);
+    const appointmentId = typeof req.query.appointmentId === "string" ? req.query.appointmentId : undefined;
     const entryType =
       typeof req.query.entryType === "string" &&
       Object.values(VisitEntryType).includes(req.query.entryType as VisitEntryType)
@@ -36,6 +38,7 @@ export const patientSpecialtyController = {
       clinicId,
       String(req.params.specialtyCode),
       entryType,
+      appointmentId,
       { userId: req.user?.sub, role: req.user?.role }
     );
     res.json(apiSuccess(data));
@@ -50,6 +53,7 @@ export const patientSpecialtyController = {
       String(req.params.specialtyCode),
       parsed.values,
       parsed.entryType ?? "EXAM",
+      parsed.appointmentId,
       { userId: req.user?.sub, role: req.user?.role }
     );
     invalidateCacheByPrefix(buildCacheKey("patients", clinicId ?? "all"));

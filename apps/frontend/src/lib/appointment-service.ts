@@ -22,7 +22,39 @@ interface AppointmentDoctorUser {
 
 interface AppointmentDoctor {
   id: string;
+  specialty?: string | null;
   user?: AppointmentDoctorUser | null;
+}
+
+interface AppointmentAssessmentSpecialty {
+  id: string;
+  code: string;
+  name: string;
+  nameAr: string;
+}
+
+export interface AppointmentAssessmentResponse {
+  appointment: {
+    id: string;
+    startsAt: string;
+    endsAt: string;
+    status: string;
+    entryType: VisitEntryType;
+    reason?: string | null;
+    notes?: string | null;
+    patient?: AppointmentPatient | null;
+    doctor?: AppointmentDoctor | null;
+  };
+  specialty: AppointmentAssessmentSpecialty | null;
+  template: unknown | null;
+  assessment: {
+    id: string;
+    appointmentId?: string | null;
+    values: Record<string, unknown>;
+    diagnoses?: Array<Record<string, unknown>> | null;
+    alerts?: Array<Record<string, unknown>> | null;
+    updatedAt: string;
+  } | null;
 }
 
 export interface AppointmentListItem {
@@ -33,6 +65,12 @@ export interface AppointmentListItem {
   reason?: string | null;
   notes?: string | null;
   status: string;
+  specialty?: {
+    id: string;
+    code: string;
+    name: string;
+    nameAr: string;
+  } | null;
   patient?: AppointmentPatient | null;
   doctor?: AppointmentDoctor | null;
 }
@@ -57,6 +95,7 @@ export const appointmentService = {
     payload: {
       doctorId: string;
       patientId: string;
+      specialtyCode: string;
       startsAt: string;
       endsAt: string;
       entryType: VisitEntryType;
@@ -77,6 +116,7 @@ export const appointmentService = {
     payload: Partial<{
       doctorId: string;
       patientId: string;
+      specialtyCode: string;
       startsAt: string;
       endsAt: string;
       entryType: VisitEntryType;
@@ -94,6 +134,13 @@ export const appointmentService = {
 
   async remove(id: string, clinicId?: string) {
     const res = await api.delete<{ data: AppointmentListItem }>(`/appointments/${id}`, {
+      params: clinicId ? { clinicId } : undefined
+    });
+    return res.data.data;
+  },
+
+  async getAssessment(id: string, clinicId?: string) {
+    const res = await api.get<{ data: AppointmentAssessmentResponse }>(`/appointments/${id}/assessment`, {
       params: clinicId ? { clinicId } : undefined
     });
     return res.data.data;

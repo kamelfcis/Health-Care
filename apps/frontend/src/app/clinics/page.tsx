@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ColumnDef } from "@tanstack/react-table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -19,6 +20,7 @@ type ClinicRow = {
   id: string;
   name: string;
   slug: string;
+  imageUrl: string | null;
   email: string;
   city: string;
   status: string;
@@ -32,6 +34,10 @@ export default function ClinicsPage() {
   const [formExpanded, setFormExpanded] = useState(false);
   const [editingClinicId, setEditingClinicId] = useState<string | null>(null);
   const [formResetKey, setFormResetKey] = useState(0);
+  const [clinicImageFile, setClinicImageFile] = useState<File | null>(null);
+  const [clinicImagePreviewUrl, setClinicImagePreviewUrl] = useState<string | null>(null);
+  const [existingClinicImageUrl, setExistingClinicImageUrl] = useState<string | null>(null);
+  const [removeExistingClinicImage, setRemoveExistingClinicImage] = useState(false);
   const [form, setForm] = useState({
     name: "",
     slug: "",
@@ -52,6 +58,34 @@ export default function ClinicsPage() {
   useEffect(() => {
     setCurrentUser(storage.getUser());
   }, []);
+
+  useEffect(
+    () => () => {
+      if (clinicImagePreviewUrl?.startsWith("blob:")) {
+        URL.revokeObjectURL(clinicImagePreviewUrl);
+      }
+    },
+    [clinicImagePreviewUrl]
+  );
+
+  const apiOrigin = useMemo(
+    () => (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000/api").replace(/\/api\/?$/, ""),
+    []
+  );
+  const resolveClinicImageSrc = useCallback(
+    (imageUrl?: string | null) => {
+      if (!imageUrl) return null;
+      return imageUrl.startsWith("http") ? imageUrl : `${apiOrigin}${imageUrl}`;
+    },
+    [apiOrigin]
+  );
+  const clearPickedImage = useCallback(() => {
+    if (clinicImagePreviewUrl?.startsWith("blob:")) {
+      URL.revokeObjectURL(clinicImagePreviewUrl);
+    }
+    setClinicImageFile(null);
+    setClinicImagePreviewUrl(null);
+  }, [clinicImagePreviewUrl]);
 
   const canManageClinics = hasPermission(currentUser, "clinics.manage");
   const clinicsQuery = useQuery({
@@ -81,6 +115,9 @@ export default function ClinicsPage() {
       adminPassword: ""
     });
     setEditingClinicId(null);
+    clearPickedImage();
+    setExistingClinicImageUrl(null);
+    setRemoveExistingClinicImage(false);
   };
 
   const createMutation = useMutation({
@@ -95,6 +132,7 @@ export default function ClinicsPage() {
         country: form.country.trim() || undefined,
         timezone: form.timezone.trim() || undefined,
         specialtyCodes: form.specialtyCodes,
+        clinicImage: clinicImageFile,
         adminUser: {
           firstName: form.adminFirstName.trim(),
           lastName: form.adminLastName.trim(),
@@ -125,7 +163,9 @@ export default function ClinicsPage() {
         country: form.country.trim() || null,
         timezone: form.timezone.trim() || undefined,
         isActive: form.isActive,
-        specialtyCodes: form.specialtyCodes
+        specialtyCodes: form.specialtyCodes,
+        clinicImage: clinicImageFile,
+        ...(removeExistingClinicImage && !clinicImageFile ? { imageUrl: "" } : {})
       }),
     onSuccess: () => {
       toast.success(t("clinics.updated"));
@@ -159,6 +199,7 @@ export default function ClinicsPage() {
           id: clinic.id,
           name: clinic.name,
           slug: clinic.slug,
+          imageUrl: clinic.imageUrl ?? null,
           email: clinic.email ?? "-",
           city: clinic.city ?? "-",
           status: clinic.isActive ? "Active" : "Inactive",
@@ -189,14 +230,31 @@ export default function ClinicsPage() {
         adminEmail: "",
         adminPassword: ""
       });
+      clearPickedImage();
+      setExistingClinicImageUrl(clinic.imageUrl ?? null);
+      setRemoveExistingClinicImage(false);
       setFormExpanded(true);
     },
-    [clinicsQuery.data]
+    [clearPickedImage, clinicsQuery.data]
   );
 
   const columns: ColumnDef<ClinicRow>[] = useMemo(() => {
     const base: ColumnDef<ClinicRow>[] = [
       { header: t("nav.clinics"), accessorKey: "name" },
+      {
+        header: t("clinics.image.column"),
+        accessorKey: "imageUrl",
+        cell: ({ row }) => {
+          const src = resolveClinicImageSrc(row.original.imageUrl);
+          return src ? (
+            <div className="h-10 w-10 overflow-hidden rounded-xl border border-orange-200 bg-orange-50/40">
+              <Image src={src} alt={row.original.name} width={40} height={40} unoptimized className="h-full w-full object-cover" />
+            </div>
+          ) : (
+            <span className="text-xs text-slate-400">{t("clinics.image.empty")}</span>
+          );
+        }
+      },
       { header: "Slug", accessorKey: "slug" },
       { header: t("field.email"), accessorKey: "email" },
       { header: "City", accessorKey: "city" },
@@ -235,7 +293,7 @@ export default function ClinicsPage() {
         )
       }
     ];
-  }, [canManageClinics, removeMutation, startEdit, t]);
+  }, [canManageClinics, removeMutation, resolveClinicImageSrc, startEdit, t]);
 
   const specialtyOptions = useMemo(
     () => (specialtyCatalogQuery.data ?? []).filter((item) => item.isActive && !item.deletedAt),
@@ -243,7 +301,67 @@ export default function ClinicsPage() {
   );
 
   const formBlock = canManageClinics && formExpanded ? (
-    <section className="card mb-3 bg-white/80 p-4">
+    <section className="card mb-3 border-l-4 border-l-orange-500 bg-white/85 p-4 shadow-[0_22px_55px_-30px_rgba(251,146,60,0.55)]">
+      <div className="mb-4 rounded-2xl border border-orange-200/70 bg-orange-50/30 p-3">
+        <p className="text-sm font-semibold text-slate-800">{t("clinics.image.title")}</p>
+        <p className="mt-1 text-xs text-slate-500">{t("clinics.image.hint")}</p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <div className="h-16 w-16 overflow-hidden rounded-2xl border border-orange-200 bg-white">
+            {clinicImagePreviewUrl || (existingClinicImageUrl && !removeExistingClinicImage) ? (
+              <Image
+                src={clinicImagePreviewUrl || resolveClinicImageSrc(existingClinicImageUrl)!}
+                alt="Clinic preview"
+                width={64}
+                height={64}
+                unoptimized
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
+                {t("clinics.image.empty")}
+              </div>
+            )}
+          </div>
+          <label className="inline-flex cursor-pointer items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50">
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                if (!file) return;
+                clearPickedImage();
+                setClinicImageFile(file);
+                setClinicImagePreviewUrl(URL.createObjectURL(file));
+                setRemoveExistingClinicImage(false);
+              }}
+            />
+            {t("clinics.image.choose")}
+          </label>
+          {clinicImageFile ? (
+            <button
+              type="button"
+              className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+              onClick={clearPickedImage}
+            >
+              {t("clinics.image.resetPicked")}
+            </button>
+          ) : null}
+          {editingClinicId && existingClinicImageUrl && !removeExistingClinicImage ? (
+            <button
+              type="button"
+              className="inline-flex items-center rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-100"
+              onClick={() => {
+                clearPickedImage();
+                setRemoveExistingClinicImage(true);
+                setExistingClinicImageUrl(null);
+              }}
+            >
+              {t("clinics.image.removeCurrent")}
+            </button>
+          ) : null}
+        </div>
+      </div>
       <div className="grid gap-3 md:grid-cols-2">
         <input
           className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
@@ -450,12 +568,32 @@ export default function ClinicsPage() {
             getSearchText={(row) => `${row.name} ${row.slug} ${row.city} ${row.email} ${row.specialties} ${row.status}`}
             getStatus={(row) => row.status}
             renderCard={(row) => (
-              <div className="space-y-1">
-                <h3 className="font-semibold text-slate-900">{row.name}</h3>
-                <p className="text-sm text-slate-500">{row.city} - {row.slug}</p>
-                <p className="text-xs text-slate-500">{row.email}</p>
-                <p className="text-xs text-slate-500">{row.specialties}</p>
-                <p className="text-xs text-orange-600">{row.status}</p>
+              <div className="rounded-2xl border border-slate-200 bg-white/90 p-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+                <div className="flex items-start gap-3 border-l-4 border-l-orange-500 pl-3">
+                  <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-orange-200 bg-orange-50/40">
+                    {resolveClinicImageSrc(row.imageUrl) ? (
+                      <Image
+                        src={resolveClinicImageSrc(row.imageUrl)!}
+                        alt={row.name}
+                        width={56}
+                        height={56}
+                        unoptimized
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
+                        {t("clinics.image.empty")}
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 space-y-1">
+                    <h3 className="truncate font-semibold text-slate-900">{row.name}</h3>
+                    <p className="truncate text-sm text-slate-500">{row.city} - {row.slug}</p>
+                    <p className="truncate text-xs text-slate-500">{row.email}</p>
+                    <p className="line-clamp-2 text-xs text-slate-500">{row.specialties}</p>
+                    <p className="text-xs font-semibold text-orange-600">{row.status}</p>
+                  </div>
+                </div>
                 {canManageClinics ? (
                   <div className="flex items-center gap-2 pt-1">
                     <button

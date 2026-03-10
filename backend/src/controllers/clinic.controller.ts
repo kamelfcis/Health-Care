@@ -36,13 +36,23 @@ export const clinicController = {
   },
 
   async create(req: Request, res: Response) {
-    const data = await clinicService.create(req.body);
+    const file = (req as Request & { file?: Express.Multer.File }).file;
+    const imageUrl = file ? `/uploads/clinic-images/${file.filename}` : undefined;
+    const data = await clinicService.create({
+      ...req.body,
+      ...(imageUrl ? { imageUrl } : {})
+    });
     invalidateCacheByPrefix(buildCacheKey("clinics"));
     res.status(201).json(apiSuccess(data, "Clinic created"));
   },
 
   async update(req: Request, res: Response) {
-    const data = await clinicService.update(String(req.params.id), req.body);
+    const file = (req as Request & { file?: Express.Multer.File }).file;
+    const imageUrl = file ? `/uploads/clinic-images/${file.filename}` : undefined;
+    const data = await clinicService.update(String(req.params.id), {
+      ...req.body,
+      ...(imageUrl ? { imageUrl } : {})
+    });
     invalidateCacheByPrefix(buildCacheKey("clinics"));
     res.json(apiSuccess(data, "Clinic updated"));
   },

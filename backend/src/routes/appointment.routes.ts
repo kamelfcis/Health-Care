@@ -13,6 +13,7 @@ const createSchema = z.object({
   body: z.object({
     doctorId: z.string().min(1),
     patientId: z.string().min(1),
+    specialtyCode: z.string().min(1),
     entryType: z.nativeEnum(VisitEntryType).default("EXAM"),
     startsAt: z.string().datetime(),
     endsAt: z.string().datetime(),
@@ -26,6 +27,7 @@ const updateSchema = z.object({
   body: z.object({
     doctorId: z.string().min(1).optional(),
     patientId: z.string().min(1).optional(),
+    specialtyCode: z.string().min(1).optional(),
     entryType: z.nativeEnum(VisitEntryType).optional(),
     startsAt: z.string().datetime().optional(),
     endsAt: z.string().datetime().optional(),
@@ -36,6 +38,12 @@ const updateSchema = z.object({
 });
 
 router.get("/", requireAuth, requirePermissions("appointments.read"), asyncHandler(appointmentController.list));
+router.get(
+  "/:id/assessment",
+  requireAuth,
+  requirePermissions("appointments.read"),
+  asyncHandler(appointmentController.getAssessment)
+);
 router.post(
   "/",
   requireAuth,
