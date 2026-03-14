@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronDown, ClipboardList, Eye, FileStack, PencilLine, Plus, Sparkles, Trash2, X } from "lucide-react";
-import { motion } from "framer-motion";
+import { motion, type Variants } from "framer-motion";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/app-shell";
 import { RoleGate } from "@/components/auth/role-gate";
@@ -74,7 +74,7 @@ const dsTextActionClass = "text-sm font-medium text-slate-600 transition hover:t
 const dsTextActionSuccessClass = "text-sm font-medium text-emerald-700 transition hover:text-emerald-800";
 const dsModalCancelButtonClass =
   "inline-flex h-10 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60";
-const modalPanelVariants = {
+const modalPanelVariants: Variants = {
   hidden: { opacity: 0, y: 14 },
   show: {
     opacity: 1,
@@ -82,7 +82,7 @@ const modalPanelVariants = {
     transition: { duration: 0.24, ease: "easeOut", staggerChildren: 0.08 }
   }
 };
-const modalPanelItemVariants = {
+const modalPanelItemVariants: Variants = {
   hidden: { opacity: 0, y: 10 },
   show: { opacity: 1, y: 0, transition: { duration: 0.2, ease: "easeOut" } }
 };

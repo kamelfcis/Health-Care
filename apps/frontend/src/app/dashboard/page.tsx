@@ -43,7 +43,7 @@ interface ClinicUserRow {
 type QuickActionConfig = {
   href: string;
   labelKey: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
+  icon: React.ComponentType<{ size?: string | number; className?: string }>;
   requiredPermission?: string;
   allowedRoles?: RoleName[];
 };
