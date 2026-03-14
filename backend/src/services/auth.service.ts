@@ -193,9 +193,10 @@ export const authService = {
   },
 
   async login(input: LoginInput) {
+    const normalizedEmail = input.email.trim().toLowerCase();
     const users = await prisma.user.findMany({
       where: {
-        email: input.email.toLowerCase(),
+        email: normalizedEmail,
         deletedAt: null
       },
       take: 2,
