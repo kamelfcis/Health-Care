@@ -140,7 +140,7 @@ const resolveUploadUrl = (pathOrUrl: string) => {
   if (!pathOrUrl) return "";
   if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
   if (typeof window === "undefined") return pathOrUrl;
-  return `${window.location.protocol}//${window.location.hostname}:5000${pathOrUrl}`;
+  return `${window.location.origin}${pathOrUrl}`;
 };
 
 const escapeHtml = (value: string) =>

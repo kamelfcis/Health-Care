@@ -8,6 +8,10 @@ const nextConfig = {
       {
         source: "/api/:path*",
         destination: `${backendOrigin.replace(/\/$/, "")}/api/:path*`
+      },
+      {
+        source: "/uploads/:path*",
+        destination: `${backendOrigin.replace(/\/$/, "")}/uploads/:path*`
       }
     ];
   }
