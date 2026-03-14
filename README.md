@@ -57,3 +57,32 @@ Basic production flow:
 - Theme colors:
   - Navy: `#0B2A4A`
   - Orange: `#F27A1A`
+
+## Vercel quick-demo deploy (frontend + backend)
+
+Deploy two Vercel projects from the same repository:
+
+1. **Backend project**
+   - Root directory: `backend`
+   - Framework preset: `Other`
+   - Runtime routes are provided via `backend/api/index.ts` and `backend/api/[...route].ts`.
+   - Required env vars:
+     - `NODE_ENV=production`
+     - `PORT=5000`
+     - `DATABASE_URL=file:./prisma/prisma/dev.db`
+     - `JWT_ACCESS_SECRET=<long-random-secret>`
+     - `JWT_REFRESH_SECRET=<long-random-secret>`
+     - `JWT_ACCESS_EXPIRES_IN=never`
+     - `JWT_REFRESH_EXPIRES_IN=never`
+     - `CORS_ORIGIN=https://<frontend-project>.vercel.app`
+
+2. **Frontend project**
+   - Root directory: `apps/frontend`
+   - Framework preset: `Next.js`
+   - Required env vars:
+     - `NEXT_PUBLIC_API_BASE_URL=https://<backend-project>.vercel.app/api`
+
+3. **Notes for SQLite on Vercel**
+   - This quick-demo setup uses SQLite in serverless mode.
+   - Runtime copies bundled DB to `/tmp/healthcare-crm.db` to allow writes during invocation.
+   - Data and uploaded files are ephemeral; this is not production persistence.

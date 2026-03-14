@@ -32,7 +32,7 @@ type FieldDef = {
   labelAr: string;
   section: string;
   sectionAr: string;
-  fieldType: "TEXT" | "NUMBER" | "YES_NO" | "DATE" | "DROPDOWN" | "MULTI_SELECT" | "AUTO" | "GRID";
+  fieldType: "TEXT" | "TEXT_AREA" | "NUMBER" | "YES_NO" | "DATE" | "DROPDOWN" | "MULTI_SELECT" | "AUTO" | "GRID";
   displayOrder: number;
   isRequired?: boolean;
   helpText?: string;

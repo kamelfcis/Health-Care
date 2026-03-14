@@ -28,6 +28,11 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   { key: "billing.manage", label: "Manage billing", category: "billing" },
   { key: "payments.read", label: "View payments", category: "payments" },
   { key: "payments.manage", label: "Manage payments", category: "payments" },
+  { key: "pharmacy.view", label: "View pharmacy", category: "pharmacy" },
+  { key: "pharmacy.create", label: "Create medicines", category: "pharmacy" },
+  { key: "pharmacy.edit", label: "Edit medicines", category: "pharmacy" },
+  { key: "pharmacy.delete", label: "Delete medicines", category: "pharmacy" },
+  { key: "pharmacy.import", label: "Import medicines", category: "pharmacy" },
   { key: "leads.read", label: "View leads", category: "leads" },
   { key: "leads.manage", label: "Manage leads", category: "leads" },
   { key: "leads.convert", label: "Convert leads to patients", category: "leads" }
@@ -54,6 +59,11 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     "billing.manage",
     "payments.read",
     "payments.manage",
+    "pharmacy.view",
+    "pharmacy.create",
+    "pharmacy.edit",
+    "pharmacy.delete",
+    "pharmacy.import",
     "leads.read",
     "leads.manage",
     "leads.convert"
@@ -67,6 +77,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     "medical_records.read",
     "medical_records.manage",
     "specialty_assessments.manage",
+    "pharmacy.view",
     "leads.read"
   ],
   Nurse: [
@@ -76,6 +87,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     "appointments.manage",
     "medical_records.read",
     "medical_records.manage",
+    "pharmacy.view",
     "leads.read"
   ],
   Receptionist: [
@@ -89,6 +101,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     "billing.manage",
     "payments.read",
     "payments.manage",
+    "pharmacy.view",
     "leads.read",
     "leads.manage"
   ],

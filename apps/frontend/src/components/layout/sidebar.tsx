@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Bell, Building2, Calendar, ChevronDown, ChevronLeft, ClipboardList, CreditCard, LayoutDashboard, LogOut, Settings, Stethoscope, User, UserCog, Users, Wallet } from "lucide-react";
+import { Bell, Building2, Calendar, ChevronDown, ChevronLeft, ClipboardList, CreditCard, LayoutDashboard, LogOut, Pill, Settings, Stethoscope, User, UserCog, Users, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -52,6 +52,7 @@ const links: SidebarLink[] = [
   { href: "/doctors", labelKey: "nav.doctors", icon: Stethoscope, requiredPermissions: ["doctors.read"] },
   { href: "/patients", labelKey: "nav.patients", icon: Users, requiredPermissions: ["patients.read"] },
   { href: "/appointments", labelKey: "nav.appointments", icon: Calendar, requiredPermissions: ["appointments.read"] },
+  { href: "/pharmacy", labelKey: "nav.pharmacy", icon: Pill, requiredPermissions: ["pharmacy.view"] },
   { href: "/billing", labelKey: "nav.billing", icon: CreditCard, requiredPermissions: ["billing.read"] },
   { href: "/payments", labelKey: "nav.payments", icon: Wallet, requiredPermissions: ["payments.read"] },
   { href: "/dashboard/leads", labelKey: "nav.leads", icon: ClipboardList, requiredPermissions: ["leads.read"] },

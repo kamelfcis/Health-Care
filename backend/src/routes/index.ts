@@ -11,6 +11,7 @@ import adminRoutes from "./admin.routes";
 import dashboardRoutes from "./dashboard.routes";
 import leadRoutes from "./lead.routes";
 import specialtyRoutes from "./specialty.routes";
+import medicineRoutes from "./medicine.routes";
 
 const router = Router();
 
@@ -27,5 +28,6 @@ router.use("/admin", adminRoutes);
 router.use("/dashboard", dashboardRoutes);
 router.use("/leads", leadRoutes);
 router.use("/specialties", specialtyRoutes);
+router.use("/medicines", medicineRoutes);
 
 export default router;

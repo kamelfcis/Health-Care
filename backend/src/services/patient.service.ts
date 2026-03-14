@@ -11,6 +11,13 @@ interface ListInput {
   requesterUserId?: string;
 }
 
+interface ExamAttachmentInput {
+  fileUrl: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
 export const patientService = {
   async list(input: ListInput) {
     const normalizedSearch = input.search?.trim();
@@ -223,6 +230,221 @@ export const patientService = {
       withContactInfo,
       withoutContactInfo
     };
+  },
+
+  async listExams(
+    patientId: string,
+    clinicId: string | undefined,
+    requesterRole?: string,
+    requesterUserId?: string
+  ) {
+    const patient = await prisma.patient.findFirst({
+      where: { id: patientId, ...(clinicId ? { clinicId } : {}), deletedAt: null },
+      select: { id: true, clinicId: true, fullName: true }
+    });
+    if (!patient) {
+      throw new AppError("Patient not found", 404);
+    }
+
+    if (requesterRole === "Doctor" && requesterUserId) {
+      const linked = await prisma.appointment.findFirst({
+        where: {
+          patientId: patient.id,
+          clinicId: patient.clinicId,
+          deletedAt: null,
+          doctor: {
+            userId: requesterUserId,
+            deletedAt: null
+          }
+        },
+        select: { id: true }
+      });
+      if (!linked) {
+        throw new AppError("You are not allowed to access this patient's exams", 403);
+      }
+    }
+
+    const exams = await prisma.patientExam.findMany({
+      where: { patientId: patient.id, clinicId: patient.clinicId, deletedAt: null },
+      include: {
+        attachments: {
+          orderBy: { createdAt: "desc" }
+        }
+      },
+      orderBy: [{ examDate: "desc" }, { createdAt: "desc" }]
+    });
+
+    return { patient, exams };
+  },
+
+  async createExam(
+    patientId: string,
+    clinicId: string | undefined,
+    payload: { name: string; examDate: string },
+    attachments: ExamAttachmentInput[],
+    requesterRole?: string,
+    requesterUserId?: string
+  ) {
+    if (!attachments.length) {
+      throw new AppError("At least one attachment is required", 400);
+    }
+    const normalizedName = payload.name?.trim();
+    if (!normalizedName) {
+      throw new AppError("Exam name is required", 400);
+    }
+    const examDate = new Date(payload.examDate);
+    if (Number.isNaN(examDate.getTime())) {
+      throw new AppError("Invalid exam date", 400);
+    }
+
+    const scope = await this.listExams(patientId, clinicId, requesterRole, requesterUserId);
+    const created = await prisma.patientExam.create({
+      data: {
+        patientId: scope.patient.id,
+        clinicId: scope.patient.clinicId,
+        name: normalizedName,
+        examDate,
+        attachments: {
+          create: attachments.map((attachment) => ({
+            ...attachment,
+            clinic: {
+              connect: { id: scope.patient.clinicId }
+            }
+          }))
+        }
+      },
+      include: {
+        attachments: {
+          orderBy: { createdAt: "desc" }
+        }
+      }
+    });
+
+    return created;
+  },
+
+  async updateExam(
+    patientId: string,
+    examId: string,
+    clinicId: string | undefined,
+    payload: { name?: string; examDate?: string },
+    attachments: ExamAttachmentInput[],
+    requesterRole?: string,
+    requesterUserId?: string
+  ) {
+    const scope = await this.listExams(patientId, clinicId, requesterRole, requesterUserId);
+    const exam = await prisma.patientExam.findFirst({
+      where: {
+        id: examId,
+        patientId: scope.patient.id,
+        clinicId: scope.patient.clinicId,
+        deletedAt: null
+      },
+      select: { id: true }
+    });
+    if (!exam) {
+      throw new AppError("Exam not found", 404);
+    }
+
+    const nextData: { name?: string; examDate?: Date } = {};
+    if (typeof payload.name === "string") {
+      const normalizedName = payload.name.trim();
+      if (!normalizedName) {
+        throw new AppError("Exam name is required", 400);
+      }
+      nextData.name = normalizedName;
+    }
+    if (typeof payload.examDate === "string") {
+      const examDate = new Date(payload.examDate);
+      if (Number.isNaN(examDate.getTime())) {
+        throw new AppError("Invalid exam date", 400);
+      }
+      nextData.examDate = examDate;
+    }
+
+    const updated = await prisma.patientExam.update({
+      where: { id: exam.id },
+      data: {
+        ...nextData,
+        ...(attachments.length
+          ? {
+              attachments: {
+                create: attachments.map((attachment) => ({
+                  ...attachment,
+                  clinic: {
+                    connect: { id: scope.patient.clinicId }
+                  }
+                }))
+              }
+            }
+          : {})
+      },
+      include: {
+        attachments: {
+          orderBy: { createdAt: "desc" }
+        }
+      }
+    });
+
+    return updated;
+  },
+
+  async removeExam(
+    patientId: string,
+    examId: string,
+    clinicId: string | undefined,
+    requesterRole?: string,
+    requesterUserId?: string
+  ) {
+    const scope = await this.listExams(patientId, clinicId, requesterRole, requesterUserId);
+    const result = await prisma.patientExam.updateMany({
+      where: {
+        id: examId,
+        patientId: scope.patient.id,
+        clinicId: scope.patient.clinicId,
+        deletedAt: null
+      },
+      data: { deletedAt: new Date() }
+    });
+    if (!result.count) {
+      throw new AppError("Exam not found", 404);
+    }
+    return result;
+  },
+
+  async removeExamAttachment(
+    patientId: string,
+    examId: string,
+    attachmentId: string,
+    clinicId: string | undefined,
+    requesterRole?: string,
+    requesterUserId?: string
+  ) {
+    const scope = await this.listExams(patientId, clinicId, requesterRole, requesterUserId);
+    const exam = await prisma.patientExam.findFirst({
+      where: {
+        id: examId,
+        patientId: scope.patient.id,
+        clinicId: scope.patient.clinicId,
+        deletedAt: null
+      },
+      select: { id: true }
+    });
+    if (!exam) {
+      throw new AppError("Exam not found", 404);
+    }
+
+    const result = await prisma.patientExamAttachment.deleteMany({
+      where: {
+        id: attachmentId,
+        examId: exam.id,
+        clinicId: scope.patient.clinicId
+      }
+    });
+    if (!result.count) {
+      throw new AppError("Attachment not found", 404);
+    }
+    return result;
   },
 
   async listAssessments(

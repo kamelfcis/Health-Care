@@ -1,0 +1,3 @@
+-- SQLite stores Prisma enums as TEXT for this table schema.
+-- No table rewrite is required to allow new enum value TEXT_AREA at DB level.
+-- This migration intentionally keeps SQL empty and serves as schema history marker.

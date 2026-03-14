@@ -70,6 +70,7 @@ enum LeadStatus {
 
 enum SpecialtyFieldType {
   TEXT
+  TEXT_AREA
   NUMBER
   YES_NO
   DATE
@@ -118,10 +119,38 @@ model Clinic {
   counters       ClinicCounter?
   clinicSpecialties ClinicSpecialty[]
   specialtyAssessments PatientSpecialtyAssessment[]
+  patientExams   PatientExam[]
+  patientExamAttachments PatientExamAttachment[]
+  medicines      Medicine[]
 
   @@index([clinicId])
   @@index([slug])
   @@index([deletedAt, createdAt])
+}
+
+model Medicine {
+  id               String   @id @default(cuid())
+  clinicId         String
+  arabicName       String
+  englishName      String
+  activeIngredient String
+  usageMethod      String?
+  specialty        String?
+  dosageForm       String?
+  concentration    String?
+  company          String?
+  warnings         String?
+  drugInteractions String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  deletedAt        DateTime?
+  clinic           Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@index([clinicId, deletedAt, createdAt])
+  @@index([clinicId, arabicName])
+  @@index([clinicId, englishName])
+  @@index([clinicId, specialty])
+  @@index([clinicId, company])
 }
 
 model Role {
@@ -249,6 +278,7 @@ model Patient {
   invoices       Invoice[]
   convertedFromLeads Lead[]      @relation("LeadConvertedPatient")
   specialtyAssessments PatientSpecialtyAssessment[]
+  exams           PatientExam[]
 
   @@unique([clinicId, fileNumber])
   @@index([clinicId])
@@ -256,6 +286,39 @@ model Patient {
   @@index([clinicId, nationalId])
   @@index([clinicId, fileNumber])
   @@index([clinicId, deletedAt, createdAt])
+}
+
+model PatientExam {
+  id          String                  @id @default(cuid())
+  patientId   String
+  clinicId    String
+  name        String
+  examDate    DateTime
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+  deletedAt   DateTime?
+  patient     Patient                 @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  clinic      Clinic                  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  attachments PatientExamAttachment[]
+
+  @@index([clinicId, patientId, examDate])
+  @@index([patientId, deletedAt, examDate])
+}
+
+model PatientExamAttachment {
+  id         String     @id @default(cuid())
+  examId     String
+  clinicId   String
+  fileUrl    String
+  fileName   String
+  mimeType   String
+  sizeBytes  Int
+  createdAt  DateTime   @default(now())
+  exam       PatientExam @relation(fields: [examId], references: [id], onDelete: Cascade)
+  clinic     Clinic      @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+
+  @@index([examId, createdAt])
+  @@index([clinicId, createdAt])
 }
 
 model Appointment {

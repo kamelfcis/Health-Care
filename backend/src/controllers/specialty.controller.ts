@@ -15,7 +15,7 @@ const sectionSchema = z.object({
   nameAr: z.string().min(1),
   displayOrder: z.number().int().positive().optional()
 });
-const fieldTypeSchema = z.enum(["TEXT", "NUMBER", "YES_NO", "DATE", "DROPDOWN", "MULTI_SELECT", "AUTO", "GRID"]);
+const fieldTypeSchema = z.enum(["TEXT", "TEXT_AREA", "NUMBER", "YES_NO", "DATE", "DROPDOWN", "MULTI_SELECT", "AUTO", "GRID"]);
 const ruleTypeSchema = z.enum(["ALERT", "DIAGNOSIS", "COMPUTE"]);
 
 const resolveClinicId = (req: AuthenticatedRequest) => {

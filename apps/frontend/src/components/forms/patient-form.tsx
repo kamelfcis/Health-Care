@@ -1,13 +1,17 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { useMemo } from "react";
 import { useForm } from "react-hook-form";
+import { useQuery } from "@tanstack/react-query";
 import { CircleHelp, Plus } from "lucide-react";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { RippleButton } from "@/components/ui/ripple-button";
 import { useI18n } from "@/components/providers/i18n-provider";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { doctorService } from "@/lib/doctor-service";
+import { specialtyService, VisitEntryType } from "@/lib/specialty-service";
 
 const patientSchema = z.object({
   fullName: z.string().min(2, "Full name is required"),
@@ -19,7 +23,16 @@ const patientSchema = z.object({
   professionOther: z.string().optional(),
   leadSource: z.enum(["FACEBOOK_AD", "GOOGLE_SEARCH", "DOCTOR_REFERRAL", "FRIEND", "OTHER"]),
   leadSourceOther: z.string().optional(),
-  address: z.string().optional()
+  address: z.string().optional(),
+  createAppointmentNow: z.boolean().optional(),
+  appointmentSpecialtyCode: z.string().optional(),
+  appointmentDoctorId: z.string().optional(),
+  appointmentDate: z.string().optional(),
+  appointmentTime: z.string().optional(),
+  appointmentEntryType: z.enum(["EXAM", "CONSULTATION"]).optional(),
+  appointmentStatus: z.enum(["SCHEDULED", "CHECKED_IN", "IN_PROGRESS", "COMPLETED", "CANCELLED", "NO_SHOW"]).optional(),
+  appointmentReason: z.string().optional(),
+  appointmentNotes: z.string().optional()
 }).superRefine((value, ctx) => {
   if (value.nationalId?.trim() && !/^\d{14}$/.test(value.nationalId.trim())) {
     ctx.addIssue({
@@ -42,6 +55,36 @@ const patientSchema = z.object({
       message: "Lead source other is required when lead source is OTHER"
     });
   }
+  if (value.createAppointmentNow) {
+    if (!value.appointmentSpecialtyCode?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["appointmentSpecialtyCode"],
+        message: "Specialty is required"
+      });
+    }
+    if (!value.appointmentDoctorId?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["appointmentDoctorId"],
+        message: "Doctor is required"
+      });
+    }
+    if (!value.appointmentDate?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["appointmentDate"],
+        message: "Appointment date is required"
+      });
+    }
+    if (!value.appointmentTime?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["appointmentTime"],
+        message: "Appointment time is required"
+      });
+    }
+  }
 });
 
 export type PatientFormValues = z.infer<typeof patientSchema>;
@@ -50,9 +93,11 @@ interface PatientFormProps {
   onSubmit: (values: PatientFormValues) => void;
   initialValues?: Partial<PatientFormValues>;
   submitLabel?: string;
+  clinicScope?: string;
+  enableAppointmentSection?: boolean;
 }
 
-export function PatientForm({ onSubmit, initialValues, submitLabel }: PatientFormProps) {
+export function PatientForm({ onSubmit, initialValues, submitLabel, clinicScope, enableAppointmentSection = true }: PatientFormProps) {
   const { t } = useI18n();
 
   const {
@@ -73,13 +118,41 @@ export function PatientForm({ onSubmit, initialValues, submitLabel }: PatientFor
       professionOther: initialValues?.professionOther ?? "",
       leadSource: initialValues?.leadSource ?? "GOOGLE_SEARCH",
       leadSourceOther: initialValues?.leadSourceOther ?? "",
-      address: initialValues?.address ?? ""
+      address: initialValues?.address ?? "",
+      createAppointmentNow: initialValues?.createAppointmentNow ?? false,
+      appointmentSpecialtyCode: initialValues?.appointmentSpecialtyCode ?? "",
+      appointmentDoctorId: initialValues?.appointmentDoctorId ?? "",
+      appointmentDate: initialValues?.appointmentDate ?? "",
+      appointmentTime: initialValues?.appointmentTime ?? "",
+      appointmentEntryType: (initialValues?.appointmentEntryType as VisitEntryType | undefined) ?? "EXAM",
+      appointmentStatus: initialValues?.appointmentStatus ?? "SCHEDULED",
+      appointmentReason: initialValues?.appointmentReason ?? "",
+      appointmentNotes: initialValues?.appointmentNotes ?? ""
     }
   });
 
   const dateOfBirth = watch("dateOfBirth");
   const profession = watch("profession");
   const leadSource = watch("leadSource");
+  const createAppointmentNow = watch("createAppointmentNow");
+  const appointmentSpecialtyCode = watch("appointmentSpecialtyCode");
+  const clinicSpecialtiesQuery = useQuery({
+    queryKey: ["patients", "form", "clinic-specialties", clinicScope ?? "mine"],
+    queryFn: () => specialtyService.listMyClinicSpecialties(clinicScope),
+    enabled: enableAppointmentSection
+  });
+  const selectedSpecialtyName = useMemo(
+    () =>
+      (clinicSpecialtiesQuery.data ?? [])
+        .find((item) => item.specialty.code === appointmentSpecialtyCode)
+        ?.specialty.name ?? "",
+    [appointmentSpecialtyCode, clinicSpecialtiesQuery.data]
+  );
+  const doctorsQuery = useQuery({
+    queryKey: ["patients", "form", "doctors", clinicScope ?? "mine", selectedSpecialtyName ?? "all"],
+    queryFn: () => doctorService.list(clinicScope, selectedSpecialtyName || undefined),
+    enabled: enableAppointmentSection && createAppointmentNow && Boolean(appointmentSpecialtyCode)
+  });
   const liveAge = (() => {
     if (!dateOfBirth) return null;
     const dob = new Date(dateOfBirth);
@@ -206,6 +279,85 @@ export function PatientForm({ onSubmit, initialValues, submitLabel }: PatientFor
           <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("leadSourceOther")} />
           {errors.leadSourceOther ? <p className="mt-1 text-xs text-red-500">{errors.leadSourceOther.message}</p> : null}
         </motion.div>
+      ) : null}
+      {enableAppointmentSection ? (
+        <section className="space-y-3 rounded-2xl border border-orange-100 bg-orange-50/40 p-3">
+          <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500"
+              {...register("createAppointmentNow")}
+            />
+            {t("patients.appointment.addNow")}
+          </label>
+          {createAppointmentNow ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm text-slate-600">{t("appointments.specialty")}</label>
+                <select
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-orange-500 focus:outline-none"
+                  {...register("appointmentSpecialtyCode")}
+                >
+                  <option value="">{t("appointments.chooseSpecialty")}</option>
+                  {(clinicSpecialtiesQuery.data ?? []).map((item) => (
+                    <option key={item.id} value={item.specialty.code}>
+                      {item.specialty.nameAr}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm text-slate-600">{t("nav.doctors")}</label>
+                <select
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-orange-500 focus:outline-none"
+                  {...register("appointmentDoctorId")}
+                  disabled={!appointmentSpecialtyCode}
+                >
+                  <option value="">{appointmentSpecialtyCode ? t("appointments.chooseDoctor") : t("appointments.chooseSpecialty")}</option>
+                  {(doctorsQuery.data ?? []).map((doctor) => (
+                    <option key={doctor.id} value={doctor.id}>
+                      {`${doctor.user?.firstName ?? ""} ${doctor.user?.lastName ?? ""}`.trim()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm text-slate-600">{t("appointments.medicalFile.date")}</label>
+                <input type="date" className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-orange-500 focus:outline-none" {...register("appointmentDate")} />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm text-slate-600">{t("appointments.medicalFile.time")}</label>
+                <input type="time" className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-orange-500 focus:outline-none" {...register("appointmentTime")} />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm text-slate-600">{t("appointments.entryType")}</label>
+                <select className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-orange-500 focus:outline-none" {...register("appointmentEntryType")}>
+                  <option value="EXAM">{t("appointments.entryType.exam")}</option>
+                  <option value="CONSULTATION">{t("appointments.entryType.consultation")}</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm text-slate-600">{t("field.status")}</label>
+                <select className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-orange-500 focus:outline-none" {...register("appointmentStatus")}>
+                  <option value="SCHEDULED">{t("status.SCHEDULED")}</option>
+                  <option value="CHECKED_IN">{t("status.CHECKED_IN")}</option>
+                  <option value="IN_PROGRESS">{t("status.IN_PROGRESS")}</option>
+                  <option value="COMPLETED">{t("status.COMPLETED")}</option>
+                  <option value="CANCELLED">{t("status.CANCELLED")}</option>
+                  <option value="NO_SHOW">{t("status.NO_SHOW")}</option>
+                </select>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-sm text-slate-600">{t("appointments.reason")}</label>
+                <input className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-orange-500 focus:outline-none" {...register("appointmentReason")} />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-sm text-slate-600">{t("appointments.notes")}</label>
+                <textarea rows={3} className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-orange-500 focus:outline-none" {...register("appointmentNotes")} />
+              </div>
+            </div>
+          ) : null}
+        </section>
       ) : null}
       <RippleButton type="submit" disabled={isSubmitting}>
         {submitLabel ?? t("common.savePatient")}

@@ -29,5 +29,9 @@
   "license": "MIT",
   "devDependencies": {
     "concurrently": "^9.2.1"
+  },
+  "dependencies": {
+    "glob": "^13.0.6",
+    "strip-bom": "^5.0.0"
   }
 }

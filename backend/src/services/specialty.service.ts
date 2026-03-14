@@ -568,7 +568,7 @@ export const specialtyService = {
       sectionId?: string;
       section?: string;
       sectionAr?: string;
-      fieldType: "TEXT" | "NUMBER" | "YES_NO" | "DATE" | "DROPDOWN" | "MULTI_SELECT" | "AUTO" | "GRID";
+      fieldType: "TEXT" | "TEXT_AREA" | "NUMBER" | "YES_NO" | "DATE" | "DROPDOWN" | "MULTI_SELECT" | "AUTO" | "GRID";
       isRequired?: boolean;
       displayOrder?: number;
       helpText?: string;
@@ -642,7 +642,7 @@ export const specialtyService = {
       sectionId?: string | null;
       section?: string;
       sectionAr?: string;
-      fieldType?: "TEXT" | "NUMBER" | "YES_NO" | "DATE" | "DROPDOWN" | "MULTI_SELECT" | "AUTO" | "GRID";
+      fieldType?: "TEXT" | "TEXT_AREA" | "NUMBER" | "YES_NO" | "DATE" | "DROPDOWN" | "MULTI_SELECT" | "AUTO" | "GRID";
       isRequired?: boolean;
       displayOrder?: number;
       helpText?: string;

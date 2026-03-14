@@ -251,6 +251,9 @@ export function SpecialtyAssessmentForm({
     const inputClass = compact
       ? "h-10 w-full rounded-xl border border-slate-300/80 bg-white/95 px-3 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
       : "h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-orange-500";
+    const textareaClass = compact
+      ? "min-h-[96px] w-full resize-y rounded-xl border border-slate-300/80 bg-white/95 px-3 py-2 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+      : "min-h-[112px] w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-orange-500";
 
     if (isEmptyGridCell(field)) {
       return (
@@ -339,6 +342,18 @@ export function SpecialtyAssessmentForm({
               );
             })}
           </div>
+          {help ? <p className="text-[11px] text-slate-500">{help}</p> : null}
+        </div>
+      );
+    }
+
+    if (field.fieldType === "TEXT_AREA") {
+      return (
+        <div className="space-y-1">
+          <label className={compact ? "text-sm font-semibold text-slate-700" : "text-sm font-medium text-slate-600"}>
+            {label}
+          </label>
+          <textarea {...register(field.key)} className={textareaClass} />
           {help ? <p className="text-[11px] text-slate-500">{help}</p> : null}
         </div>
       );

@@ -88,6 +88,38 @@ export interface PatientAssessmentsResponse {
   assessments: PatientAssessmentHistoryItem[];
 }
 
+export interface PatientExamAttachmentItem {
+  id: string;
+  examId: string;
+  clinicId: string;
+  fileUrl: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+export interface PatientExamItem {
+  id: string;
+  patientId: string;
+  clinicId: string;
+  name: string;
+  examDate: string;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string | null;
+  attachments: PatientExamAttachmentItem[];
+}
+
+export interface PatientExamsResponse {
+  patient: {
+    id: string;
+    clinicId: string;
+    fullName: string;
+  };
+  exams: PatientExamItem[];
+}
+
 export const patientService = {
   async list(clinicId?: string) {
     const res = await api.get<{ data: PatientListPayload }>("/patients", {
@@ -121,5 +153,61 @@ export const patientService = {
       params: clinicId ? { clinicId } : undefined
     });
     return res.data.data;
+  },
+
+  async listExams(id: string, clinicId?: string) {
+    const res = await api.get<{ data: PatientExamsResponse }>(`/patients/${id}/exams`, {
+      params: clinicId ? { clinicId } : undefined
+    });
+    return res.data.data;
+  },
+
+  async createExam(
+    patientId: string,
+    payload: { name: string; examDate: string; attachments: File[] },
+    clinicId?: string
+  ) {
+    const formData = new FormData();
+    formData.append("name", payload.name);
+    formData.append("examDate", payload.examDate);
+    for (const file of payload.attachments) {
+      formData.append("attachments", file);
+    }
+    const res = await api.post<{ data: PatientExamItem }>(`/patients/${patientId}/exams`, formData, {
+      params: clinicId ? { clinicId } : undefined,
+      headers: { "Content-Type": "multipart/form-data" }
+    });
+    return res.data.data;
+  },
+
+  async updateExam(
+    patientId: string,
+    examId: string,
+    payload: { name?: string; examDate?: string; attachments?: File[] },
+    clinicId?: string
+  ) {
+    const formData = new FormData();
+    if (payload.name !== undefined) formData.append("name", payload.name);
+    if (payload.examDate !== undefined) formData.append("examDate", payload.examDate);
+    for (const file of payload.attachments ?? []) {
+      formData.append("attachments", file);
+    }
+    const res = await api.patch<{ data: PatientExamItem }>(`/patients/${patientId}/exams/${examId}`, formData, {
+      params: clinicId ? { clinicId } : undefined,
+      headers: { "Content-Type": "multipart/form-data" }
+    });
+    return res.data.data;
+  },
+
+  async removeExam(patientId: string, examId: string, clinicId?: string) {
+    await api.delete(`/patients/${patientId}/exams/${examId}`, {
+      params: clinicId ? { clinicId } : undefined
+    });
+  },
+
+  async removeExamAttachment(patientId: string, examId: string, attachmentId: string, clinicId?: string) {
+    await api.delete(`/patients/${patientId}/exams/${examId}/attachments/${attachmentId}`, {
+      params: clinicId ? { clinicId } : undefined
+    });
   }
 };

@@ -17,18 +17,20 @@ import { cn } from "@/lib/utils";
 import { clinicService } from "@/lib/clinic-service";
 import { SpecialtyTemplate, SpecialtyTemplateField, SpecialtyTemplateRule, specialtyService } from "@/lib/specialty-service";
 
-const fieldTypes = ["TEXT", "NUMBER", "YES_NO", "DATE", "DROPDOWN", "MULTI_SELECT", "AUTO", "GRID"] as const;
+const fieldTypes = ["TEXT", "TEXT_AREA", "NUMBER", "YES_NO", "DATE", "DROPDOWN", "MULTI_SELECT", "AUTO", "GRID"] as const;
 const ruleTypes = ["ALERT", "DIAGNOSIS", "COMPUTE"] as const;
 const operators = ["eq", "neq", "gt", "gte", "lt", "lte", "includes"] as const;
-const fieldTypeLabels: Record<(typeof fieldTypes)[number], string> = {
+const fieldTypeLabels: Record<SpecialtyTemplateField["fieldType"], string> = {
   TEXT: "نص",
+  TEXT_AREA: "نص طويل",
   NUMBER: "رقم",
   YES_NO: "نعم / لا",
   DATE: "تاريخ",
   DROPDOWN: "قائمة منسدلة",
   MULTI_SELECT: "اختيار متعدد",
   AUTO: "تلقائي",
-  GRID: "شبكة"
+  GRID: "شبكة",
+  EMPTY: "فارغ"
 };
 const gridCellTypeLabels: Record<GridCellFieldType, string> = {
   ...fieldTypeLabels,
@@ -138,7 +140,7 @@ type GridGroup = {
   rows: PersistedGridRow[];
 };
 
-type GridCellFieldType = "TEXT" | "NUMBER" | "YES_NO" | "DATE" | "DROPDOWN" | "MULTI_SELECT" | "AUTO" | "EMPTY";
+type GridCellFieldType = "TEXT" | "TEXT_AREA" | "NUMBER" | "YES_NO" | "DATE" | "DROPDOWN" | "MULTI_SELECT" | "AUTO" | "EMPTY";
 type GridCellOptionDraft = {
   id?: string;
   value: string;
@@ -151,7 +153,7 @@ type GridCellConfig = {
   labelAr: string;
   options: GridCellOptionDraft[];
 };
-const gridCellFieldTypes: GridCellFieldType[] = ["TEXT", "NUMBER", "YES_NO", "DATE", "DROPDOWN", "MULTI_SELECT", "AUTO", "EMPTY"];
+const gridCellFieldTypes: GridCellFieldType[] = ["TEXT", "TEXT_AREA", "NUMBER", "YES_NO", "DATE", "DROPDOWN", "MULTI_SELECT", "AUTO", "EMPTY"];
 
 const toSlug = (value: string) =>
   value
@@ -843,6 +845,44 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
       if (!gridEditTarget) throw new Error("Grid is required");
       if (!gridEditColumns.length || !gridEditRows.length) throw new Error("Grid must have at least one row and one column");
 
+      // Avoid API burst (429) when many cells/options are edited at once.
+      const runInBatches = async <T,>(
+        items: T[],
+        worker: (item: T) => Promise<void>,
+        batchSize = 1
+      ) => {
+        for (let index = 0; index < items.length; index += batchSize) {
+          const slice = items.slice(index, index + batchSize);
+          await Promise.all(slice.map((item) => worker(item)));
+        }
+      };
+
+      const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+      const with429Retry = async <T,>(fn: () => Promise<T>, maxRetries = 4): Promise<T> => {
+        let attempt = 0;
+        while (true) {
+          try {
+            return await fn();
+          } catch (error: unknown) {
+            const status =
+              typeof error === "object" &&
+              error !== null &&
+              "response" in error &&
+              typeof (error as { response?: { status?: unknown } }).response?.status === "number"
+                ? ((error as { response?: { status?: number } }).response?.status ?? 0)
+                : 0;
+
+            if (status !== 429 || attempt >= maxRetries) {
+              throw error;
+            }
+
+            const delayMs = 400 * Math.pow(2, attempt);
+            attempt += 1;
+            await sleep(delayMs);
+          }
+        }
+      };
+
       const previousColumns = gridEditTarget.columns;
       const previousRows = gridEditTarget.rows;
       const previousColumnKeys = new Set(previousColumns.map((item) => item.key));
@@ -885,7 +925,9 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
         const { rowKey, columnKey } = readGridMeta(field);
         return removedRowKeys.has(rowKey) || removedColumnKeys.has(columnKey);
       });
-      await Promise.all(fieldsToDelete.map((field) => specialtyService.adminDeleteField(field.id)));
+      await runInBatches(fieldsToDelete, async (field) => {
+        await with429Retry(() => specialtyService.adminDeleteField(field.id));
+      });
 
       const gridColumnsMetadata = normalizedColumns.map((column) => ({
         key: column.key,
@@ -897,7 +939,7 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
       const usedFieldKeys = new Set((selectedTemplate?.fields ?? []).map((field) => field.key));
       fieldsToDelete.forEach((field) => usedFieldKeys.delete(field.key));
 
-      const upsertCalls: Promise<void>[] = [];
+      const upsertTasks: Array<() => Promise<void>> = [];
 
       const syncFieldOptions = async (
         fieldId: string,
@@ -906,7 +948,9 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
         enabled: boolean
       ) => {
         if (!enabled) {
-          await Promise.all(existingOptions.map((option) => specialtyService.adminDeleteOption(option.id)));
+          await runInBatches(existingOptions, async (option) => {
+            await with429Retry(() => specialtyService.adminDeleteOption(option.id));
+          });
           return;
         }
         const normalized = nextOptions
@@ -920,29 +964,31 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
           .filter((option) => option.value);
 
         const nextIds = new Set(normalized.map((option) => option.id).filter(Boolean));
-        await Promise.all(
-          existingOptions
-            .filter((option) => !nextIds.has(option.id))
-            .map((option) => specialtyService.adminDeleteOption(option.id))
-        );
-        await Promise.all(
-          normalized.map((option) => {
-            if (option.id) {
-              return specialtyService.adminUpdateOption(option.id, {
+        const toDelete = existingOptions.filter((option) => !nextIds.has(option.id));
+        await runInBatches(toDelete, async (option) => {
+          await with429Retry(() => specialtyService.adminDeleteOption(option.id));
+        });
+        await runInBatches(normalized, async (option) => {
+          if (option.id) {
+            await with429Retry(() =>
+              specialtyService.adminUpdateOption(option.id!, {
                 value: option.value,
                 label: option.label,
                 labelAr: option.labelAr,
                 displayOrder: option.displayOrder
-              });
-            }
-            return specialtyService.adminCreateOption(fieldId, {
+              })
+            );
+            return;
+          }
+          await with429Retry(() =>
+            specialtyService.adminCreateOption(fieldId, {
               value: option.value,
               label: option.label,
               labelAr: option.labelAr,
               displayOrder: option.displayOrder
-            });
-          })
-        );
+            })
+          );
+        });
       };
 
       normalizedRows.forEach((row) => {
@@ -974,19 +1020,21 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
               columns: gridColumnsMetadata
             }
           };
-          upsertCalls.push(
-            (async () => {
-              if (existingField && !removedRowKeys.has(row.key) && !removedColumnKeys.has(column.key)) {
-                await specialtyService.adminUpdateField(existingField.id, {
+          upsertTasks.push(async () => {
+            if (existingField && !removedRowKeys.has(row.key) && !removedColumnKeys.has(column.key)) {
+              await with429Retry(() =>
+                specialtyService.adminUpdateField(existingField.id, {
                   label,
                   labelAr,
                   fieldType: persistedType,
                   metadata
-                });
-                await syncFieldOptions(existingField.id, existingField.options, cellConfig.options, wantsOptions);
-                return;
-              }
-              const createdField = await specialtyService.adminCreateField(selectedTemplateId, {
+                })
+              );
+              await syncFieldOptions(existingField.id, existingField.options, cellConfig.options, wantsOptions);
+              return;
+            }
+            const createdField = await with429Retry(() =>
+              specialtyService.adminCreateField(selectedTemplateId, {
                 key: ensureUniqueKey(
                   `${sanitizeKeyBase(gridEditTarget.id, "grid")}_${row.key}_${column.key}`,
                   usedFieldKeys
@@ -996,14 +1044,16 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                 sectionId: gridEditTarget.sectionId,
                 fieldType: persistedType,
                 metadata
-              });
-              await syncFieldOptions(createdField.id, createdField.options ?? [], cellConfig.options, wantsOptions);
-            })()
-          );
+              })
+            );
+            await syncFieldOptions(createdField.id, createdField.options ?? [], cellConfig.options, wantsOptions);
+          });
         });
       });
 
-      await Promise.all(upsertCalls);
+      await runInBatches(upsertTasks, async (task) => {
+        await task();
+      });
     },
     onSuccess: async () => {
       toast.success("تم تحديث الـ Grid");

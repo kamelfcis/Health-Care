@@ -30,6 +30,7 @@ import { toast } from "sonner";
 import { EntityCollectionView } from "@/components/ui/entity-collection-view";
 import { useI18n } from "@/components/providers/i18n-provider";
 import { clinicService } from "@/lib/clinic-service";
+import { appointmentService } from "@/lib/appointment-service";
 import { patientService, PatientStats } from "@/lib/patient-service";
 import { storage } from "@/lib/storage";
 import { StatCard } from "@/components/ui/stat-card";
@@ -153,6 +154,7 @@ export default function PatientsPage() {
     withoutContactInfo: 0
   };
   const specialtyClinicScope = isSuperAdmin && selectedClinicId !== "all" ? selectedClinicId : undefined;
+  const appointmentMutationClinicScope = isSuperAdmin ? (selectedClinicId === "all" ? undefined : selectedClinicId) : undefined;
 
   const clinicsQuery = useQuery({
     queryKey: ["clinics", "for-filter"],
@@ -561,6 +563,15 @@ export default function PatientsPage() {
     }
   });
 
+  const buildAppointmentWindowIso = (dateText: string, timeText: string) => {
+    const startDate = new Date(`${dateText}T${timeText}`);
+    const endDate = new Date(startDate.getTime() + 30 * 60 * 1000);
+    return {
+      startsAt: startDate.toISOString(),
+      endsAt: endDate.toISOString()
+    };
+  };
+
   const saveAssessmentMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => {
       if (!assessmentPatient || !selectedAssessmentSpecialtyCode) {
@@ -673,11 +684,42 @@ export default function PatientsPage() {
         leadSourceOther: values.leadSourceOther || undefined,
         address: values.address || undefined
       };
+      let patientId = editing?.id ?? "";
 
       if (editing) {
         await updateMutation.mutateAsync({ id: editing.id, payload });
       } else {
-        await createMutation.mutateAsync(payload);
+        const createdPatient = await createMutation.mutateAsync(payload);
+        patientId = createdPatient.id;
+      }
+
+      if (values.createAppointmentNow) {
+        if (isSuperAdmin && selectedClinicId === "all") {
+          toast.error(t("doctors.selectClinicScope"));
+          return;
+        }
+        if (!patientId) {
+          throw new Error("Unable to resolve patient id for appointment");
+        }
+        const { startsAt, endsAt } = buildAppointmentWindowIso(
+          String(values.appointmentDate ?? ""),
+          String(values.appointmentTime ?? "")
+        );
+        await appointmentService.create(
+          {
+            patientId,
+            doctorId: String(values.appointmentDoctorId ?? ""),
+            specialtyCode: String(values.appointmentSpecialtyCode ?? ""),
+            startsAt,
+            endsAt,
+            entryType: (values.appointmentEntryType as VisitEntryType | undefined) ?? "EXAM",
+            status: (values.appointmentStatus as "SCHEDULED" | "CHECKED_IN" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "NO_SHOW" | undefined) ?? "SCHEDULED",
+            reason: String(values.appointmentReason ?? "").trim() || undefined,
+            notes: String(values.appointmentNotes ?? "").trim() || undefined
+          },
+          appointmentMutationClinicScope
+        );
+        await queryClient.invalidateQueries({ queryKey: ["appointments"] });
       }
 
       setEditing(null);
@@ -699,6 +741,8 @@ export default function PatientsPage() {
       <div className="p-6">
         <PatientForm
           key={editing?.id ?? "new-patient"}
+          clinicScope={specialtyClinicScope}
+          enableAppointmentSection={!isSuperAdmin || selectedClinicId !== "all"}
           initialValues={
             editing
               ? {
@@ -724,7 +768,8 @@ export default function PatientsPage() {
                   leadSourceOther: editing.leadSourceOther ?? "",
                   dateOfBirth: editing.dateOfBirth ? String(editing.dateOfBirth).slice(0, 10) : "",
                   professionOther: editing.professionOther ?? "",
-                  address: editing.address ?? ""
+                  address: editing.address ?? "",
+                  createAppointmentNow: false
                 }
               : undefined
           }

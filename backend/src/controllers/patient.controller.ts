@@ -65,6 +65,88 @@ export const patientController = {
     res.json(apiSuccess(data));
   },
 
+  async listExams(req: AuthenticatedRequest, res: Response) {
+    const clinicId = getOptionalClinicScope(req);
+    const data = await patientService.listExams(
+      String(req.params.id),
+      clinicId,
+      req.user?.role,
+      req.user?.sub
+    );
+    res.json(apiSuccess(data));
+  },
+
+  async createExam(req: AuthenticatedRequest, res: Response) {
+    const clinicId = getOptionalClinicScope(req);
+    const files = ((req as AuthenticatedRequest & { files?: Express.Multer.File[] }).files ?? []) as Express.Multer.File[];
+    const data = await patientService.createExam(
+      String(req.params.id),
+      clinicId,
+      { name: String(req.body.name ?? ""), examDate: String(req.body.examDate ?? "") },
+      files.map((file) => ({
+        fileUrl: `/uploads/patient-exams/${file.filename}`,
+        fileName: file.originalname,
+        mimeType: file.mimetype,
+        sizeBytes: file.size
+      })),
+      req.user?.role,
+      req.user?.sub
+    );
+    invalidateCacheByPrefix(buildCacheKey("patients", clinicId ?? "all"));
+    res.status(201).json(apiSuccess(data, "Patient exam created"));
+  },
+
+  async updateExam(req: AuthenticatedRequest, res: Response) {
+    const clinicId = getOptionalClinicScope(req);
+    const files = ((req as AuthenticatedRequest & { files?: Express.Multer.File[] }).files ?? []) as Express.Multer.File[];
+    const data = await patientService.updateExam(
+      String(req.params.id),
+      String(req.params.examId),
+      clinicId,
+      {
+        ...(Object.prototype.hasOwnProperty.call(req.body, "name") ? { name: String(req.body.name ?? "") } : {}),
+        ...(Object.prototype.hasOwnProperty.call(req.body, "examDate") ? { examDate: String(req.body.examDate ?? "") } : {})
+      },
+      files.map((file) => ({
+        fileUrl: `/uploads/patient-exams/${file.filename}`,
+        fileName: file.originalname,
+        mimeType: file.mimetype,
+        sizeBytes: file.size
+      })),
+      req.user?.role,
+      req.user?.sub
+    );
+    invalidateCacheByPrefix(buildCacheKey("patients", clinicId ?? "all"));
+    res.json(apiSuccess(data, "Patient exam updated"));
+  },
+
+  async removeExam(req: AuthenticatedRequest, res: Response) {
+    const clinicId = getOptionalClinicScope(req);
+    const data = await patientService.removeExam(
+      String(req.params.id),
+      String(req.params.examId),
+      clinicId,
+      req.user?.role,
+      req.user?.sub
+    );
+    invalidateCacheByPrefix(buildCacheKey("patients", clinicId ?? "all"));
+    res.json(apiSuccess(data, "Patient exam deleted"));
+  },
+
+  async removeExamAttachment(req: AuthenticatedRequest, res: Response) {
+    const clinicId = getOptionalClinicScope(req);
+    const data = await patientService.removeExamAttachment(
+      String(req.params.id),
+      String(req.params.examId),
+      String(req.params.attachmentId),
+      clinicId,
+      req.user?.role,
+      req.user?.sub
+    );
+    invalidateCacheByPrefix(buildCacheKey("patients", clinicId ?? "all"));
+    res.json(apiSuccess(data, "Patient exam attachment deleted"));
+  },
+
   async create(req: AuthenticatedRequest, res: Response) {
     const clinicId = getScopedClinicId(req);
     const data = await patientService.create(clinicId, req.body);

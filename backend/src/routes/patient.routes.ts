@@ -3,6 +3,7 @@ import { z } from "zod";
 import { patientController } from "../controllers/patient.controller";
 import { requireAuth } from "../middleware/auth.middleware";
 import { requirePermissions } from "../middleware/rbac.middleware";
+import { uploadPatientExamAttachments } from "../middleware/upload.middleware";
 import { validate } from "../middleware/validate.middleware";
 import { asyncHandler } from "../utils/async-handler";
 import patientSpecialtyRoutes from "./patient-specialty.routes";
@@ -71,9 +72,52 @@ const updateSchema = z.object({
     })
 });
 
+const createExamSchema = z.object({
+  body: z.object({
+    name: z.string().min(1),
+    examDate: z.string().min(1)
+  })
+});
+
+const updateExamSchema = z.object({
+  body: z.object({
+    name: z.string().min(1).optional(),
+    examDate: z.string().min(1).optional()
+  })
+});
+
 router.get("/", requireAuth, requirePermissions("patients.read"), asyncHandler(patientController.list));
 router.get("/stats", requireAuth, requirePermissions("patients.read"), asyncHandler(patientController.stats));
 router.get("/:id/assessments", requireAuth, requirePermissions("patients.read"), asyncHandler(patientController.listAssessments));
+router.get("/:id/exams", requireAuth, requirePermissions("patients.read"), asyncHandler(patientController.listExams));
+router.post(
+  "/:id/exams",
+  requireAuth,
+  requirePermissions("patients.manage"),
+  uploadPatientExamAttachments.array("attachments", 10),
+  validate(createExamSchema),
+  asyncHandler(patientController.createExam)
+);
+router.patch(
+  "/:id/exams/:examId",
+  requireAuth,
+  requirePermissions("patients.manage"),
+  uploadPatientExamAttachments.array("attachments", 10),
+  validate(updateExamSchema),
+  asyncHandler(patientController.updateExam)
+);
+router.delete(
+  "/:id/exams/:examId",
+  requireAuth,
+  requirePermissions("patients.manage"),
+  asyncHandler(patientController.removeExam)
+);
+router.delete(
+  "/:id/exams/:examId/attachments/:attachmentId",
+  requireAuth,
+  requirePermissions("patients.manage"),
+  asyncHandler(patientController.removeExamAttachment)
+);
 router.post(
   "/",
   requireAuth,

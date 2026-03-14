@@ -57,7 +57,7 @@ export interface SpecialtyTemplateField {
   labelAr: string;
   section: string;
   sectionAr: string;
-  fieldType: "TEXT" | "NUMBER" | "YES_NO" | "DATE" | "DROPDOWN" | "MULTI_SELECT" | "AUTO" | "GRID" | "EMPTY";
+  fieldType: "TEXT" | "TEXT_AREA" | "NUMBER" | "YES_NO" | "DATE" | "DROPDOWN" | "MULTI_SELECT" | "AUTO" | "GRID" | "EMPTY";
   isRequired: boolean;
   displayOrder: number;
   helpText?: string | null;
