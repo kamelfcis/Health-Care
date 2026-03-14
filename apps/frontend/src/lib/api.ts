@@ -3,7 +3,7 @@ import { storage } from "./storage";
 
 const runtimeApiBase =
   typeof window !== "undefined"
-    ? `${window.location.protocol}//${window.location.hostname}:5000/api`
+    ? `${window.location.origin}/api`
     : "http://localhost:5000/api";
 
 const baseURL = process.env.NEXT_PUBLIC_API_BASE_URL ?? runtimeApiBase;
