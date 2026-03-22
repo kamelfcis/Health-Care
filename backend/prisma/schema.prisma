@@ -121,7 +121,6 @@ model Clinic {
   specialtyAssessments PatientSpecialtyAssessment[]
   patientExams   PatientExam[]
   patientExamAttachments PatientExamAttachment[]
-  medicines      Medicine[]
 
   @@index([clinicId])
   @@index([slug])
@@ -130,7 +129,6 @@ model Clinic {
 
 model Medicine {
   id               String   @id @default(cuid())
-  clinicId         String
   arabicName       String
   englishName      String
   activeIngredient String
@@ -144,13 +142,12 @@ model Medicine {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
   deletedAt        DateTime?
-  clinic           Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
 
-  @@index([clinicId, deletedAt, createdAt])
-  @@index([clinicId, arabicName])
-  @@index([clinicId, englishName])
-  @@index([clinicId, specialty])
-  @@index([clinicId, company])
+  @@index([deletedAt, createdAt])
+  @@index([arabicName])
+  @@index([englishName])
+  @@index([specialty])
+  @@index([company])
 }
 
 model Role {

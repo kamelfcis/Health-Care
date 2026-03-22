@@ -3,15 +3,13 @@ import XLSX from "xlsx";
 import { medicineService } from "../services/medicine.service";
 import { apiSuccess } from "../utils/api-response";
 import { AuthenticatedRequest } from "../types/auth";
-import { getOptionalClinicScope, getScopedClinicId } from "../utils/tenant";
 import { buildCacheKey, getOrSetCache, invalidateCacheByPrefix } from "../utils/response-cache";
 import { AppError } from "../utils/app-error";
 
-const resolveClinicIdForWrite = (req: AuthenticatedRequest) => getScopedClinicId(req);
+const MEDICINES_CACHE_PREFIX = buildCacheKey("medicines");
 
 export const medicineController = {
   async list(req: AuthenticatedRequest, res: Response) {
-    const clinicId = getOptionalClinicScope(req);
     const page = Math.max(1, Number(req.query.page ?? 1));
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 20)));
     const sortByRaw = String(req.query.sortBy ?? "arabicName");
@@ -22,13 +20,11 @@ export const medicineController = {
     const sortOrder = sortOrderRaw === "desc" ? "desc" : "asc";
     const search = typeof req.query.search === "string" ? req.query.search : undefined;
 
-    const cachePrefix = buildCacheKey("medicines", clinicId ?? "all");
     const result = await getOrSetCache(
-      buildCacheKey(cachePrefix, "list", page, pageSize, search ?? "", sortBy, sortOrder),
+      buildCacheKey(MEDICINES_CACHE_PREFIX, "list", page, pageSize, search ?? "", sortBy, sortOrder),
       45_000,
       () =>
         medicineService.list({
-          clinicId,
           page,
           pageSize,
           sortBy,
@@ -40,41 +36,29 @@ export const medicineController = {
   },
 
   async getById(req: AuthenticatedRequest, res: Response) {
-    const clinicId = getOptionalClinicScope(req);
-    const item = await medicineService.getById(String(req.params.id), clinicId);
+    const item = await medicineService.getById(String(req.params.id));
     return res.json(apiSuccess(item));
   },
 
-  async create(req: AuthenticatedRequest, res: Response) {
-    const clinicId = resolveClinicIdForWrite(req);
-    const item = await medicineService.create(clinicId, req.body);
-    invalidateCacheByPrefix(buildCacheKey("medicines", clinicId));
-    invalidateCacheByPrefix(buildCacheKey("medicines", "all"));
+  async create(_req: AuthenticatedRequest, res: Response) {
+    const item = await medicineService.create(_req.body);
+    invalidateCacheByPrefix(MEDICINES_CACHE_PREFIX);
     return res.status(201).json(apiSuccess(item, "Medicine created"));
   },
 
   async update(req: AuthenticatedRequest, res: Response) {
-    const clinicId = resolveClinicIdForWrite(req);
-    const item = await medicineService.update(String(req.params.id), clinicId, req.body);
-    invalidateCacheByPrefix(buildCacheKey("medicines", clinicId));
-    invalidateCacheByPrefix(buildCacheKey("medicines", "all"));
+    const item = await medicineService.update(String(req.params.id), req.body);
+    invalidateCacheByPrefix(MEDICINES_CACHE_PREFIX);
     return res.json(apiSuccess(item, "Medicine updated"));
   },
 
   async remove(req: AuthenticatedRequest, res: Response) {
-    const clinicId = resolveClinicIdForWrite(req);
-    await medicineService.remove(String(req.params.id), clinicId);
-    invalidateCacheByPrefix(buildCacheKey("medicines", clinicId));
-    invalidateCacheByPrefix(buildCacheKey("medicines", "all"));
+    await medicineService.remove(String(req.params.id));
+    invalidateCacheByPrefix(MEDICINES_CACHE_PREFIX);
     return res.json(apiSuccess({ id: String(req.params.id) }, "Medicine deleted"));
   },
 
   async deleteRange(req: AuthenticatedRequest, res: Response) {
-    const clinicId = getOptionalClinicScope(req);
-    if (!clinicId) {
-      throw new AppError("clinicId is required", 400);
-    }
-
     const from = Number(req.body.from);
     const to = Number(req.body.to);
     const sortByRaw = String(req.body.sortBy ?? "arabicName");
@@ -86,7 +70,6 @@ export const medicineController = {
     const search = typeof req.body.search === "string" ? req.body.search : undefined;
 
     const result = await medicineService.deleteRange({
-      clinicId,
       from,
       to,
       search,
@@ -94,16 +77,11 @@ export const medicineController = {
       sortOrder
     });
 
-    invalidateCacheByPrefix(buildCacheKey("medicines", clinicId));
-    invalidateCacheByPrefix(buildCacheKey("medicines", "all"));
+    invalidateCacheByPrefix(MEDICINES_CACHE_PREFIX);
     return res.json(apiSuccess(result, "Medicine range deleted"));
   },
 
   async importExcel(req: AuthenticatedRequest, res: Response) {
-    const clinicId = getOptionalClinicScope(req);
-    if (!clinicId) {
-      throw new AppError("clinicId is required", 400);
-    }
     const file = req.file;
     if (!file?.buffer?.length) {
       throw new AppError("Excel file is required", 400);
@@ -131,9 +109,8 @@ export const medicineController = {
       drug_interactions: String(row.drug_interactions ?? row.drugInteractions ?? "")
     }));
 
-    const result = await medicineService.importRows(clinicId, normalized);
-    invalidateCacheByPrefix(buildCacheKey("medicines", clinicId));
-    invalidateCacheByPrefix(buildCacheKey("medicines", "all"));
+    const result = await medicineService.importRows(normalized);
+    invalidateCacheByPrefix(MEDICINES_CACHE_PREFIX);
     return res.json(apiSuccess(result, "Medicines imported"));
   },
 

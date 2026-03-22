@@ -670,7 +670,7 @@ export function MedicalRecordModal({
   });
 
   const allMedicinesQuery = useQuery({
-    queryKey: ["medical-record", "medicine-catalog-all", clinicScope ?? "mine"],
+    queryKey: ["medical-record", "medicine-catalog-global"],
     queryFn: async () => {
       const pageSize = 100;
       let page = 1;
@@ -681,8 +681,7 @@ export function MedicalRecordModal({
           page,
           pageSize,
           sortBy: "arabicName",
-          sortOrder: "asc",
-          clinicId: clinicScope
+          sortOrder: "asc"
         });
         merged.push(...response.data);
         totalPages = Math.max(1, response.totalPages ?? 1);

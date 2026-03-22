@@ -2,7 +2,6 @@ import { prisma } from "../config/prisma";
 import { AppError } from "../utils/app-error";
 
 interface ListInput {
-  clinicId?: string;
   page: number;
   pageSize: number;
   search?: string;
@@ -11,7 +10,6 @@ interface ListInput {
 }
 
 interface DeleteRangeInput {
-  clinicId: string;
   from: number;
   to: number;
   search?: string;
@@ -51,13 +49,12 @@ const normalizeOptional = (value?: string | null) => {
   return next || null;
 };
 
-const buildListWhere = (clinicId: string | undefined, search: string | undefined) => {
+const buildListWhere = (search: string | undefined) => {
   const tokens = (search ?? "")
     .trim()
     .split(/\s+/)
     .filter(Boolean);
   return {
-    ...(clinicId ? { clinicId } : {}),
     deletedAt: null,
     ...(tokens.length
       ? {
@@ -81,7 +78,7 @@ export const medicineService = {
   async list(input: ListInput) {
     const orderBy = input.sortBy ?? "arabicName";
     const order = input.sortOrder ?? "asc";
-    const where = buildListWhere(input.clinicId, input.search);
+    const where = buildListWhere(input.search);
 
     const [items, total] = await Promise.all([
       prisma.medicine.findMany({
@@ -97,12 +94,11 @@ export const medicineService = {
     return { data: items, total, page: input.page, pageSize: input.pageSize, totalPages };
   },
 
-  async getById(id: string, clinicId?: string) {
+  async getById(id: string) {
     const item = await prisma.medicine.findFirst({
       where: {
         id,
-        deletedAt: null,
-        ...(clinicId ? { clinicId } : {})
+        deletedAt: null
       }
     });
     if (!item) {
@@ -111,7 +107,7 @@ export const medicineService = {
     return item;
   },
 
-  async create(clinicId: string, payload: MedicinePayload) {
+  async create(payload: MedicinePayload) {
     const arabicName = payload.arabicName.trim();
     const englishName = payload.englishName.trim();
     const activeIngredient = payload.activeIngredient.trim();
@@ -121,7 +117,6 @@ export const medicineService = {
 
     return prisma.medicine.create({
       data: {
-        clinicId,
         arabicName,
         englishName,
         activeIngredient,
@@ -136,9 +131,9 @@ export const medicineService = {
     });
   },
 
-  async update(id: string, clinicId: string, payload: Partial<MedicinePayload>) {
+  async update(id: string, payload: Partial<MedicinePayload>) {
     const existing = await prisma.medicine.findFirst({
-      where: { id, clinicId, deletedAt: null },
+      where: { id, deletedAt: null },
       select: { id: true }
     });
     if (!existing) {
@@ -174,9 +169,9 @@ export const medicineService = {
     });
   },
 
-  async remove(id: string, clinicId: string) {
+  async remove(id: string) {
     const result = await prisma.medicine.updateMany({
-      where: { id, clinicId, deletedAt: null },
+      where: { id, deletedAt: null },
       data: { deletedAt: new Date() }
     });
     if (!result.count) {
@@ -190,7 +185,7 @@ export const medicineService = {
       throw new AppError("Invalid range", 400);
     }
 
-    const where = buildListWhere(input.clinicId, input.search);
+    const where = buildListWhere(input.search);
     const orderBy = input.sortBy ?? "arabicName";
     const order = input.sortOrder ?? "asc";
     const total = await prisma.medicine.count({ where });
@@ -217,7 +212,7 @@ export const medicineService = {
     }
 
     const result = await prisma.medicine.updateMany({
-      where: { id: { in: ids }, clinicId: input.clinicId, deletedAt: null },
+      where: { id: { in: ids }, deletedAt: null },
       data: { deletedAt: new Date() }
     });
 
@@ -228,7 +223,7 @@ export const medicineService = {
     };
   },
 
-  async importRows(clinicId: string, rows: MedicineImportRow[]) {
+  async importRows(rows: MedicineImportRow[]) {
     const errors: Array<{ row: number; message: string }> = [];
     const validRows: Array<MedicinePayload> = [];
 
@@ -277,7 +272,7 @@ export const medicineService = {
 
     if (validRows.length) {
       await prisma.medicine.createMany({
-        data: validRows.map((item) => ({ ...item, clinicId }))
+        data: validRows.map((item) => ({ ...item }))
       });
     }
 

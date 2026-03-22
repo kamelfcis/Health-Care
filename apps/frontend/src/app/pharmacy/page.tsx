@@ -18,7 +18,6 @@ import { useDebounce } from "@/hooks/use-debounce";
 import { hasPermission } from "@/lib/permissions";
 import { storage } from "@/lib/storage";
 import { medicineService, MedicineItem, UpsertMedicinePayload } from "@/lib/medicine-service";
-import { clinicService } from "@/lib/clinic-service";
 
 type MedicineFormState = UpsertMedicinePayload;
 
@@ -48,7 +47,6 @@ export default function PharmacyPage() {
   const queryClient = useQueryClient();
   const [currentUser, setCurrentUser] = useState<ReturnType<typeof storage.getUser>>(null);
   const [searchInput, setSearchInput] = useState("");
-  const [selectedClinicId, setSelectedClinicId] = useState<string>("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [sortBy, setSortBy] = useState<"arabicName" | "englishName">("arabicName");
@@ -73,38 +71,22 @@ export default function PharmacyPage() {
   const canEdit = hasPermission(currentUser, "pharmacy.edit");
   const canDelete = hasPermission(currentUser, "pharmacy.delete");
   const canImport = hasPermission(currentUser, "pharmacy.import");
-  const isSuperAdmin = currentUser?.role === "SuperAdmin";
-  const requiresClinicSelectionForImport = isSuperAdmin && selectedClinicId === "all";
-
-  const clinicsQuery = useQuery({
-    queryKey: ["clinics", "pharmacy-scope"],
-    queryFn: () => clinicService.list(),
-    enabled: isSuperAdmin
-  });
-  const myClinicQuery = useQuery({
-    queryKey: ["clinic", "me", "pharmacy-scope"],
-    queryFn: () => clinicService.getMyClinic(),
-    enabled: !isSuperAdmin
-  });
-  const clinicScope = isSuperAdmin ? (selectedClinicId === "all" ? undefined : selectedClinicId) : myClinicQuery.data?.id;
 
   const medicinesQuery = useQuery({
-    queryKey: ["medicines", { clinicScope: clinicScope ?? "all", page, pageSize, search: debouncedSearch, sortBy, sortOrder }],
+    queryKey: ["medicines", { page, pageSize, search: debouncedSearch, sortBy, sortOrder }],
     queryFn: () =>
       medicineService.list({
         page,
         pageSize,
         search: debouncedSearch.trim() || undefined,
         sortBy,
-        sortOrder,
-        clinicId: clinicScope
-      })
-    ,
-    enabled: isSuperAdmin || Boolean(myClinicQuery.data?.id)
+        sortOrder
+      }),
+    enabled: Boolean(currentUser)
   });
 
   const createMutation = useMutation({
-    mutationFn: () => medicineService.create(form, clinicScope),
+    mutationFn: () => medicineService.create(form),
     onSuccess: () => {
       toast.success(t("pharmacy.created"));
       setFormOpen(false);
@@ -117,7 +99,7 @@ export default function PharmacyPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: () => medicineService.update(String(editingTarget?.id), form, clinicScope),
+    mutationFn: () => medicineService.update(String(editingTarget?.id), form),
     onSuccess: () => {
       toast.success(t("pharmacy.updated"));
       setFormOpen(false);
@@ -131,7 +113,7 @@ export default function PharmacyPage() {
   });
 
   const removeMutation = useMutation({
-    mutationFn: (id: string) => medicineService.remove(id, clinicScope),
+    mutationFn: (id: string) => medicineService.remove(id),
     onSuccess: () => {
       toast.success(t("pharmacy.deleted"));
       setDeleteTarget(null);
@@ -148,16 +130,13 @@ export default function PharmacyPage() {
       if (!totalFiltered) {
         throw new Error(t("pharmacy.deleteRangeNoRows"));
       }
-      return medicineService.deleteRange(
-        {
-          from,
-          to,
-          search: debouncedSearch.trim() || undefined,
-          sortBy,
-          sortOrder
-        },
-        clinicScope
-      );
+      return medicineService.deleteRange({
+        from,
+        to,
+        search: debouncedSearch.trim() || undefined,
+        sortBy,
+        sortOrder
+      });
     },
     onSuccess: ({ deleted, matched }) => {
       if (!matched) {
@@ -178,7 +157,7 @@ export default function PharmacyPage() {
   });
 
   const importMutation = useMutation({
-    mutationFn: (file: File) => medicineService.importExcel(file, clinicScope),
+    mutationFn: (file: File) => medicineService.importExcel(file),
     onSuccess: (result) => {
       const hasErrors = result.errors.length > 0;
       if (hasErrors) {
@@ -281,25 +260,6 @@ export default function PharmacyPage() {
     >
       <AppShell>
         <section className="space-y-4">
-          {isSuperAdmin ? (
-            <section className="card bg-white/80 p-4">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm font-medium text-slate-600">{t("dashboard.clinicScope")}</p>
-                <select
-                  className="h-11 min-w-[220px] rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-500/30"
-                  value={selectedClinicId}
-                  onChange={(event) => setSelectedClinicId(event.target.value)}
-                >
-                  <option value="all">{t("common.allClinics")}</option>
-                  {(clinicsQuery.data ?? []).map((clinic) => (
-                    <option key={clinic.id} value={clinic.id}>
-                      {clinic.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </section>
-          ) : null}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h1 className="text-2xl font-semibold text-brand-navy">{t("nav.pharmacy")}</h1>
             <div className="flex flex-wrap items-center gap-2">
@@ -318,14 +278,7 @@ export default function PharmacyPage() {
                 <button
                   type="button"
                   className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={requiresClinicSelectionForImport}
-                  onClick={() => {
-                    if (requiresClinicSelectionForImport) {
-                      toast.error(t("doctors.selectClinicScope"));
-                      return;
-                    }
-                    setImportOpen(true);
-                  }}
+                  onClick={() => setImportOpen(true)}
                 >
                   <Upload size={15} />
                   {t("pharmacy.importExcel")}
@@ -477,7 +430,6 @@ export default function PharmacyPage() {
                 !form.arabicName.trim() ||
                 !form.englishName.trim() ||
                 !form.activeIngredient.trim() ||
-                (isSuperAdmin && selectedClinicId === "all") ||
                 createMutation.isPending ||
                 updateMutation.isPending
               }
@@ -485,10 +437,6 @@ export default function PharmacyPage() {
                 if (editingTarget) {
                   updateMutation.mutate();
                 } else {
-                  if (isSuperAdmin && selectedClinicId === "all") {
-                    toast.error(t("doctors.selectClinicScope"));
-                    return;
-                  }
                   createMutation.mutate();
                 }
               }}
@@ -546,13 +494,9 @@ export default function PharmacyPage() {
               <RippleButton
                 type="button"
                 className="h-10 text-sm"
-                disabled={!importFile || importMutation.isPending || requiresClinicSelectionForImport}
+                disabled={!importFile || importMutation.isPending}
                 onClick={() => {
                   if (!importFile) return;
-                  if (requiresClinicSelectionForImport) {
-                    toast.error(t("doctors.selectClinicScope"));
-                    return;
-                  }
                   importMutation.mutate(importFile);
                 }}
               >
@@ -569,9 +513,6 @@ export default function PharmacyPage() {
                 {t("common.cancel")}
               </button>
             </div>
-            {requiresClinicSelectionForImport ? (
-              <p className="text-xs font-medium text-amber-700">{t("doctors.selectClinicScope")}</p>
-            ) : null}
           </div>
         </Modal>
 
@@ -643,10 +584,6 @@ export default function PharmacyPage() {
                   const totalFiltered = medicinesQuery.data?.total ?? 0;
                   if (to > totalFiltered) {
                     toast.error(t("pharmacy.deleteRangeOutOfBounds", { total: String(totalFiltered) }));
-                    return;
-                  }
-                  if (isSuperAdmin && selectedClinicId === "all") {
-                    toast.error(t("doctors.selectClinicScope"));
                     return;
                   }
                   removeRangeMutation.mutate({ from, to });

@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { medicineController } from "../controllers/medicine.controller";
 import { requireAuth } from "../middleware/auth.middleware";
-import { requirePermissions } from "../middleware/rbac.middleware";
+import { allowRoles, requirePermissions } from "../middleware/rbac.middleware";
 import { uploadMedicineImport } from "../middleware/upload.middleware";
 import { validate } from "../middleware/validate.middleware";
 import { asyncHandler } from "../utils/async-handler";
@@ -35,11 +35,18 @@ const deleteRangeSchema = z.object({
 });
 
 router.get("/", requireAuth, requirePermissions("pharmacy.view"), asyncHandler(medicineController.list));
+router.get(
+  "/import/template",
+  requireAuth,
+  requirePermissions("pharmacy.view"),
+  asyncHandler(medicineController.downloadTemplate)
+);
 router.get("/:id", requireAuth, requirePermissions("pharmacy.view"), asyncHandler(medicineController.getById));
 router.post(
   "/",
   requireAuth,
   requirePermissions("pharmacy.create"),
+  allowRoles("SuperAdmin"),
   validate(createSchema),
   asyncHandler(medicineController.create)
 );
@@ -47,6 +54,7 @@ router.put(
   "/:id",
   requireAuth,
   requirePermissions("pharmacy.edit"),
+  allowRoles("SuperAdmin"),
   validate(updateSchema),
   asyncHandler(medicineController.update)
 );
@@ -54,12 +62,14 @@ router.delete(
   "/:id",
   requireAuth,
   requirePermissions("pharmacy.delete"),
+  allowRoles("SuperAdmin"),
   asyncHandler(medicineController.remove)
 );
 router.post(
   "/delete-range",
   requireAuth,
   requirePermissions("pharmacy.delete"),
+  allowRoles("SuperAdmin"),
   validate(deleteRangeSchema),
   asyncHandler(medicineController.deleteRange)
 );
@@ -67,14 +77,9 @@ router.post(
   "/import",
   requireAuth,
   requirePermissions("pharmacy.import"),
+  allowRoles("SuperAdmin"),
   uploadMedicineImport.single("file"),
   asyncHandler(medicineController.importExcel)
-);
-router.get(
-  "/import/template",
-  requireAuth,
-  requirePermissions("pharmacy.view"),
-  asyncHandler(medicineController.downloadTemplate)
 );
 
 export default router;

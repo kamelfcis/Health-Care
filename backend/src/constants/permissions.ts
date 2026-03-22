@@ -60,10 +60,6 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     "payments.read",
     "payments.manage",
     "pharmacy.view",
-    "pharmacy.create",
-    "pharmacy.edit",
-    "pharmacy.delete",
-    "pharmacy.import",
     "leads.read",
     "leads.manage",
     "leads.convert"
