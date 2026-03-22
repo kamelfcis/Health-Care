@@ -5,7 +5,11 @@ const nextConfig = {
     externalDir: true,
     // Paths are relative to apps/frontend (Root Directory). Ensures demo SQLite is in the serverless bundle.
     outputFileTracingIncludes: {
-      "/api": ["../../backend/prisma/prisma/dev.db"],
+      // Serverless `/api` handler imports `backend/app` (compiled CJS under backend/dist); keep Prisma DB + dist in trace.
+      "/api": [
+        "../../backend/prisma/prisma/dev.db",
+        "../../backend/dist/src/**"
+      ],
       "/*": ["../../backend/prisma/prisma/dev.db"]
     }
   },

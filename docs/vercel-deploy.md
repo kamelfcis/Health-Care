@@ -100,6 +100,17 @@ You do **not** need `NEXT_PUBLIC_BACKEND_ORIGIN`, `BACKEND_PROXY_ORIGIN`, or a s
 
 With the unified app, `/api` is handled by the same deployment as the UI.
 
+## Fix: `Cannot find package '@hc-backend/app'` / `ERR_MODULE_NOT_FOUND` (API function)
+
+[`api/index.ts`](../apps/frontend/api/index.ts) must **not** rely on the tsconfig-only alias `@hc-backend/*` for the Vercel entry: the emitted `api/index.js` would keep `import … from "@hc-backend/app"`, which is **not** a real package.
+
+**Fix in this repo:**
+
+1. [`apps/frontend/package.json`](../apps/frontend/package.json) depends on the workspace package **`"backend": "*"`**.
+2. [`backend/package.json`](../backend/package.json) **`exports`** includes **`"./app": "./dist/src/app.js"`** (compiled output of `src/app.ts`).
+3. **`vercel-build`** runs **`npx tsc -p tsconfig.json`** in `backend` before `next build` so `dist/` exists.
+4. The handler imports **`import { app } from "backend/app"`**.
+
 ## Fix: `Cannot use import statement outside a module` (API function)
 
 If Vercel **Function logs** show `SyntaxError` on `import` in `apps/frontend/api/index.js`, Node is loading that file as **CommonJS**. The compiled handler uses **ESM** `import` (e.g. from `@hc-backend/app`).
