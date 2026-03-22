@@ -22,6 +22,6 @@
       "@hc-backend/*": ["../../backend/src/*"]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", "api/**/*.ts"],
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts", "api/**/*.ts", "types/**/*.d.ts"],
   "exclude": ["node_modules"]
 }
