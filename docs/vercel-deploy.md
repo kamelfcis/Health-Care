@@ -55,12 +55,14 @@ The app includes a **server-side `/api` proxy** ([`src/app/api/[[...path]]/route
 
 ### Environment variables
 
-**Recommended — same-origin `/api` (works with the built-in proxy route):**
+**Recommended — same-origin `/api` (built-in proxy in `app/api/[[...path]]/route.ts`):**
 
 | Variable | Value |
 |----------|--------|
-| `BACKEND_PROXY_ORIGIN` | `https://<your-backend>.vercel.app` (no `/api`, no trailing slash) |
-| `NEXT_PUBLIC_API_BASE_URL` | `/api` _(optional; default in browser is `<frontend origin>/api`)_ |
+| `NEXT_PUBLIC_BACKEND_ORIGIN` | `https://<your-backend>.vercel.app` (no `/api`, no trailing slash) — **required on Vercel**; inlined at build so the proxy always sees it |
+| `NEXT_PUBLIC_API_BASE_URL` | `/api` |
+
+Optional server-only: `BACKEND_PROXY_ORIGIN` (same URL as above).
 
 **Alternative — browser calls backend directly (no proxy):**
 

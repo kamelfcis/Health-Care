@@ -6,24 +6,35 @@ export const maxDuration = 60;
 
 /**
  * Server-side proxy: browser calls same origin `/api/*` → forwards to Express backend.
- * Fixes 404 when NEXT_PUBLIC_* rewrites are missing at build time.
- * Set BACKEND_PROXY_ORIGIN or BACKEND_API_ORIGIN on the frontend Vercel project (no NEXT_PUBLIC needed).
+ *
+ * Vercel: prefer `NEXT_PUBLIC_BACKEND_ORIGIN` — it is inlined at build time and always
+ * present in the serverless bundle. Plain `BACKEND_PROXY_ORIGIN` can be missing in
+ * some Edge/Node runtimes if not synced to Production.
  */
 function getBackendOrigin(): string | null {
-  const raw =
-    process.env.BACKEND_PROXY_ORIGIN?.trim() ||
-    process.env.BACKEND_API_ORIGIN?.trim() ||
-    (process.env.NEXT_PUBLIC_API_BASE_URL?.trim().startsWith("http")
+  const publicApi = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
+  const fromPublicApi =
+    publicApi?.startsWith("http") && publicApi
       ? (() => {
           try {
-            return new URL(process.env.NEXT_PUBLIC_API_BASE_URL!.trim()).origin;
+            return new URL(publicApi).origin;
           } catch {
             return "";
           }
         })()
-      : "");
+      : "";
 
-  return raw ? raw.replace(/\/$/, "") : null;
+  const candidates = [
+    process.env.BACKEND_PROXY_ORIGIN?.trim(),
+    process.env.BACKEND_API_ORIGIN?.trim(),
+    process.env.NEXT_PUBLIC_BACKEND_ORIGIN?.trim(),
+    fromPublicApi
+  ];
+
+  for (const raw of candidates) {
+    if (raw) return raw.replace(/\/$/, "");
+  }
+  return null;
 }
 
 async function proxy(req: NextRequest, pathSegments: string[]) {
@@ -32,7 +43,7 @@ async function proxy(req: NextRequest, pathSegments: string[]) {
     return NextResponse.json(
       {
         message:
-          "API proxy misconfigured. Set BACKEND_PROXY_ORIGIN (or BACKEND_API_ORIGIN) to your Express backend origin, e.g. https://your-backend.vercel.app"
+          "API proxy misconfigured. In Vercel → frontend project → Environment Variables, set NEXT_PUBLIC_BACKEND_ORIGIN=https://your-backend.vercel.app (no /api) or BACKEND_PROXY_ORIGIN to the same value, then redeploy."
       },
       { status: 503 }
     );
