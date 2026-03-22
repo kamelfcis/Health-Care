@@ -67,7 +67,7 @@ Full checklist: **[`docs/vercel-deploy.md`](docs/vercel-deploy.md)**.
 | Setting | Value |
 |--------|--------|
 | **Root Directory** | `apps/frontend` |
-| **Install Command** | `cd ../.. && npm install` (monorepo workspaces; also set in [`apps/frontend/vercel.json`](apps/frontend/vercel.json)) |
+| **Install Command** | `cd ../.. && npm ci` (see [`docs/vercel-deploy.md`](docs/vercel-deploy.md) if the dashboard still overrides with `npm install`) |
 | **Build Command** | `npm run vercel-build` |
 
 Set **Production** (and Preview) env vars: `DATABASE_URL`, JWT secrets, `CORS_ORIGIN` (your `https://….vercel.app`), `NEXT_PUBLIC_API_BASE_URL=/api`. No second backend project or `BACKEND_API_ORIGIN`.

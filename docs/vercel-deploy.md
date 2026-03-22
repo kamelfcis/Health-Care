@@ -100,6 +100,12 @@ You do **not** need `NEXT_PUBLIC_BACKEND_ORIGIN`, `BACKEND_PROXY_ORIGIN`, or a s
 
 With the unified app, `/api` is handled by the same deployment as the UI.
 
+## Fix: `Cannot use import statement outside a module` (API function)
+
+If Vercel **Function logs** show `SyntaxError` on `import` in `apps/frontend/api/index.js`, Node is loading that file as **CommonJS**. The compiled handler uses **ESM** `import` (e.g. from `@hc-backend/app`).
+
+**Fix:** [`apps/frontend/package.json`](../apps/frontend/package.json) includes **`"type": "module"`** so `.js` serverless output is treated as ESM. Redeploy after pulling that change.
+
 ## SQLite on Vercel
 
 Ephemeral filesystem: data may reset between invocations. For persistent data, use **PostgreSQL** (Neon, Supabase, etc.) and set `DATABASE_URL` accordingly.
