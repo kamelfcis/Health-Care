@@ -16,6 +16,8 @@ backend/prisma/*.db
 backend/prisma/*.db-*
 backend/prisma/**/*.db
 backend/prisma/**/*.db-*
+# Allow demo DB for Vercel bundle (runtime copies to /tmp; see backend/src/config/prisma.ts)
+!backend/prisma/prisma/dev.db
 backend/uploads/
 
 .cursor/
@@ -29,3 +31,7 @@ pnpm-debug.log*
 
 .DS_Store
 Thumbs.db
+
+# local smoke / e2e artifacts
+smoke-home.png
+test-results/

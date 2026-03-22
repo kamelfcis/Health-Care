@@ -15,7 +15,8 @@ Use the existing root `.env` file. Do not duplicate secrets across files.
 
 ## Optional frontend variables
 
-- `NEXT_PUBLIC_API_BASE_URL`: backend API URL (default: `http://localhost:5000/api`)
+- `NEXT_PUBLIC_API_BASE_URL`: Axios base URL. Local default via `api.ts` is `http://localhost:5000/api`. On Vercel, use `/api` with `BACKEND_API_ORIGIN`, or the full backend URL `https://<backend>.vercel.app/api` — see [`vercel-deploy.md`](vercel-deploy.md).
+- `BACKEND_API_ORIGIN`: Backend origin **only** for Next.js rewrites (no `/api` suffix). Required at **build** time if using `/api` proxy.
 
 ## Existing variables ain your `.env`
 

@@ -60,29 +60,17 @@ Basic production flow:
 
 ## Vercel quick-demo deploy (frontend + backend)
 
-Deploy two Vercel projects from the same repository:
+Deploy **two** Vercel projects from the same repository. Full step-by-step (env vars, build command, why login 404s): **[`docs/vercel-deploy.md`](docs/vercel-deploy.md)**.
 
-1. **Backend project**
-   - Root directory: `backend`
-   - Framework preset: `Other`
-   - Runtime routes are provided via `backend/api/index.ts` and `backend/api/[...route].ts`.
-   - Required env vars:
-     - `NODE_ENV=production`
-     - `PORT=5000`
-     - `DATABASE_URL=file:./prisma/prisma/dev.db`
-     - `JWT_ACCESS_SECRET=<long-random-secret>`
-     - `JWT_REFRESH_SECRET=<long-random-secret>`
-     - `JWT_ACCESS_EXPIRES_IN=never`
-     - `JWT_REFRESH_EXPIRES_IN=never`
-     - `CORS_ORIGIN=https://<frontend-project>.vercel.app`
+Summary:
 
-2. **Frontend project**
-   - Root directory: `apps/frontend`
-   - Framework preset: `Next.js`
-   - Required env vars:
-     - `NEXT_PUBLIC_API_BASE_URL=https://<backend-project>.vercel.app/api`
+1. **Backend** (`backend/`)
+   - **Build Command:** `npm run build:vercel` (runs `prisma migrate deploy` + compile).
+   - Set `DATABASE_URL`, JWT secrets, `CORS_ORIGIN` (your frontend `https://….vercel.app`).
 
-3. **Notes for SQLite on Vercel**
-   - This quick-demo setup uses SQLite in serverless mode.
-   - Runtime copies bundled DB to `/tmp/healthcare-crm.db` to allow writes during invocation.
-   - Data and uploaded files are ephemeral; this is not production persistence.
+2. **Frontend** (`apps/frontend/`)
+   - **Rewrites (recommended):** `BACKEND_API_ORIGIN=https://<backend>.vercel.app` and `NEXT_PUBLIC_API_BASE_URL=/api` (must be set at **build** time).
+   - **Or direct API:** `NEXT_PUBLIC_API_BASE_URL=https://<backend>.vercel.app/api` and leave `BACKEND_API_ORIGIN` unset.
+
+3. **SQLite on Vercel**
+   - Ephemeral; for real persistence use PostgreSQL and point `DATABASE_URL` at it.
