@@ -1,18 +1,12 @@
-import path from "path";
-import { fileURLToPath } from "url";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const demoSqlitePath = path.join(__dirname, "..", "..", "backend", "prisma", "prisma", "dev.db");
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Allow importing the Express app from ../../backend
   experimental: {
     externalDir: true,
-    // Ensure demo SQLite is copied into the serverless bundle (not imported as JS).
+    // Paths are relative to apps/frontend (Root Directory). Ensures demo SQLite is in the serverless bundle.
     outputFileTracingIncludes: {
-      "/api": [demoSqlitePath],
-      "/*": [demoSqlitePath]
+      "/api": ["../../backend/prisma/prisma/dev.db"],
+      "/*": ["../../backend/prisma/prisma/dev.db"]
     }
   },
   /**
