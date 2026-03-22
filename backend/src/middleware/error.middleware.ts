@@ -17,5 +17,9 @@ export const errorMiddleware = (
     return res.status(error.statusCode).json(apiError(error.message));
   }
 
+  // Log for Vercel/serverless diagnostics (no stack to client)
+  // eslint-disable-next-line no-console
+  console.error("[api] unhandled error:", error);
+
   return res.status(500).json(apiError("Internal server error"));
 };

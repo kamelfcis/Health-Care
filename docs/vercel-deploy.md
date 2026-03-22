@@ -2,20 +2,64 @@
 
 Deploy **one** Vercel project: the Next.js app in `apps/frontend` bundles the Express API from `backend` via [`api/index.ts`](../apps/frontend/api/index.ts). The browser calls **`/api/...`** on the same origin (no separate backend URL, no 503 from a missing proxy).
 
-## CLI: login and deploy
+## Fix build: `npm error Tracker "idealTree" already exists`
 
-After `npx vercel login`, from `apps/frontend`:
+This happens when the Vercel **project** has **Install Command** set to `cd ../.. && npm install` (dashboard override). That overrides [`apps/frontend/vercel.json`](../apps/frontend/vercel.json), which uses **`npm ci`**.
+
+**Fastest (no token):** Open **Project → Settings → General** (e.g. `https://vercel.com/<team>/frontend/settings/general`) → **Build & Development Settings**:
+
+1. **Root Directory:** `apps/frontend`
+2. **Install Command:** **clear the field** (empty) so the repo’s `vercel.json` applies, **or** set explicitly to: `cd ../.. && npm ci`
+3. **Build Command:** leave empty **or** `npm run vercel-build`
+4. **Node.js Version:** `20.x`
+5. **Save**, then **Deployments** → **Redeploy** the latest.
+
+**CLI (token):** [Create a token](https://vercel.com/account/tokens), then from the **repo root**:
 
 ```powershell
-npx vercel deploy --prod
+$env:VERCEL_TOKEN = "<paste-token>"
+npm run vercel:patch
+npm run vercel:deploy
 ```
+
+## CLI: login and deploy
+
+1. `npx vercel login`
+2. **Deploy from the repository root** (not only `apps/frontend`) so the full monorepo (`backend`, lockfile) is uploaded. Use the [`.vercelignore`](../.vercelignore) at the repo root so `node_modules` is not uploaded.
+
+```powershell
+cd <path-to-HealthCare-CRM-repo-root>
+npx vercel link --yes --scope <your-team-slug>
+npx vercel deploy --prod --yes --scope <your-team-slug>
+```
+
+### Fix: `npm error Tracker "idealTree" already exists` (CLI / build)
+
+If the Vercel **dashboard** has **Install Command** = `cd ../.. && npm install`, that can trigger this npm bug on the build machine. Set **Install Command** to use **`npm ci`** instead, and **Root Directory** to **`apps/frontend`**.
+
+**Option A — Dashboard:** Project → **Settings** → **General** → Build & Development:
+
+- **Root Directory:** `apps/frontend`
+- **Install Command:** `cd ../.. && npm ci`
+- **Build Command:** `npm run vercel-build`
+- **Node.js Version:** `20.x` (recommended)
+
+**Option B — API script:** Create a token (Vercel → Account → **Tokens**), then from the repo root:
+
+```powershell
+$env:VERCEL_TOKEN = "<your-token>"
+.\scripts\patch-vercel-project.ps1
+```
+
+(Edit `teamId` / `projectId` in the script if your project differs.)
 
 ### Git integration (recommended)
 
 1. Push this repo to GitHub.
 2. Vercel → **Add New Project** → Import the repository.
-3. **Root Directory:** `apps/frontend` (install/build commands are read from [`vercel.json`](../apps/frontend/vercel.json)).
-4. Add the [environment variables](#vercel-project-settings) below for Production and Preview, then deploy.
+3. **Root Directory:** `apps/frontend` (see [`vercel.json`](../apps/frontend/vercel.json)).
+4. **Install Command:** `cd ../.. && npm ci` (or leave empty to follow `vercel.json`).
+5. Add the [environment variables](#vercel-project-settings) below for Production and Preview, then deploy.
 
 ## Demo database (`dev.db`)
 
@@ -28,7 +72,7 @@ npx vercel deploy --prod
 | **Root Directory** | `apps/frontend` |
 | **Framework** | Next.js (auto-detected) |
 | **Build Command** | `npm run vercel-build` |
-| **Install Command** | `cd ../.. && npm install` (set in [`vercel.json`](../apps/frontend/vercel.json) so the whole workspace installs) |
+| **Install Command** | `cd ../.. && npm ci` (monorepo workspace install from repo root; avoids npm `idealTree` issues) |
 
 `vercel-build` runs `prisma generate` + `migrate deploy` in `backend`, then `next build`. **`DATABASE_URL` must be set before build** so migrations run.
 
@@ -44,7 +88,7 @@ Routing: [`vercel.json`](../apps/frontend/vercel.json) rewrites `/api/*` and `/u
 | `JWT_REFRESH_SECRET` | Different long random string |
 | `JWT_ACCESS_EXPIRES_IN` | `15m` or `never` |
 | `JWT_REFRESH_EXPIRES_IN` | `7d` or `never` |
-| `CORS_ORIGIN` | Your app URL, e.g. `https://<project>.vercel.app` — **comma-separate** multiple origins if needed |
+| `CORS_ORIGIN` | **Required for browser API calls:** include every URL you use, e.g. `https://frontend-nine-henna-86.vercel.app,http://localhost:3000` — **comma-separate** (no spaces). If login returns 500 only in browser, check Vercel **Function logs**; if CORS blocks, add the exact production hostname here. |
 | `NEXT_PUBLIC_API_BASE_URL` | `/api` (same-origin API) |
 
 You do **not** need `NEXT_PUBLIC_BACKEND_ORIGIN`, `BACKEND_PROXY_ORIGIN`, or a second Vercel project for the API.
