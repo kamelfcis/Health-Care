@@ -1,41 +1,21 @@
 /** @type {import('next').NextConfig} */
-function resolveBackendOrigin() {
-  const order = [
-    process.env.BACKEND_PROXY_ORIGIN?.trim(),
-    process.env.BACKEND_API_ORIGIN?.trim(),
-    process.env.NEXT_PUBLIC_BACKEND_ORIGIN?.trim()
-  ];
-  for (const raw of order) {
-    if (raw) return raw.replace(/\/$/, "");
-  }
-
-  // If NEXT_PUBLIC_API_BASE_URL is a full URL, derive origin for rewrites
-  const pub = process.env.NEXT_PUBLIC_API_BASE_URL?.trim();
-  if (pub?.startsWith("http")) {
-    try {
-      return new URL(pub).origin;
-    } catch {
-      return "";
-    }
-  }
-  return "";
-}
-
 const nextConfig = {
+  // Allow importing the Express app from ../../backend
+  experimental: {
+    externalDir: true
+  },
+  /**
+   * Local dev: browser calls same origin `/api` (see src/lib/api.ts), but Express runs on PORT 5000.
+   * Vercel uses api/index.ts + vercel.json rewrites instead; production rewrites here are empty.
+   */
   async rewrites() {
-    const backendOrigin = resolveBackendOrigin();
-    if (!backendOrigin) return [];
-
-    return [
-      {
-        source: "/api/:path*",
-        destination: `${backendOrigin}/api/:path*`
-      },
-      {
-        source: "/uploads/:path*",
-        destination: `${backendOrigin}/uploads/:path*`
-      }
-    ];
+    if (process.env.NODE_ENV === "development") {
+      return [
+        { source: "/api/:path*", destination: "http://localhost:5000/api/:path*" },
+        { source: "/uploads/:path*", destination: "http://localhost:5000/uploads/:path*" }
+      ];
+    }
+    return [];
   }
 };
 

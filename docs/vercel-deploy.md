@@ -1,32 +1,40 @@
-# Vercel deploy checklist (frontend + backend)
+# Vercel deploy (single project: frontend + API + DB)
 
-Use **two Vercel projects** from the same GitHub repo. After every push to `main`, both should auto-redeploy if connected.
+Deploy **one** Vercel project: the Next.js app in `apps/frontend` bundles the Express API from `backend` via [`api/index.ts`](../apps/frontend/api/index.ts). The browser calls **`/api/...`** on the same origin (no separate backend URL, no 503 from a missing proxy).
 
 ## CLI: login and deploy
 
-After `npx vercel login`, from repo root:
+After `npx vercel login`, from `apps/frontend`:
 
 ```powershell
-.\scripts\vercel-cli.ps1
+npx vercel deploy --prod
 ```
 
-Or: `cd backend` → `npx vercel deploy --prod --yes` then `cd apps/frontend` → same.
+### Git integration (recommended)
+
+1. Push this repo to GitHub.
+2. Vercel → **Add New Project** → Import the repository.
+3. **Root Directory:** `apps/frontend` (install/build commands are read from [`vercel.json`](../apps/frontend/vercel.json)).
+4. Add the [environment variables](#vercel-project-settings) below for Production and Preview, then deploy.
 
 ## Demo database (`dev.db`)
 
-`backend/prisma/prisma/dev.db` is **tracked in git** (exception in `.gitignore`) so the Vercel serverless bundle includes your latest SQLite file; at runtime [`backend/src/config/prisma.ts`](../backend/src/config/prisma.ts) copies it to `/tmp` for writes. Push commits that include `dev.db` when you want production demo data updated.
+`backend/prisma/prisma/dev.db` can be **tracked in git** so the serverless bundle includes SQLite; at runtime [`backend/src/config/prisma.ts`](../backend/src/config/prisma.ts) copies it to `/tmp` for writes. Push commits that include `dev.db` when you want production demo data updated.
 
-## 1. Backend project
+## Vercel project settings
 
 | Setting | Value |
 |--------|--------|
-| **Root Directory** | `backend` |
-| **Framework** | Other |
-| **Install Command** | `npm install` |
-| **Build Command** | `npm run build:vercel` |
-| **Output Directory** | _(leave empty / default)_ |
+| **Root Directory** | `apps/frontend` |
+| **Framework** | Next.js (auto-detected) |
+| **Build Command** | `npm run vercel-build` |
+| **Install Command** | `cd ../.. && npm install` (set in [`vercel.json`](../apps/frontend/vercel.json) so the whole workspace installs) |
 
-### Environment variables (Production + Preview)
+`vercel-build` runs `prisma generate` + `migrate deploy` in `backend`, then `next build`. **`DATABASE_URL` must be set before build** so migrations run.
+
+Routing: [`vercel.json`](../apps/frontend/vercel.json) rewrites `/api/*` and `/uploads/*` to the serverless Express entry so API and uploaded files work on one domain. The same file sets **`installCommand`** and **`buildCommand`** for the monorepo.
+
+## Environment variables (Production + Preview)
 
 | Variable | Example / notes |
 |----------|-----------------|
@@ -36,54 +44,18 @@ Or: `cd backend` → `npx vercel deploy --prod --yes` then `cd apps/frontend` �
 | `JWT_REFRESH_SECRET` | Different long random string |
 | `JWT_ACCESS_EXPIRES_IN` | `15m` or `never` |
 | `JWT_REFRESH_EXPIRES_IN` | `7d` or `never` |
-| `CORS_ORIGIN` | `https://<your-frontend>.vercel.app` — **comma-separate** multiple origins if needed |
+| `CORS_ORIGIN` | Your app URL, e.g. `https://<project>.vercel.app` — **comma-separate** multiple origins if needed |
+| `NEXT_PUBLIC_API_BASE_URL` | `/api` (same-origin API) |
 
-`build:vercel` runs `prisma migrate deploy` — **`DATABASE_URL` must be set before build** so migrations apply.
+You do **not** need `NEXT_PUBLIC_BACKEND_ORIGIN`, `BACKEND_PROXY_ORIGIN`, or a second Vercel project for the API.
 
-Copy your backend URL after deploy, e.g. `https://health-care-backend-xxxx.vercel.app`.
+## Why you saw 503 / 404 before
 
-## 2. Frontend project (single Vercel project URL)
+- **503** often happened when a **proxy** or second service was misconfigured or cold.
+- **404** on `/api/*` happened when Next had no handler and no rewrite to Express.
 
-Use **one** Vercel project for the UI: connect this repo and set **Root Directory** to `apps/frontend` (Settings → General). Do **not** set the repo root unless you know what you’re doing.
+With the unified app, `/api` is handled by the same deployment as the UI.
 
-The app includes a **server-side `/api` proxy** ([`src/app/api/[[...path]]/route.ts`](../apps/frontend/src/app/api/[[...path]]/route.ts)): the browser calls `https://<frontend>/api/...` and Next.js forwards to Express. No `NEXT_PUBLIC` backend URL is required if you set **`BACKEND_PROXY_ORIGIN`** (server-only).
+## SQLite on Vercel
 
-| Setting | Value |
-|--------|--------|
-| **Root Directory** | `apps/frontend` |
-| **Framework** | Next.js |
-
-### Environment variables
-
-**Recommended — same-origin `/api` (built-in proxy in `app/api/[[...path]]/route.ts`):**
-
-| Variable | Value |
-|----------|--------|
-| `NEXT_PUBLIC_BACKEND_ORIGIN` | `https://<your-backend>.vercel.app` (no `/api`, no trailing slash) — **required on Vercel**; inlined at build so the proxy always sees it |
-| `NEXT_PUBLIC_API_BASE_URL` | `/api` |
-
-Optional server-only: `BACKEND_PROXY_ORIGIN` (same URL as above).
-
-**Alternative — browser calls backend directly (no proxy):**
-
-| Variable | Value |
-|----------|--------|
-| `NEXT_PUBLIC_API_BASE_URL` | `https://<your-backend>.vercel.app/api` |
-
-Ensure backend **`CORS_ORIGIN`** includes your frontend URL.  
-`next.config.mjs` still derives rewrites from `NEXT_PUBLIC_*` or `BACKEND_API_ORIGIN` for `/uploads` etc.
-
-Ensure backend `CORS_ORIGIN` includes this frontend URL.
-
-## 3. Why login returned 404
-
-`POST https://<frontend>.vercel.app/api/auth/login` only works if:
-
-- **Option A:** `BACKEND_API_ORIGIN` is set **when the frontend is built**, so Next.js rewrites `/api/*` to the backend; or  
-- **Option B:** `NEXT_PUBLIC_API_BASE_URL` points to `https://<backend>.vercel.app/api` so the browser never hits the frontend for API calls.
-
-If both are missing/wrong, `/api/*` hits Next.js and returns **404**.
-
-## 4. SQLite on Vercel
-
-Ephemeral filesystem: data may reset. For a real demo/user data, use **PostgreSQL** (Neon, Supabase, etc.) and set `DATABASE_URL` accordingly.
+Ephemeral filesystem: data may reset between invocations. For persistent data, use **PostgreSQL** (Neon, Supabase, etc.) and set `DATABASE_URL` accordingly.

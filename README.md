@@ -7,7 +7,7 @@ Production-ready monorepo containing:
 
 ## Architecture decisions
 
-- **Monorepo workspaces**: shared scripts and independent app deployments.
+- **Monorepo workspaces**: shared scripts; Vercel uses one project rooted at `apps/frontend` (see Vercel section below).
 - **Layered backend**: routes -> controllers -> services -> Prisma.
 - **Tenant isolation**: APIs read `clinicId` from JWT and always scope data at query level.
 - **Role-driven access**: middleware (`requireAuth`, `allowRoles`) centralizes authorization.
@@ -58,19 +58,18 @@ Basic production flow:
   - Navy: `#0B2A4A`
   - Orange: `#F27A1A`
 
-## Vercel quick-demo deploy (frontend + backend)
+## Vercel deploy (single project: UI + API + demo DB)
 
-Deploy **two** Vercel projects from the same repository. Full step-by-step (env vars, build command, why login 404s): **[`docs/vercel-deploy.md`](docs/vercel-deploy.md)**.
+Use **one** Vercel project so the site and `/api` share the same URL. The Next app in `apps/frontend` bundles Express from `backend` via `api/index.ts`; `backend/prisma/prisma/dev.db` is tracked for a demo SQLite bundle (ephemeral on serverless — see docs).
 
-Summary:
+Full checklist: **[`docs/vercel-deploy.md`](docs/vercel-deploy.md)**.
 
-1. **Backend** (`backend/`)
-   - **Build Command:** `npm run build:vercel` (runs `prisma migrate deploy` + compile).
-   - Set `DATABASE_URL`, JWT secrets, `CORS_ORIGIN` (your frontend `https://….vercel.app`).
+| Setting | Value |
+|--------|--------|
+| **Root Directory** | `apps/frontend` |
+| **Install Command** | `cd ../.. && npm install` (monorepo workspaces; also set in [`apps/frontend/vercel.json`](apps/frontend/vercel.json)) |
+| **Build Command** | `npm run vercel-build` |
 
-2. **Frontend** (`apps/frontend/`)
-   - **Rewrites (recommended):** `BACKEND_API_ORIGIN=https://<backend>.vercel.app` and `NEXT_PUBLIC_API_BASE_URL=/api` (must be set at **build** time).
-   - **Or direct API:** `NEXT_PUBLIC_API_BASE_URL=https://<backend>.vercel.app/api` and leave `BACKEND_API_ORIGIN` unset.
+Set **Production** (and Preview) env vars: `DATABASE_URL`, JWT secrets, `CORS_ORIGIN` (your `https://….vercel.app`), `NEXT_PUBLIC_API_BASE_URL=/api`. No second backend project or `BACKEND_API_ORIGIN`.
 
-3. **SQLite on Vercel**
-   - Ephemeral; for real persistence use PostgreSQL and point `DATABASE_URL` at it.
+For durable data in production, prefer **PostgreSQL** and point `DATABASE_URL` at it.

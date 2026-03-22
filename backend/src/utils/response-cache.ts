@@ -44,7 +44,7 @@ export const getOrSetCache = async <T>(key: string, ttlMs: number, loader: () =>
 };
 
 export const invalidateCacheByPrefix = (prefix: string) => {
-  for (const key of cacheStore.keys()) {
+  for (const key of Array.from(cacheStore.keys())) {
     if (key.startsWith(prefix)) {
       cacheStore.delete(key);
     }
