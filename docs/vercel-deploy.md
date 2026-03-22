@@ -51,21 +51,21 @@ Copy your backend URL after deploy, e.g. `https://health-care-backend-xxxx.verce
 
 ### Environment variables
 
-**Option A — Proxy `/api` to backend (recommended, matches `next.config.mjs` rewrites)**
-
-Set at **build time** (Production + Preview):
-
-| Variable | Value |
-|----------|--------|
-| `BACKEND_API_ORIGIN` | `https://<your-backend>.vercel.app` — **no trailing slash** |
-| `NEXT_PUBLIC_API_BASE_URL` | `/api` |
-
-**Option B — Browser calls backend directly (no rewrites)**
+**Recommended — one variable (avoids 404 on `/api/auth/login` when rewrites miss `BACKEND_API_ORIGIN` at build):**
 
 | Variable | Value |
 |----------|--------|
 | `NEXT_PUBLIC_API_BASE_URL` | `https://<your-backend>.vercel.app/api` |
-| `BACKEND_API_ORIGIN` | _(leave unset — rewrites disabled)_ |
+
+The browser calls the backend directly; ensure backend **`CORS_ORIGIN`** includes your frontend URL.  
+`next.config.mjs` also derives rewrite rules from this URL if you still use relative `/api` anywhere.
+
+**Optional — proxy only (two variables):**
+
+| Variable | Value |
+|----------|--------|
+| `BACKEND_API_ORIGIN` | `https://<your-backend>.vercel.app` |
+| `NEXT_PUBLIC_API_BASE_URL` | `/api` |
 
 Ensure backend `CORS_ORIGIN` includes this frontend URL.
 
