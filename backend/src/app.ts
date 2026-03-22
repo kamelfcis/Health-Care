@@ -12,6 +12,9 @@ import { errorMiddleware } from "./middleware/error.middleware";
 
 export const app = express();
 
+// Required behind Vercel / proxies for express-rate-limit and correct req.ip
+app.set("trust proxy", 1);
+
 app.use(
   cors({
     origin: env.CORS_ORIGIN.split(",").map((origin) => origin.trim()),

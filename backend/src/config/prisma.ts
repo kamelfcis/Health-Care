@@ -47,15 +47,15 @@ const prepareVercelSqliteRuntime = () => {
   const sourceDbPath = findBundledSqliteSource();
 
   try {
-    if (!fs.existsSync(runtimeDbPath)) {
-      fs.mkdirSync(path.dirname(runtimeDbPath), { recursive: true });
-      if (sourceDbPath && fs.existsSync(sourceDbPath)) {
-        fs.copyFileSync(sourceDbPath, runtimeDbPath);
-      } else {
-        fs.closeSync(fs.openSync(runtimeDbPath, "a"));
-        // eslint-disable-next-line no-console
-        console.warn("[prisma] No bundled dev.db found; created empty /tmp DB (login will fail until fixed).");
-      }
+    fs.mkdirSync(path.dirname(runtimeDbPath), { recursive: true });
+    // Always copy from the bundle when present. A previous cold start may have created an empty
+    // /tmp file; skipping copy would leave a schema-less DB and cause 500s on login.
+    if (sourceDbPath && fs.existsSync(sourceDbPath)) {
+      fs.copyFileSync(sourceDbPath, runtimeDbPath);
+    } else if (!fs.existsSync(runtimeDbPath)) {
+      fs.closeSync(fs.openSync(runtimeDbPath, "a"));
+      // eslint-disable-next-line no-console
+      console.warn("[prisma] No bundled dev.db found; created empty /tmp DB (login will fail until fixed).");
     }
     process.env.DATABASE_URL = `file:${runtimeDbPath}`;
   } catch (error) {
