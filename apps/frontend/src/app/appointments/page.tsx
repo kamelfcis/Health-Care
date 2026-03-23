@@ -90,6 +90,8 @@ export default function AppointmentsPage() {
   const [whatsappVoiceLevel, setWhatsappVoiceLevel] = useState(0);
   const whatsappSpeechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const whatsappSpeechBaseMessageRef = useRef("");
+  const whatsappMessageRef = useRef("");
+  const whatsappSpeechFinalTranscriptRef = useRef("");
   const whatsappMessageInputRef = useRef<HTMLTextAreaElement | null>(null);
   const whatsappListeningRequestedRef = useRef(false);
   const whatsappAutoRestartRef = useRef(false);
@@ -279,10 +281,15 @@ export default function AppointmentsPage() {
         return;
       }
       setWhatsappTarget({ name: row.patient, whatsapp: row.patientWhatsapp });
-      setWhatsappMessage(t("patients.whatsappPopup.defaultMessage", { name: row.patient }));
+      const nextMessage = t("patients.whatsappPopup.defaultMessage", { name: row.patient });
+      whatsappMessageRef.current = nextMessage;
+      setWhatsappMessage(nextMessage);
     },
     [t]
   );
+  useEffect(() => {
+    whatsappMessageRef.current = whatsappMessage;
+  }, [whatsappMessage]);
   const openWhatsappChat = useCallback(() => {
     if (!whatsappTarget) return;
     const normalizedNumber = normalizeWhatsappNumber(whatsappTarget.whatsapp || "");
@@ -347,8 +354,8 @@ export default function AppointmentsPage() {
     }
     whatsappListeningRequestedRef.current = true;
     whatsappAutoRestartRef.current = true;
-    whatsappSpeechBaseMessageRef.current = "";
-    setWhatsappMessage("");
+    whatsappSpeechBaseMessageRef.current = whatsappMessageRef.current.trim();
+    whatsappSpeechFinalTranscriptRef.current = "";
     recognition.lang = locale === "ar" ? "ar-EG" : "en-US";
     recognition.interimResults = true;
     recognition.continuous = true;
@@ -425,9 +432,14 @@ export default function AppointmentsPage() {
       return;
     }
     const recognition = new SpeechRecognitionCtor();
-    recognition.onstart = () => setIsWhatsappListening(true);
+    recognition.onstart = () => {
+      setIsWhatsappListening(true);
+      whatsappSpeechBaseMessageRef.current = whatsappMessageRef.current.trim();
+      whatsappSpeechFinalTranscriptRef.current = "";
+    };
     recognition.onend = () => {
       setIsWhatsappListening(false);
+      whatsappSpeechBaseMessageRef.current = whatsappMessageRef.current.trim();
       if (!whatsappListeningRequestedRef.current || !whatsappAutoRestartRef.current) return;
       whatsappRestartTimerRef.current = window.setTimeout(() => {
         try {
@@ -453,22 +465,23 @@ export default function AppointmentsPage() {
       }
     };
     recognition.onresult = (event: SpeechRecognitionEventLike) => {
-      let finalTranscript = "";
       let interimTranscript = "";
-      const startIndex = Number(event.resultIndex ?? 0);
+      const startIndex = Math.max(0, Number(event.resultIndex ?? 0));
       for (let i = startIndex; i < event.results.length; i += 1) {
         const result = event.results[i];
         const chunk = String(result?.[0]?.transcript ?? "").trim();
         if (!chunk) continue;
         if (result.isFinal) {
-          finalTranscript += `${chunk} `;
+          whatsappSpeechFinalTranscriptRef.current = `${whatsappSpeechFinalTranscriptRef.current} ${chunk}`.trim();
         } else {
-          interimTranscript += `${chunk} `;
+          interimTranscript = `${interimTranscript} ${chunk}`.trim();
         }
       }
-      const mergedSpeech = `${finalTranscript}${interimTranscript}`.trim();
+      const mergedSpeech = `${whatsappSpeechFinalTranscriptRef.current} ${interimTranscript}`.trim();
       const base = whatsappSpeechBaseMessageRef.current;
-      setWhatsappMessage(base && mergedSpeech ? `${base} ${mergedSpeech}` : base || mergedSpeech);
+      const nextMessage = base && mergedSpeech ? `${base} ${mergedSpeech}`.trim() : (base || mergedSpeech).trim();
+      whatsappMessageRef.current = nextMessage;
+      setWhatsappMessage(nextMessage);
     };
     whatsappSpeechRecognitionRef.current = recognition;
     setIsWhatsappSpeechSupported(true);
@@ -997,7 +1010,12 @@ export default function AppointmentsPage() {
                 <textarea
                   ref={whatsappMessageInputRef}
                   value={whatsappMessage}
-                  onChange={(event) => setWhatsappMessage(event.target.value)}
+                  onChange={(event) => {
+                    const nextMessage = event.target.value;
+                    whatsappMessageRef.current = nextMessage;
+                    whatsappSpeechBaseMessageRef.current = nextMessage.trim();
+                    setWhatsappMessage(nextMessage);
+                  }}
                   rows={4}
                   className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                   placeholder={t("patients.whatsappPopup.messagePlaceholder")}

@@ -40,15 +40,18 @@ export function TopNavbar() {
         const clinic = await clinicService.getMyClinic();
         return [clinic];
       }
+      if (user?.role === "SuperAdmin") {
+        return [];
+      }
       return clinicService.list();
     },
     enabled: mounted && !!user
   });
 
   const clinicImagePath =
-    clinicsQuery.data?.find((clinic) => clinic.id === user?.clinicId)?.imageUrl ??
-    clinicsQuery.data?.[0]?.imageUrl ??
-    null;
+    user?.role === "SuperAdmin"
+      ? null
+      : clinicsQuery.data?.find((clinic) => clinic.id === user?.clinicId)?.imageUrl ?? null;
   const apiOrigin = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5000/api").replace(/\/api\/?$/, "");
   const clinicImageSrc =
     clinicImagePath && clinicImagePath.startsWith("http") ? clinicImagePath : clinicImagePath ? `${apiOrigin}${clinicImagePath}` : null;

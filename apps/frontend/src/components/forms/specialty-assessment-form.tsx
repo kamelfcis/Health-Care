@@ -224,10 +224,34 @@ export function SpecialtyAssessmentForm({
     });
   }, [explicitGridFields, locale]);
   const gridFieldIds = useMemo(() => new Set(explicitGridFields.map((field) => field.id)), [explicitGridFields]);
-  const nonGridVisibleFields = useMemo(
-    () => activeSectionVisibleFields.filter((field) => !gridFieldIds.has(field.id)),
-    [activeSectionVisibleFields, gridFieldIds]
-  );
+  const gridGroupsById = useMemo(() => {
+    const map = new Map<string, (typeof gridGroups)[number]>();
+    gridGroups.forEach((group) => map.set(group.id, group));
+    return map;
+  }, [gridGroups]);
+  const orderedSectionItems = useMemo(() => {
+    const sortedFields = [...activeSectionVisibleFields].sort((a, b) => {
+      if (a.displayOrder !== b.displayOrder) return a.displayOrder - b.displayOrder;
+      return a.id.localeCompare(b.id);
+    });
+    const items: Array<
+      | { itemType: "grid"; id: string }
+      | { itemType: "field"; id: string; field: SectionField }
+    > = [];
+    const addedGridIds = new Set<string>();
+    sortedFields.forEach((field) => {
+      if (!gridFieldIds.has(field.id)) {
+        items.push({ itemType: "field", id: field.id, field });
+        return;
+      }
+      const gridMeta = getGridMetadata(field);
+      const gridId = gridMeta?.id?.trim();
+      if (!gridId || addedGridIds.has(gridId)) return;
+      addedGridIds.add(gridId);
+      items.push({ itemType: "grid", id: gridId });
+    });
+    return items;
+  }, [activeSectionVisibleFields, gridFieldIds]);
   const useGridTable = gridGroups.length > 0;
   const hasPrev = activeIndex > 0;
   const hasNext = activeIndex >= 0 && activeIndex < groupedSections.length - 1;
@@ -414,42 +438,46 @@ export function SpecialtyAssessmentForm({
           <h4 className="text-sm font-semibold text-slate-800">{activeSection.title}</h4>
           {useGridTable ? (
             <div className="space-y-3">
-              {gridGroups.map((group) => (
-                <div key={`grid-group-${group.id}`} className="overflow-x-auto rounded-2xl border-2 border-slate-300 bg-gradient-to-b from-white to-slate-50/70 shadow-[0_10px_30px_rgba(15,23,42,0.08)]">
-                  <table className="min-w-full border-separate border-spacing-0 text-right text-sm">
-                    <thead className="bg-gradient-to-r from-orange-600 to-orange-500">
-                      <tr>
-                        {group.columns.map((column) => (
-                          <th
-                            key={`${group.id}-${column.key}`}
-                            className="border-x-2 border-b-2 border-orange-300/70 px-4 py-3 align-middle text-center text-base font-semibold text-white"
-                          >
-                            {locale === "ar" ? column.labelAr : column.label}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {group.rows.map((row) => (
-                        <tr key={`${group.id}-${row.id}`} className="align-middle transition-colors even:bg-slate-50/60 hover:bg-orange-50/40">
+              {orderedSectionItems.map((item) => {
+                if (item.itemType === "field") {
+                  return (
+                    <div key={`field-${item.id}`} className="rounded-2xl border border-slate-200/80 bg-white p-3">
+                      {renderFieldControl(item.field)}
+                    </div>
+                  );
+                }
+                const group = gridGroupsById.get(item.id);
+                if (!group) return null;
+                return (
+                  <div key={`grid-group-${group.id}`} className="overflow-x-auto rounded-2xl border-2 border-slate-300 bg-gradient-to-b from-white to-slate-50/70 shadow-[0_10px_30px_rgba(15,23,42,0.08)]">
+                    <table className="min-w-full border-separate border-spacing-0 text-right text-sm">
+                      <thead className="bg-gradient-to-r from-orange-600 to-orange-500">
+                        <tr>
                           {group.columns.map((column) => (
-                            <td key={`${group.id}-${row.id}-${column.key}`} className="border-x-2 border-b-2 border-slate-200 px-4 py-3">
-                              {row.cells[column.key] ? renderFieldControl(row.cells[column.key]!, true) : <span className="text-sm text-slate-400">-</span>}
-                            </td>
+                            <th
+                              key={`${group.id}-${column.key}`}
+                              className="border-x-2 border-b-2 border-orange-300/70 px-4 py-3 align-middle text-center text-base font-semibold text-white"
+                            >
+                              {locale === "ar" ? column.labelAr : column.label}
+                            </th>
                           ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ))}
-              {nonGridVisibleFields.length ? (
-                <div className="grid gap-3 md:grid-cols-2">
-                  {nonGridVisibleFields.map((field) => (
-                    <div key={field.id}>{renderFieldControl(field)}</div>
-                  ))}
-                </div>
-              ) : null}
+                      </thead>
+                      <tbody>
+                        {group.rows.map((row) => (
+                          <tr key={`${group.id}-${row.id}`} className="align-middle transition-colors even:bg-slate-50/60 hover:bg-orange-50/40">
+                            {group.columns.map((column) => (
+                              <td key={`${group.id}-${row.id}-${column.key}`} className="border-x-2 border-b-2 border-slate-200 px-4 py-3">
+                                {row.cells[column.key] ? renderFieldControl(row.cells[column.key]!, true) : <span className="text-sm text-slate-400">-</span>}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="grid gap-3 md:grid-cols-2">

@@ -22,6 +22,7 @@ export interface AppointmentMedicalRecordContext {
 export interface PatientMedicalRecordContext {
   id: string;
   name: string;
+  clinicId?: string;
 }
 
 interface MedicalRecordModalProps {
@@ -734,6 +735,8 @@ export function MedicalRecordModal({
       toast.error(t("patients.assessment.saveFailed"));
     }
   });
+
+  const resolvedPatientClinicScope = clinicScope ?? patientAssessmentsQuery.data?.patient?.clinicId;
 
   const appointmentAssessmentValues = useMemo(
     () => ((appointmentAssessmentQuery.data?.assessment?.values as Record<string, unknown> | undefined) ?? {}),
@@ -1488,7 +1491,7 @@ export function MedicalRecordModal({
 
   const renderPatientMode = () => {
     if (activePatientTab === "exams") {
-      return <PatientExamsPanel patientId={patientContext?.id} clinicScope={clinicScope} />;
+      return <PatientExamsPanel patientId={patientContext?.id} clinicScope={resolvedPatientClinicScope} />;
     }
 
     if (patientAssessmentsQuery.isLoading) {
@@ -1517,7 +1520,7 @@ export function MedicalRecordModal({
               expanded={expandedHistoryId === item.id}
               onToggle={() => setExpandedHistoryId((prev) => (prev === item.id ? null : item.id))}
               patientId={patientContext?.id}
-              clinicScope={clinicScope}
+              clinicScope={resolvedPatientClinicScope}
               entryTypeLabel={entryTypeLabel}
             />
           );

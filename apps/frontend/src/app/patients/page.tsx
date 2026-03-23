@@ -53,6 +53,7 @@ type PatientRow = {
   leadSourceOther?: string | null;
   dateOfBirth?: string | null;
   address?: string | null;
+  clinicId?: string;
   clinicName?: string;
   lastVisit: string;
 };
@@ -98,6 +99,8 @@ export default function PatientsPage() {
   const [whatsappVoiceLevel, setWhatsappVoiceLevel] = useState(0);
   const whatsappSpeechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const whatsappSpeechBaseMessageRef = useRef("");
+  const whatsappMessageRef = useRef("");
+  const whatsappSpeechFinalTranscriptRef = useRef("");
   const whatsappMessageInputRef = useRef<HTMLTextAreaElement | null>(null);
   const whatsappListeningRequestedRef = useRef(false);
   const whatsappAutoRestartRef = useRef(false);
@@ -154,6 +157,8 @@ export default function PatientsPage() {
     withoutContactInfo: 0
   };
   const specialtyClinicScope = isSuperAdmin && selectedClinicId !== "all" ? selectedClinicId : undefined;
+  const medicalRecordClinicScope =
+    specialtyClinicScope ?? (isSuperAdmin && selectedClinicId === "all" ? medicalRecordPatient?.clinicId : undefined);
   const appointmentMutationClinicScope = isSuperAdmin ? (selectedClinicId === "all" ? undefined : selectedClinicId) : undefined;
 
   const clinicsQuery = useQuery({
@@ -250,23 +255,27 @@ export default function PatientsPage() {
   });
 
   const rows: PatientRow[] =
-    patientsQuery.data?.map((item) => ({
-      id: item.id,
-      name: item.fullName,
-      nationalId: item.nationalId ?? null,
-      phone: item.phone,
-      whatsapp: item.whatsapp ?? "-",
-      fileNumber: item.fileNumber,
-      age: item.age ?? null,
-      profession: item.profession,
-      professionOther: item.professionOther ?? null,
-      leadSource: item.leadSource,
-      leadSourceOther: item.leadSourceOther ?? null,
-      dateOfBirth: item.dateOfBirth ?? null,
-      address: item.address ?? null,
-      clinicName: item.clinic?.name,
-      lastVisit: item.lastVisitAt ? String(item.lastVisitAt).slice(0, 10) : "-",
-    })) ?? [];
+    patientsQuery.data?.map((item) => {
+      const clinic = item.clinic as { id?: string; name?: string } | null | undefined;
+      return {
+        id: item.id,
+        name: item.fullName,
+        nationalId: item.nationalId ?? null,
+        phone: item.phone,
+        whatsapp: item.whatsapp ?? "-",
+        fileNumber: item.fileNumber,
+        age: item.age ?? null,
+        profession: item.profession,
+        professionOther: item.professionOther ?? null,
+        leadSource: item.leadSource,
+        leadSourceOther: item.leadSourceOther ?? null,
+        dateOfBirth: item.dateOfBirth ?? null,
+        address: item.address ?? null,
+        clinicId: clinic?.id,
+        clinicName: clinic?.name,
+        lastVisit: item.lastVisitAt ? String(item.lastVisitAt).slice(0, 10) : "-",
+      };
+    }) ?? [];
 
   const stats = statsQuery.data ?? statsFallback;
   const loading = patientsQuery.isLoading || statsQuery.isLoading;
@@ -309,10 +318,15 @@ export default function PatientsPage() {
         return;
       }
       setWhatsappTarget(row);
-      setWhatsappMessage(t("patients.whatsappPopup.defaultMessage", { name: row.name }));
+      const nextMessage = t("patients.whatsappPopup.defaultMessage", { name: row.name });
+      whatsappMessageRef.current = nextMessage;
+      setWhatsappMessage(nextMessage);
     },
     [t]
   );
+  useEffect(() => {
+    whatsappMessageRef.current = whatsappMessage;
+  }, [whatsappMessage]);
   const openWhatsappChat = useCallback(() => {
     if (!whatsappTarget) return;
     const normalizedNumber = normalizeWhatsappNumber(whatsappTarget.whatsapp || "");
@@ -377,8 +391,8 @@ export default function PatientsPage() {
     }
     whatsappListeningRequestedRef.current = true;
     whatsappAutoRestartRef.current = true;
-    whatsappSpeechBaseMessageRef.current = "";
-    setWhatsappMessage("");
+    whatsappSpeechBaseMessageRef.current = whatsappMessageRef.current.trim();
+    whatsappSpeechFinalTranscriptRef.current = "";
     recognition.lang = locale === "ar" ? "ar-EG" : "en-US";
     recognition.interimResults = true;
     recognition.continuous = true;
@@ -455,9 +469,14 @@ export default function PatientsPage() {
       return;
     }
     const recognition = new SpeechRecognitionCtor();
-    recognition.onstart = () => setIsWhatsappListening(true);
+    recognition.onstart = () => {
+      setIsWhatsappListening(true);
+      whatsappSpeechBaseMessageRef.current = whatsappMessageRef.current.trim();
+      whatsappSpeechFinalTranscriptRef.current = "";
+    };
     recognition.onend = () => {
       setIsWhatsappListening(false);
+      whatsappSpeechBaseMessageRef.current = whatsappMessageRef.current.trim();
       if (!whatsappListeningRequestedRef.current || !whatsappAutoRestartRef.current) return;
       whatsappRestartTimerRef.current = window.setTimeout(() => {
         try {
@@ -483,22 +502,23 @@ export default function PatientsPage() {
       }
     };
     recognition.onresult = (event: SpeechRecognitionEventLike) => {
-      let finalTranscript = "";
       let interimTranscript = "";
-      const startIndex = Number(event.resultIndex ?? 0);
+      const startIndex = Math.max(0, Number(event.resultIndex ?? 0));
       for (let i = startIndex; i < event.results.length; i += 1) {
         const result = event.results[i];
         const chunk = String(result?.[0]?.transcript ?? "").trim();
         if (!chunk) continue;
         if (result.isFinal) {
-          finalTranscript += `${chunk} `;
+          whatsappSpeechFinalTranscriptRef.current = `${whatsappSpeechFinalTranscriptRef.current} ${chunk}`.trim();
         } else {
-          interimTranscript += `${chunk} `;
+          interimTranscript = `${interimTranscript} ${chunk}`.trim();
         }
       }
-      const mergedSpeech = `${finalTranscript}${interimTranscript}`.trim();
+      const mergedSpeech = `${whatsappSpeechFinalTranscriptRef.current} ${interimTranscript}`.trim();
       const base = whatsappSpeechBaseMessageRef.current;
-      setWhatsappMessage(base && mergedSpeech ? `${base} ${mergedSpeech}` : base || mergedSpeech);
+      const nextMessage = base && mergedSpeech ? `${base} ${mergedSpeech}`.trim() : (base || mergedSpeech).trim();
+      whatsappMessageRef.current = nextMessage;
+      setWhatsappMessage(nextMessage);
     };
     whatsappSpeechRecognitionRef.current = recognition;
     setIsWhatsappSpeechSupported(true);
@@ -644,12 +664,12 @@ export default function PatientsPage() {
               type="button"
               className="inline-flex items-center gap-1 rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 transition hover:bg-amber-100"
               onClick={() => {
-                if (isSuperAdmin && selectedClinicId === "all") {
-                  toast.error(t("patients.assessment.selectClinicScope"));
-                  return;
-                }
                 setSelectedAssessmentEntryType("EXAM");
-                setMedicalRecordPatient({ id: row.original.id, name: row.original.name });
+                setMedicalRecordPatient({
+                  id: row.original.id,
+                  name: row.original.name,
+                  clinicId: row.original.clinicId
+                });
               }}
             >
               <ClipboardList size={12} />
@@ -667,7 +687,7 @@ export default function PatientsPage() {
         )
       }
     ],
-    [getLeadSourceLabel, getProfessionLabel, isSuperAdmin, scrollToFormTop, selectedClinicId, t]
+    [getLeadSourceLabel, getProfessionLabel, scrollToFormTop, t]
   );
 
   const handleSubmit = async (values: PatientFormValues) => {
@@ -1045,11 +1065,11 @@ export default function PatientsPage() {
                             type="button"
                             className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-amber-200 bg-gradient-to-b from-white to-amber-50 px-3 text-xs font-semibold text-amber-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-amber-300 hover:shadow"
                             onClick={() => {
-                              if (isSuperAdmin && selectedClinicId === "all") {
-                                toast.error(t("patients.assessment.selectClinicScope"));
-                                return;
-                              }
-                              setMedicalRecordPatient({ id: row.id, name: row.name });
+                              setMedicalRecordPatient({
+                                id: row.id,
+                                name: row.name,
+                                clinicId: row.clinicId
+                              });
                             }}
                           >
                             <ClipboardList size={13} />
@@ -1217,7 +1237,12 @@ export default function PatientsPage() {
                 <textarea
                   ref={whatsappMessageInputRef}
                   value={whatsappMessage}
-                  onChange={(event) => setWhatsappMessage(event.target.value)}
+                  onChange={(event) => {
+                    const nextMessage = event.target.value;
+                    whatsappMessageRef.current = nextMessage;
+                    whatsappSpeechBaseMessageRef.current = nextMessage.trim();
+                    setWhatsappMessage(nextMessage);
+                  }}
                   rows={4}
                   className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                   placeholder={t("patients.whatsappPopup.messagePlaceholder")}
@@ -1309,7 +1334,7 @@ export default function PatientsPage() {
         open={Boolean(medicalRecordPatient)}
         mode="patient"
         patientContext={medicalRecordPatient}
-        clinicScope={specialtyClinicScope}
+        clinicScope={medicalRecordClinicScope}
         onClose={() => setMedicalRecordPatient(null)}
       />
     </AppShell>

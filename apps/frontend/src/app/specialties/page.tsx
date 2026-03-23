@@ -140,6 +140,20 @@ type GridGroup = {
   rows: PersistedGridRow[];
 };
 
+type SectionRenderItem =
+  | {
+      itemType: "field";
+      id: string;
+      order: number;
+      field: SpecialtyTemplateField;
+    }
+  | {
+      itemType: "grid";
+      id: string;
+      order: number;
+      group: GridGroup;
+    };
+
 type GridCellFieldType = "TEXT" | "TEXT_AREA" | "NUMBER" | "YES_NO" | "DATE" | "DROPDOWN" | "MULTI_SELECT" | "AUTO" | "EMPTY";
 type GridCellOptionDraft = {
   id?: string;
@@ -275,6 +289,8 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
   });
   const [createSectionDialogOpen, setCreateSectionDialogOpen] = useState(false);
   const [newSection, setNewSection] = useState({ name: "", nameAr: "" });
+  const [editingSectionId, setEditingSectionId] = useState<string | null>(null);
+  const [editingSection, setEditingSection] = useState({ name: "", nameAr: "" });
   const [gridColumns, setGridColumns] = useState<GridColumnDraft[]>([{ id: "col-1", label: "", labelAr: "" }]);
   const [gridRows, setGridRows] = useState<GridRowDraft[]>([{ id: "row-1", label: "", labelAr: "" }]);
   const [gridCellConfigs, setGridCellConfigs] = useState<Record<string, GridCellConfig>>({});
@@ -301,7 +317,7 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
   const [expandedSectionIds, setExpandedSectionIds] = useState<string[]>([]);
   const [addFieldSectionId, setAddFieldSectionId] = useState<string | null>(null);
   const [newRuleFieldId, setNewRuleFieldId] = useState<string | null>(null);
-  const [dragFieldId, setDragFieldId] = useState<string | null>(null);
+  const [dragItem, setDragItem] = useState<{ sectionId: string; itemType: SectionRenderItem["itemType"]; itemId: string } | null>(null);
   const [dragOption, setDragOption] = useState<{ fieldId: string; optionId: string } | null>(null);
 
   const catalogQuery = useQuery({
@@ -453,6 +469,8 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
     });
     return selectedTemplateSections.map((section) => ({
       id: section.id,
+      name: section.name,
+      nameAr: section.nameAr,
       label: (section.nameAr || section.name || "بدون قسم").trim() || "بدون قسم",
       fields: fieldsBySection.get(section.id) ?? []
     }));
@@ -516,6 +534,43 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
     });
     return grouped;
   }, [sectionRows]);
+  const sectionItemsById = useMemo(() => {
+    const result = new Map<string, SectionRenderItem[]>();
+    sectionRows.forEach((section) => {
+      const gridGroups = gridGroupsBySection.get(section.id) ?? [];
+      const gridFieldIds = new Set<string>();
+      const items: SectionRenderItem[] = [];
+
+      gridGroups.forEach((group) => {
+        group.fields.forEach((field) => gridFieldIds.add(field.id));
+        const groupOrder =
+          group.fields.reduce((min, field) => Math.min(min, field.displayOrder), Number.POSITIVE_INFINITY) ||
+          Number.POSITIVE_INFINITY;
+        items.push({
+          itemType: "grid",
+          id: group.id,
+          order: Number.isFinite(groupOrder) ? groupOrder : Number.MAX_SAFE_INTEGER,
+          group
+        });
+      });
+
+      section.fields.forEach((field) => {
+        if (gridFieldIds.has(field.id)) return;
+        items.push({
+          itemType: "field",
+          id: field.id,
+          order: field.displayOrder,
+          field
+        });
+      });
+
+      result.set(
+        section.id,
+        items.sort((a, b) => (a.order === b.order ? a.id.localeCompare(b.id) : a.order - b.order))
+      );
+    });
+    return result;
+  }, [sectionRows, gridGroupsBySection]);
   const unassignedFields = useMemo(
     () => selectedTemplate?.fields.filter((field) => !field.sectionId) ?? [],
     [selectedTemplate]
@@ -524,6 +579,23 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
     () => selectedTemplateSections.find((section) => section.id === sectionToDeleteId) ?? null,
     [selectedTemplateSections, sectionToDeleteId]
   );
+  const previewTemplateForRender = useMemo(() => {
+    if (!previewTemplate) return null;
+    const sectionOrderMap = new Map(
+      (previewTemplate.sections ?? []).map((section, index) => [section.id, section.displayOrder ?? index + 1])
+    );
+    const orderedFields = [...previewTemplate.fields].sort((a, b) => {
+      const aSectionOrder = a.sectionId ? (sectionOrderMap.get(a.sectionId) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+      const bSectionOrder = b.sectionId ? (sectionOrderMap.get(b.sectionId) ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+      if (aSectionOrder !== bSectionOrder) return aSectionOrder - bSectionOrder;
+      if (a.displayOrder !== b.displayOrder) return a.displayOrder - b.displayOrder;
+      return a.id.localeCompare(b.id);
+    });
+    return {
+      ...previewTemplate,
+      fields: orderedFields
+    };
+  }, [previewTemplate]);
 
   const refreshData = async () => {
     await queryClient.invalidateQueries({ queryKey: ["specialties", "admin", "templates", specialtyCode] });
@@ -763,6 +835,22 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
       await refreshData();
     },
     onError: () => toast.error("تعذر إنشاء القسم")
+  });
+  const updateSectionMutation = useMutation({
+    mutationFn: ({
+      sectionId,
+      payload
+    }: {
+      sectionId: string;
+      payload: { name: string; nameAr: string };
+    }) => specialtyService.adminUpdateSection(sectionId, payload),
+    onSuccess: async () => {
+      toast.success("تم تحديث الشاشة");
+      setEditingSectionId(null);
+      setEditingSection({ name: "", nameAr: "" });
+      await refreshData();
+    },
+    onError: () => toast.error("تعذر تحديث الشاشة")
   });
   const deleteSectionMutation = useMutation({
     mutationFn: (sectionId: string) => specialtyService.adminDeleteSection(sectionId),
@@ -1245,6 +1333,58 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
     setEditingRuleId(null);
   };
 
+  const handleSectionItemDrop = (sectionId: string, targetItemId: string) => {
+    if (reorderFieldsMutation.isPending) return;
+    if (!selectedTemplate || !dragItem) return;
+    if (dragItem.sectionId !== sectionId) return;
+    if (dragItem.itemId === targetItemId) return;
+
+    const currentItems = sectionItemsById.get(sectionId) ?? [];
+    if (!currentItems.length) return;
+
+    const fromIndex = currentItems.findIndex(
+      (item) => item.itemType === dragItem.itemType && item.id === dragItem.itemId
+    );
+    const toIndex = currentItems.findIndex((item) => item.id === targetItemId);
+    if (fromIndex < 0 || toIndex < 0) return;
+
+    const reorderedItems = [...currentItems];
+    const [movedItem] = reorderedItems.splice(fromIndex, 1);
+    if (!movedItem) return;
+    reorderedItems.splice(toIndex, 0, movedItem);
+
+    const orderedSectionFieldIds = reorderedItems.flatMap((item) =>
+      item.itemType === "field"
+        ? [item.field.id]
+        : [...item.group.fields]
+            .sort((a, b) => a.displayOrder - b.displayOrder)
+            .map((field) => field.id)
+    );
+    if (!orderedSectionFieldIds.length) return;
+
+    const sectionFieldIds = new Set(sectionRows.find((row) => row.id === sectionId)?.fields.map((field) => field.id) ?? []);
+    if (!sectionFieldIds.size) return;
+
+    const finalOrderedIds: string[] = [];
+    let insertedSection = false;
+    selectedTemplate.fields.forEach((field) => {
+      if (sectionFieldIds.has(field.id)) {
+        if (!insertedSection) {
+          finalOrderedIds.push(...orderedSectionFieldIds);
+          insertedSection = true;
+        }
+        return;
+      }
+      finalOrderedIds.push(field.id);
+    });
+    if (!insertedSection) {
+      finalOrderedIds.push(...orderedSectionFieldIds);
+    }
+
+    reorderFieldsMutation.mutate(finalOrderedIds);
+    setDragItem(null);
+  };
+
   const reorderFieldsMutation = useMutation({
     mutationFn: async (orderedFieldIds: string[]) => {
       if (!selectedTemplate) return;
@@ -1592,55 +1732,138 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                             <div className="grid grid-cols-[minmax(0,1.6fr)_120px_220px] items-center px-4 py-3">
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setExpandedSectionIds((prev) =>
-                                        prev.includes(row.id) ? prev.filter((id) => id !== row.id) : [...prev, row.id]
-                                      )
-                                    }
-                                    className="inline-flex w-full items-center gap-2 pe-2 text-right"
-                                    aria-label="توسيع أو طي الشاشة"
-                                  >
-                                    <ChevronDown size={14} className={cn("text-slate-500 transition", expanded ? "rotate-180" : "")} />
-                                    <span className={`rounded-lg border px-2.5 py-1 text-sm font-semibold ${sectionColorClasses[rowIndex % sectionColorClasses.length]}`}>
-                                      {row.label}
-                                    </span>
-                                  </button>
+                                  {editingSectionId === row.id ? (
+                                    <div className="grid w-full gap-2 pe-2">
+                                      <input
+                                        value={editingSection.nameAr}
+                                        onChange={(event) => setEditingSection((prev) => ({ ...prev, nameAr: event.target.value }))}
+                                        className={dsInputCompactClass}
+                                        placeholder="اسم الشاشة (عربي)"
+                                      />
+                                      <input
+                                        value={editingSection.name}
+                                        onChange={(event) => setEditingSection((prev) => ({ ...prev, name: event.target.value }))}
+                                        className={dsInputCompactClass}
+                                        placeholder="Screen name (English)"
+                                      />
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setExpandedSectionIds((prev) =>
+                                          prev.includes(row.id) ? prev.filter((id) => id !== row.id) : [...prev, row.id]
+                                        )
+                                      }
+                                      className="inline-flex w-full items-center gap-2 pe-2 text-right"
+                                      aria-label="توسيع أو طي الشاشة"
+                                    >
+                                      <ChevronDown size={14} className={cn("text-slate-500 transition", expanded ? "rotate-180" : "")} />
+                                      <span className={`rounded-lg border px-2.5 py-1 text-sm font-semibold ${sectionColorClasses[rowIndex % sectionColorClasses.length]}`}>
+                                        {row.label}
+                                      </span>
+                                    </button>
+                                  )}
                                 </TooltipTrigger>
                                 <TooltipContent side="top">توسيع أو طي الشاشة</TooltipContent>
                               </Tooltip>
                               <span className="text-center text-base font-semibold text-slate-700">{row.fields.length}</span>
                               <div className="flex items-center justify-end gap-2">
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <button
-                                      type="button"
-                                      className={premiumIconButtonClass}
-                                      aria-label="إضافة حقل داخل الشاشة"
-                                      onClick={() => {
-                                        setAddFieldSectionId(row.id);
-                                        setNewField((prev) => ({ ...prev, sectionId: row.id }));
-                                      }}
-                                    >
-                                      <Plus size={15} />
-                                    </button>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="top">إضافة حقل داخل الشاشة</TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <button
-                                      type="button"
-                                      className={premiumDeleteButtonClass}
-                                      aria-label="حذف الشاشة"
-                                      onClick={() => setSectionToDeleteId(row.id)}
-                                    >
-                                      <Trash2 size={15} />
-                                    </button>
-                                  </TooltipTrigger>
-                                  <TooltipContent side="top">حذف الشاشة</TooltipContent>
-                                </Tooltip>
+                                {editingSectionId === row.id ? (
+                                  <>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <button
+                                          type="button"
+                                          className={premiumIconButtonClass}
+                                          aria-label="حفظ الشاشة"
+                                          onClick={() =>
+                                            updateSectionMutation.mutate({
+                                              sectionId: row.id,
+                                              payload: {
+                                                name: editingSection.name.trim(),
+                                                nameAr: editingSection.nameAr.trim()
+                                              }
+                                            })
+                                          }
+                                          disabled={
+                                            !editingSection.name.trim() ||
+                                            !editingSection.nameAr.trim() ||
+                                            updateSectionMutation.isPending
+                                          }
+                                        >
+                                          <Check size={15} />
+                                        </button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top">حفظ الشاشة</TooltipContent>
+                                    </Tooltip>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <button
+                                          type="button"
+                                          className={premiumIconButtonClass}
+                                          aria-label="إلغاء تعديل الشاشة"
+                                          onClick={() => {
+                                            setEditingSectionId(null);
+                                            setEditingSection({ name: "", nameAr: "" });
+                                          }}
+                                          disabled={updateSectionMutation.isPending}
+                                        >
+                                          <X size={15} />
+                                        </button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top">إلغاء</TooltipContent>
+                                    </Tooltip>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <button
+                                          type="button"
+                                          className={premiumIconButtonClass}
+                                          aria-label="تعديل الشاشة"
+                                          onClick={() => {
+                                            setEditingSectionId(row.id);
+                                            setEditingSection({ name: row.name, nameAr: row.nameAr });
+                                          }}
+                                        >
+                                          <PencilLine size={15} />
+                                        </button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top">تعديل الشاشة</TooltipContent>
+                                    </Tooltip>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <button
+                                          type="button"
+                                          className={premiumIconButtonClass}
+                                          aria-label="إضافة حقل داخل الشاشة"
+                                          onClick={() => {
+                                            setAddFieldSectionId(row.id);
+                                            setNewField((prev) => ({ ...prev, sectionId: row.id }));
+                                          }}
+                                        >
+                                          <Plus size={15} />
+                                        </button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top">إضافة حقل داخل الشاشة</TooltipContent>
+                                    </Tooltip>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <button
+                                          type="button"
+                                          className={premiumDeleteButtonClass}
+                                          aria-label="حذف الشاشة"
+                                          onClick={() => setSectionToDeleteId(row.id)}
+                                        >
+                                          <Trash2 size={15} />
+                                        </button>
+                                      </TooltipTrigger>
+                                      <TooltipContent side="top">حذف الشاشة</TooltipContent>
+                                    </Tooltip>
+                                  </>
+                                )}
                               </div>
                             </div>
 
@@ -1857,53 +2080,52 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
 
                             {expanded ? (
                               <div className="space-y-3 border-t border-slate-100 bg-white p-3">
-                                {(gridGroupsBySection.get(row.id) ?? []).map((group) => (
-                                  <div key={`grid-group-${group.id}`} className="rounded-xl border border-orange-200 bg-orange-50/50 p-3">
-                                    <div className="flex items-center justify-between gap-2">
-                                      <div>
-                                        <p className="text-sm font-semibold text-slate-800">{group.nameAr}</p>
-                                        <p className="text-xs text-slate-600">
-                                          الصفوف: {group.rows.length} | الأعمدة: {group.columns.length} | الخلايا: {group.fields.length}
-                                        </p>
+                                {(sectionItemsById.get(row.id) ?? []).map((item) => {
+                                  if (item.itemType === "grid") {
+                                    const group = item.group;
+                                    return (
+                                      <div
+                                        key={`grid-group-${group.id}`}
+                                        className="rounded-xl border border-orange-200 bg-orange-50/50 p-3"
+                                        draggable
+                                        onDragStart={() => setDragItem({ sectionId: row.id, itemType: "grid", itemId: group.id })}
+                                        onDragOver={(event) => event.preventDefault()}
+                                        onDrop={() => handleSectionItemDrop(row.id, group.id)}
+                                      >
+                                        <div className="flex items-center justify-between gap-2">
+                                          <div>
+                                            <p className="text-sm font-semibold text-slate-800">{group.nameAr}</p>
+                                            <p className="text-xs text-slate-600">
+                                              الصفوف: {group.rows.length} | الأعمدة: {group.columns.length} | الخلايا: {group.fields.length}
+                                            </p>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            className="inline-flex h-9 items-center rounded-lg border border-orange-200 bg-white px-3 text-sm font-medium text-orange-700 transition hover:bg-orange-50"
+                                            onClick={() => openGridEditDialog(group)}
+                                          >
+                                            تعديل الـ Grid
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="inline-flex h-9 items-center rounded-lg border border-rose-200 bg-rose-50 px-3 text-sm font-medium text-rose-700 transition hover:bg-rose-100"
+                                            onClick={() => setGridDeleteTarget(group)}
+                                          >
+                                            حذف الـ Grid
+                                          </button>
+                                        </div>
                                       </div>
-                                      <button
-                                        type="button"
-                                        className="inline-flex h-9 items-center rounded-lg border border-orange-200 bg-white px-3 text-sm font-medium text-orange-700 transition hover:bg-orange-50"
-                                        onClick={() => openGridEditDialog(group)}
-                                      >
-                                        تعديل الـ Grid
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="inline-flex h-9 items-center rounded-lg border border-rose-200 bg-rose-50 px-3 text-sm font-medium text-rose-700 transition hover:bg-rose-100"
-                                        onClick={() => setGridDeleteTarget(group)}
-                                      >
-                                        حذف الـ Grid
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))}
-                                {row.fields.map((field) => {
-                                  if (readGridMeta(field).gridId) return null;
+                                    );
+                                  }
+                                  const field = item.field;
                                   return (
                             <div
                               key={field.id}
                               className="rounded-xl border border-slate-200 bg-white p-3"
                               draggable
-                              onDragStart={() => setDragFieldId(field.id)}
+                              onDragStart={() => setDragItem({ sectionId: row.id, itemType: "field", itemId: field.id })}
                               onDragOver={(event) => event.preventDefault()}
-                              onDrop={() => {
-                                if (reorderFieldsMutation.isPending) return;
-                                if (!dragFieldId || dragFieldId === field.id) return;
-                                const ordered = [...selectedTemplate.fields];
-                                const fromIndex = ordered.findIndex((item) => item.id === dragFieldId);
-                                const toIndex = ordered.findIndex((item) => item.id === field.id);
-                                if (fromIndex < 0 || toIndex < 0) return;
-                                const [moved] = ordered.splice(fromIndex, 1);
-                                ordered.splice(toIndex, 0, moved);
-                                reorderFieldsMutation.mutate(ordered.map((item) => item.id));
-                                setDragFieldId(null);
-                              }}
+                              onDrop={() => handleSectionItemDrop(row.id, field.id)}
                             >
                               <div className="flex flex-wrap items-start justify-between gap-2">
                                 <div>
@@ -1928,6 +2150,14 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                                       <select value={String(editingField.fieldType ?? field.fieldType)} onChange={(e) => setEditingField((p) => ({ ...p, fieldType: e.target.value as SpecialtyTemplateField["fieldType"] }))} className={dsInputCompactClass}>
                                         {fieldTypes.map((type) => <option key={type} value={type}>{fieldTypeLabels[type]}</option>)}
                                       </select>
+                                      <label className="inline-flex items-center gap-2 text-sm text-slate-700 md:col-span-2">
+                                        <input
+                                          type="checkbox"
+                                          checked={Boolean(editingField.isRequired)}
+                                          onChange={(e) => setEditingField((p) => ({ ...p, isRequired: e.target.checked }))}
+                                        />
+                                        مطلوب
+                                      </label>
                                     </div>
                                   ) : (
                                     <>
@@ -2259,7 +2489,7 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                             </div>
                                   );
                                 })}
-                                {!row.fields.filter((field) => !readGridMeta(field).gridId).length && !(gridGroupsBySection.get(row.id) ?? []).length ? (
+                                {!(sectionItemsById.get(row.id) ?? []).length ? (
                                   <p className="text-sm text-slate-500">لا توجد حقول في هذه الشاشة.</p>
                                 ) : null}
                               </div>
@@ -3002,7 +3232,7 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
             </section>
           </div>
         ) : null}
-        {previewTemplate ? (
+        {previewTemplateForRender ? (
           <div className="fixed inset-0 z-[87] flex items-center justify-center p-4">
             <button
               type="button"
@@ -3015,7 +3245,7 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                 <div>
                   <p className="text-sm font-semibold text-slate-900">{t("specialties.templates.previewTitle")}</p>
                   <p className="text-sm text-slate-600">
-                    الإصدار {previewTemplate.version} - {previewTemplate.titleAr || previewTemplate.title}
+                    الإصدار {previewTemplateForRender.version} - {previewTemplateForRender.titleAr || previewTemplateForRender.title}
                   </p>
                 </div>
                 <button
@@ -3028,7 +3258,7 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto pe-1">
                 <SpecialtyAssessmentForm
-                  template={previewTemplate}
+                  template={previewTemplateForRender}
                   initialValues={{}}
                   onSubmit={async () => {}}
                   readOnly
