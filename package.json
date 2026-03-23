@@ -17,6 +17,7 @@
     "db:migrate:deploy": "npm run db:migrate:deploy --workspace backend",
     "db:migrate:sqlite-to-pg": "npm run db:migrate:sqlite-to-pg --workspace backend",
     "db:seed": "npm run db:seed --workspace backend",
+    "db:verify-permissions": "npm run db:verify-permissions --workspace backend",
     "vercel:patch": "node scripts/patch-vercel-project.mjs",
     "vercel:deploy": "vercel deploy --prod --yes --scope healthcare4314-6641s-projects"
   },

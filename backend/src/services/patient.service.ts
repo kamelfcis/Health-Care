@@ -1,15 +1,36 @@
 import { prisma } from "../config/prisma";
 import { AppError } from "../utils/app-error";
-import { LeadSource, Profession } from "@prisma/client";
+import { LeadSource, Prisma, Profession } from "@prisma/client";
 
 interface ListInput {
   clinicId?: string;
   page: number;
   pageSize: number;
   search?: string;
+  /** AND filter: patient full name contains (quick / explicit search) */
+  fullName?: string;
+  /** AND filter: match mobile on phone / whatsapp / alternatePhone */
+  phone?: string;
+  /** AND filter: patient.clinicName contains */
+  clinicName?: string;
+  leadSource?: LeadSource;
+  specialtyCode?: string;
+  specialtyName?: string;
+  campaignName?: string;
+  governorate?: string;
+  maritalStatus?: string;
+  doctorName?: string;
+  createdFrom?: string;
+  createdTo?: string;
+  firstVisitFrom?: string;
+  firstVisitTo?: string;
+  fileNumber?: number;
   requesterRole?: string;
   requesterUserId?: string;
 }
+
+const dayStartUtc = (ymd: string) => new Date(`${ymd}T00:00:00.000Z`);
+const dayEndUtc = (ymd: string) => new Date(`${ymd}T23:59:59.999Z`);
 
 interface ExamAttachmentInput {
   fileUrl: string;
@@ -20,9 +41,10 @@ interface ExamAttachmentInput {
 
 export const patientService = {
   async list(input: ListInput) {
+    const insensitive = Prisma.QueryMode.insensitive;
     const normalizedSearch = input.search?.trim();
     const isShortSearch = Boolean(normalizedSearch && normalizedSearch.length <= 3);
-    const doctorScope =
+    const doctorScope: Prisma.PatientWhereInput =
       input.requesterRole === "Doctor" && input.requesterUserId
         ? {
             appointments: {
@@ -36,26 +58,93 @@ export const patientService = {
             }
           }
         : {};
-    const where = {
-      ...(input.clinicId ? { clinicId: input.clinicId } : {}),
-      deletedAt: null,
-      ...doctorScope,
-      ...(normalizedSearch
-        ? {
-            OR: [
-              ...(isShortSearch
-                ? [
-                    { fullName: { startsWith: normalizedSearch, mode: "insensitive" as const } },
-                    { phone: { startsWith: normalizedSearch, mode: "insensitive" as const } }
-                  ]
-                : []),
-              { fullName: { contains: normalizedSearch, mode: "insensitive" as const } },
-              { phone: { contains: normalizedSearch, mode: "insensitive" as const } },
-              { whatsapp: { contains: normalizedSearch, mode: "insensitive" as const } }
+
+    const andParts: Prisma.PatientWhereInput[] = [
+      ...(input.clinicId ? [{ clinicId: input.clinicId }] : []),
+      { deletedAt: null },
+      ...(Object.keys(doctorScope).length ? [doctorScope] : [])
+    ];
+
+    if (input.leadSource) {
+      andParts.push({ leadSource: input.leadSource });
+    }
+    if (input.specialtyCode?.trim()) {
+      andParts.push({ specialtyCode: input.specialtyCode.trim() });
+    }
+    if (input.specialtyName?.trim()) {
+      andParts.push({ specialtyName: { contains: input.specialtyName.trim(), mode: insensitive } });
+    }
+    if (input.campaignName?.trim()) {
+      andParts.push({ campaignName: { contains: input.campaignName.trim(), mode: insensitive } });
+    }
+    if (input.governorate?.trim()) {
+      andParts.push({ governorate: input.governorate.trim() });
+    }
+    if (input.maritalStatus?.trim()) {
+      andParts.push({ maritalStatus: input.maritalStatus.trim() });
+    }
+    if (input.doctorName?.trim()) {
+      andParts.push({ doctorName: { contains: input.doctorName.trim(), mode: insensitive } });
+    }
+    if (input.fullName?.trim()) {
+      andParts.push({ fullName: { contains: input.fullName.trim(), mode: insensitive } });
+    }
+    if (input.phone?.trim()) {
+      const p = input.phone.trim();
+      andParts.push({
+        OR: [
+          { phone: { contains: p, mode: insensitive } },
+          { whatsapp: { contains: p, mode: insensitive } },
+          { alternatePhone: { contains: p, mode: insensitive } }
+        ]
+      });
+    }
+    if (input.clinicName?.trim()) {
+      andParts.push({ clinicName: { contains: input.clinicName.trim(), mode: insensitive } });
+    }
+    if (input.fileNumber !== undefined && Number.isFinite(input.fileNumber)) {
+      andParts.push({ fileNumber: input.fileNumber });
+    }
+    if (input.createdFrom || input.createdTo) {
+      andParts.push({
+        createdAt: {
+          ...(input.createdFrom ? { gte: dayStartUtc(input.createdFrom) } : {}),
+          ...(input.createdTo ? { lte: dayEndUtc(input.createdTo) } : {})
+        }
+      });
+    }
+    if (input.firstVisitFrom || input.firstVisitTo) {
+      andParts.push({
+        firstVisitDate: {
+          ...(input.firstVisitFrom ? { gte: dayStartUtc(input.firstVisitFrom) } : {}),
+          ...(input.firstVisitTo ? { lte: dayEndUtc(input.firstVisitTo) } : {})
+        }
+      });
+    }
+
+    if (normalizedSearch) {
+      const searchOr: Prisma.PatientWhereInput[] = [
+        ...(isShortSearch
+          ? [
+              { fullName: { startsWith: normalizedSearch, mode: insensitive } },
+              { phone: { startsWith: normalizedSearch, mode: insensitive } }
             ]
-          }
-        : {})
-    };
+          : []),
+        { fullName: { contains: normalizedSearch, mode: insensitive } },
+        { phone: { contains: normalizedSearch, mode: insensitive } },
+        { whatsapp: { contains: normalizedSearch, mode: insensitive } },
+        { alternatePhone: { contains: normalizedSearch, mode: insensitive } }
+      ];
+      if (/^\d+$/.test(normalizedSearch)) {
+        const n = parseInt(normalizedSearch, 10);
+        if (!Number.isNaN(n)) {
+          searchOr.push({ fileNumber: n });
+        }
+      }
+      andParts.push({ OR: searchOr });
+    }
+
+    const where: Prisma.PatientWhereInput = { AND: andParts };
 
     const [items, total] = await Promise.all([
       prisma.patient.findMany({

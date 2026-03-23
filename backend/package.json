@@ -19,6 +19,7 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:migrate:sqlite-to-pg": "ts-node --transpile-only prisma/scripts/migrate-sqlite-to-postgres.ts",
     "db:seed": "ts-node --transpile-only prisma/seed.ts",
+    "db:verify-permissions": "ts-node --transpile-only scripts/verify-permission-catalog.ts",
     "db:migration:sql": "prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script > prisma/migrations/0001_init/migration.sql"
   },
   "keywords": [],

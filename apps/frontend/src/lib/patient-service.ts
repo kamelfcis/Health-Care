@@ -171,10 +171,63 @@ export interface PatientExamsResponse {
   exams: PatientExamItem[];
 }
 
+export interface PatientListQuery {
+  /** Legacy combined search (OR on name/phones/file#); prefer fullName + phone + fileNumber for quick search */
+  search?: string;
+  /** Quick / explicit: exact file number */
+  fileNumber?: string;
+  /** Quick / explicit: full name contains */
+  fullName?: string;
+  /** Quick / explicit: mobile contains (phone / whatsapp / alternate) */
+  phone?: string;
+  /** Advanced: patient clinic name (free text on record) contains */
+  clinicName?: string;
+  leadSource?: string;
+  specialtyCode?: string;
+  specialtyName?: string;
+  campaignName?: string;
+  governorate?: string;
+  maritalStatus?: string;
+  doctorName?: string;
+  createdFrom?: string;
+  createdTo?: string;
+  firstVisitFrom?: string;
+  firstVisitTo?: string;
+}
+
+const buildPatientListParams = (clinicId: string | undefined, query: PatientListQuery) => {
+  const params: Record<string, string | number> = { page: 1, pageSize: 500 };
+  if (clinicId) params.clinicId = clinicId;
+  const entries: [keyof PatientListQuery, string | undefined][] = [
+    ["search", query.search],
+    ["fullName", query.fullName],
+    ["phone", query.phone],
+    ["clinicName", query.clinicName],
+    ["leadSource", query.leadSource],
+    ["specialtyCode", query.specialtyCode],
+    ["specialtyName", query.specialtyName],
+    ["campaignName", query.campaignName],
+    ["governorate", query.governorate],
+    ["maritalStatus", query.maritalStatus],
+    ["doctorName", query.doctorName],
+    ["createdFrom", query.createdFrom],
+    ["createdTo", query.createdTo],
+    ["firstVisitFrom", query.firstVisitFrom],
+    ["firstVisitTo", query.firstVisitTo],
+    ["fileNumber", query.fileNumber]
+  ];
+  for (const [key, value] of entries) {
+    if (value !== undefined && String(value).trim() !== "") {
+      params[key] = String(value).trim();
+    }
+  }
+  return params;
+};
+
 export const patientService = {
-  async list(clinicId?: string) {
+  async list(clinicId?: string, query: PatientListQuery = {}) {
     const res = await api.get<{ data: PatientListPayload }>("/patients", {
-      params: { page: 1, pageSize: 500, ...(clinicId ? { clinicId } : {}) }
+      params: buildPatientListParams(clinicId, query)
     });
     return res.data.data.data;
   },

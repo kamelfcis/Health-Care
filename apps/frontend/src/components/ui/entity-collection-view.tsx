@@ -22,6 +22,12 @@ interface EntityCollectionViewProps<TData> {
   renderCard: (row: TData) => React.ReactNode;
   searchPlaceholder?: string;
   storageKey: string;
+  /** When true, rows are already filtered (e.g. server-side); only pagination and view apply */
+  skipLocalFiltering?: boolean;
+  /** Replaces the default AdvancedSearch bar (e.g. custom patient filters) */
+  searchSlot?: React.ReactNode;
+  /** When true, table shows skeleton rows and pagination is hidden (e.g. initial server fetch) */
+  listLoading?: boolean;
 }
 
 export function EntityCollectionView<TData>({
@@ -36,16 +42,20 @@ export function EntityCollectionView<TData>({
   getDate,
   renderCard,
   searchPlaceholder,
-  storageKey
+  storageKey,
+  skipLocalFiltering = false,
+  searchSlot,
+  listLoading = false
 }: EntityCollectionViewProps<TData>) {
   const { state, setQuery } = useListQueryState();
   const [searchInput, setSearchInput] = useState(state.q);
   const debouncedSearch = useDebounce(searchInput, 400);
 
   useEffect(() => {
+    if (searchSlot) return;
     setQuery({ q: debouncedSearch, page: 1 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch]);
+  }, [debouncedSearch, searchSlot]);
 
   useEffect(() => {
     const stored = localStorage.getItem(storageKey);
@@ -56,6 +66,7 @@ export function EntityCollectionView<TData>({
   }, [storageKey]);
 
   const filtered = useMemo(() => {
+    if (skipLocalFiltering) return data;
     return data.filter((row) => {
       const q = state.q.toLowerCase().trim();
       const searchPass = !q || getSearchText(row).toLowerCase().includes(q);
@@ -67,7 +78,7 @@ export function EntityCollectionView<TData>({
 
       return searchPass && statusPass && fromPass && toPass;
     });
-  }, [data, getDate, getSearchText, getStatus, state.from, state.q, state.status, state.to]);
+  }, [data, getDate, getSearchText, getStatus, skipLocalFiltering, state.from, state.q, state.status, state.to]);
 
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / state.pageSize));
@@ -86,33 +97,43 @@ export function EntityCollectionView<TData>({
       </div>
       {belowHeader}
 
-      <AdvancedSearch
-        searchValue={searchInput}
-        statusValue={state.status}
-        fromValue={state.from}
-        toValue={state.to}
-        onSearchChange={setSearchInput}
-        onStatusChange={(value) => setQuery({ status: value, page: 1 })}
-        onFromChange={(value) => setQuery({ from: value, page: 1 })}
-        onToChange={(value) => setQuery({ to: value, page: 1 })}
-        onClear={() => {
-          setSearchInput("");
-          setQuery({ q: "", status: "all", from: "", to: "", page: 1 });
-        }}
-        statusOptions={statusOptions}
-        placeholder={searchPlaceholder}
+      {searchSlot ?? (
+        <AdvancedSearch
+          searchValue={searchInput}
+          statusValue={state.status}
+          fromValue={state.from}
+          toValue={state.to}
+          onSearchChange={setSearchInput}
+          onStatusChange={(value) => setQuery({ status: value, page: 1 })}
+          onFromChange={(value) => setQuery({ from: value, page: 1 })}
+          onToChange={(value) => setQuery({ to: value, page: 1 })}
+          onClear={() => {
+            setSearchInput("");
+            setQuery({ q: "", status: "all", from: "", to: "", page: 1 });
+          }}
+          statusOptions={statusOptions}
+          placeholder={searchPlaceholder}
+        />
+      )}
+
+      <PremiumTable
+        columns={columns}
+        data={paginated}
+        view={state.view}
+        cardRender={renderCard}
+        loading={listLoading}
       />
 
-      <PremiumTable columns={columns} data={paginated} view={state.view} cardRender={renderCard} />
-
-      <DataPagination
-        page={page}
-        pageSize={state.pageSize}
-        total={total}
-        totalPages={totalPages}
-        onPageChange={(next) => setQuery({ page: next })}
-        onPageSizeChange={(next) => setQuery({ pageSize: next, page: 1 })}
-      />
+      {!listLoading ? (
+        <DataPagination
+          page={page}
+          pageSize={state.pageSize}
+          total={total}
+          totalPages={totalPages}
+          onPageChange={(next) => setQuery({ page: next })}
+          onPageSizeChange={(next) => setQuery({ pageSize: next, page: 1 })}
+        />
+      ) : null}
     </section>
   );
 }

@@ -1,6 +1,6 @@
 import { Response } from "express";
 import { patientService } from "../services/patient.service";
-import { getPagination } from "../utils/http";
+import { parsePatientListQuery, patientListCacheKeySuffix } from "../utils/patient-list-query";
 import { apiSuccess } from "../utils/api-response";
 import { AuthenticatedRequest } from "../types/auth";
 import { getOptionalClinicScope, getScopedClinicId } from "../utils/tenant";
@@ -28,18 +28,33 @@ export const patientController = {
   },
 
   async list(req: AuthenticatedRequest, res: Response) {
-    const { page, pageSize, search } = getPagination(req);
+    const q = parsePatientListQuery(req);
     const clinicId = getOptionalClinicScope(req);
     const cachePrefix = buildCacheKey("patients", clinicId ?? "all");
     const data = await getOrSetCache(
-      buildCacheKey(cachePrefix, "list", page, pageSize, search ?? ""),
+      buildCacheKey(cachePrefix, "list", patientListCacheKeySuffix(q)),
       45_000,
       () =>
         patientService.list({
           clinicId,
-          page,
-          pageSize,
-          search,
+          page: q.page,
+          pageSize: q.pageSize,
+          search: q.search,
+          fullName: q.fullName,
+          phone: q.phone,
+          clinicName: q.clinicName,
+          leadSource: q.leadSource,
+          specialtyCode: q.specialtyCode,
+          specialtyName: q.specialtyName,
+          campaignName: q.campaignName,
+          governorate: q.governorate,
+          maritalStatus: q.maritalStatus,
+          doctorName: q.doctorName,
+          createdFrom: q.createdFrom,
+          createdTo: q.createdTo,
+          firstVisitFrom: q.firstVisitFrom,
+          firstVisitTo: q.firstVisitTo,
+          fileNumber: q.fileNumber,
           requesterRole: req.user?.role,
           requesterUserId: req.user?.sub
         })

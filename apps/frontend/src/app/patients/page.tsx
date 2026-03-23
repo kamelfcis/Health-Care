@@ -28,10 +28,14 @@ import { SpecialtyAssessmentForm } from "@/components/forms/specialty-assessment
 import { RippleButton } from "@/components/ui/ripple-button";
 import { toast } from "sonner";
 import { EntityCollectionView } from "@/components/ui/entity-collection-view";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useI18n } from "@/components/providers/i18n-provider";
 import { clinicService } from "@/lib/clinic-service";
 import { appointmentService } from "@/lib/appointment-service";
-import { patientService, PatientStats } from "@/lib/patient-service";
+import { patientService, PatientStats, PatientListQuery } from "@/lib/patient-service";
+import { useDebounce } from "@/hooks/use-debounce";
+import { PatientSearchBar, emptyPatientListQuery } from "@/components/patients/patient-search-bar";
+import { PatientsStatsSkeleton } from "@/components/patients/patients-stats-skeleton";
 import { storage } from "@/lib/storage";
 import { StatCard } from "@/components/ui/stat-card";
 import { RoleGate } from "@/components/auth/role-gate";
@@ -176,6 +180,8 @@ export default function PatientsPage() {
   const whatsappAudioStreamRef = useRef<MediaStream | null>(null);
   const whatsappRafRef = useRef<number | null>(null);
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
+  const [patientFilterDraft, setPatientFilterDraft] = useState<PatientListQuery>(() => emptyPatientListQuery());
+  const debouncedPatientFilters = useDebounce(patientFilterDraft, 400);
   const formRef = useRef<HTMLElement | null>(null);
   const assessmentRef = useRef<HTMLElement | null>(null);
   const scrollToFormTop = useCallback(() => {
@@ -233,8 +239,9 @@ export default function PatientsPage() {
   });
 
   const patientsQuery = useQuery({
-    queryKey: ["patients", { page: 1, pageSize: 500, clinicId: selectedClinicId }],
-    queryFn: () => patientService.list(selectedClinicId === "all" ? undefined : selectedClinicId)
+    queryKey: ["patients", "list", selectedClinicId, debouncedPatientFilters],
+    queryFn: () =>
+      patientService.list(selectedClinicId === "all" ? undefined : selectedClinicId, debouncedPatientFilters)
   });
 
   const statsQuery = useQuery({
@@ -368,7 +375,6 @@ export default function PatientsPage() {
     }) ?? [];
 
   const stats = statsQuery.data ?? statsFallback;
-  const loading = patientsQuery.isLoading || statsQuery.isLoading;
   const getProfessionLabel = useCallback(
     (row: PatientRow) =>
       row.profession === "OTHER"
@@ -1109,58 +1115,71 @@ export default function PatientsPage() {
         </section>
       ) : null}
       <section className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          title={t("dashboard.totalPatients")}
-          value={stats.totalPatients}
-          icon={<Users size={17} />}
-          gradientClassName="bg-gradient-to-br from-cyan-50 via-white to-sky-100"
-          iconClassName="bg-cyan-500"
-        />
-        <StatCard
-          title={t("patients.newThisMonth")}
-          value={stats.newThisMonth}
-          icon={<UserPlus size={17} />}
-          gradientClassName="bg-gradient-to-br from-violet-50 via-white to-fuchsia-100"
-          iconClassName="bg-violet-500"
-        />
-        <StatCard
-          title={t("patients.withContact")}
-          value={stats.withContactInfo}
-          icon={<PhoneCall size={17} />}
-          gradientClassName="bg-gradient-to-br from-emerald-50 via-white to-teal-100"
-          iconClassName="bg-emerald-500"
-        />
-        <StatCard
-          title={t("patients.missingContact")}
-          value={stats.withoutContactInfo}
-          icon={<PhoneOff size={17} />}
-          gradientClassName="bg-gradient-to-br from-amber-50 via-white to-orange-100"
-          iconClassName="bg-orange-500"
-        />
-      </section>
-      <Suspense fallback={<div className="card p-6 text-sm text-slate-500">{t("patients.loading")}</div>}>
-        {loading ? (
-          <div className="card p-6 text-sm text-slate-500">{t("patients.loading")}</div>
+        {statsQuery.isLoading ? (
+          <PatientsStatsSkeleton />
         ) : (
-          <EntityCollectionView
+          <>
+            <StatCard
+              title={t("dashboard.totalPatients")}
+              value={stats.totalPatients}
+              icon={<Users size={17} />}
+              gradientClassName="bg-gradient-to-br from-cyan-50 via-white to-sky-100"
+              iconClassName="bg-cyan-500"
+            />
+            <StatCard
+              title={t("patients.newThisMonth")}
+              value={stats.newThisMonth}
+              icon={<UserPlus size={17} />}
+              gradientClassName="bg-gradient-to-br from-violet-50 via-white to-fuchsia-100"
+              iconClassName="bg-violet-500"
+            />
+            <StatCard
+              title={t("patients.withContact")}
+              value={stats.withContactInfo}
+              icon={<PhoneCall size={17} />}
+              gradientClassName="bg-gradient-to-br from-emerald-50 via-white to-teal-100"
+              iconClassName="bg-emerald-500"
+            />
+            <StatCard
+              title={t("patients.missingContact")}
+              value={stats.withoutContactInfo}
+              icon={<PhoneOff size={17} />}
+              gradientClassName="bg-gradient-to-br from-amber-50 via-white to-orange-100"
+              iconClassName="bg-orange-500"
+            />
+          </>
+        )}
+      </section>
+      <Suspense
+        fallback={
+          <section className="space-y-3">
+            <Skeleton className="h-9 w-48 rounded-lg" />
+            <Skeleton className="h-32 w-full rounded-2xl" />
+            <Skeleton className="h-48 w-full rounded-2xl" />
+          </section>
+        }
+      >
+        <EntityCollectionView
             title={t("nav.patients")}
             columns={columns}
             data={rows}
             storageKey="patient-view"
+            skipLocalFiltering
+            listLoading={patientsQuery.isLoading}
+            searchSlot={
+              <PatientSearchBar
+                value={patientFilterDraft}
+                onChange={setPatientFilterDraft}
+                onClear={() => setPatientFilterDraft(emptyPatientListQuery())}
+              />
+            }
             belowHeader={
               <>
                 {patientFormExpander}
                 {assessmentExpander}
               </>
             }
-            statusOptions={[
-              { label: t("patients.allRecords"), value: "all" },
-              { label: t("patients.leadSource.FACEBOOK_AD"), value: "FACEBOOK_AD" },
-              { label: t("patients.leadSource.GOOGLE_SEARCH"), value: "GOOGLE_SEARCH" },
-              { label: t("patients.leadSource.DOCTOR_REFERRAL"), value: "DOCTOR_REFERRAL" },
-              { label: t("patients.leadSource.FRIEND"), value: "FRIEND" },
-              { label: t("patients.leadSource.OTHER"), value: "OTHER" }
-            ]}
+            statusOptions={[{ label: t("patients.allRecords"), value: "all" }]}
             searchPlaceholder={`${t("common.search")} ${t("nav.patients")}`}
             addButton={
               <RippleButton
@@ -1375,7 +1394,6 @@ export default function PatientsPage() {
               </div>
             )}
           />
-        )}
       </Suspense>
       {whatsappTarget ? (
         <div className="fixed inset-0 z-[85] flex items-center justify-center p-4">

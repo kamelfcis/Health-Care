@@ -1,7 +1,9 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { usePathname } from "next/navigation";
 import ProtectedRoute from "@/components/auth/protected-route";
+import { getRouteAccessForPath } from "@/lib/route-access";
 import { Sidebar } from "./sidebar";
 import { TopNavbar } from "./top-navbar";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
@@ -34,8 +36,11 @@ function AppShellLayout({ children }: AppShellProps) {
 }
 
 export function AppShell({ children }: AppShellProps) {
+  const pathname = usePathname();
+  const accessRule = getRouteAccessForPath(pathname);
+
   return (
-    <ProtectedRoute>
+    <ProtectedRoute allowedRoles={accessRule?.allowedRoles} requiredPermissions={accessRule?.requiredPermissions}>
       <SidebarProvider>
         <AppShellLayout>{children}</AppShellLayout>
       </SidebarProvider>

@@ -15,49 +15,33 @@ import { useI18n } from "@/components/providers/i18n-provider";
 import { storage } from "@/lib/storage";
 import { AuthUser } from "@/types";
 import { hasAllPermissions } from "@/lib/permissions";
+import { NAVIGATION_LINKS, NavigationLink } from "@/lib/route-access";
 import { authService } from "@/lib/auth-service";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { LanguageToggle } from "@/components/ui/language-toggle";
 
-type SidebarChildLink = {
-  href: string;
-  labelKey: string;
-};
-
-type SidebarLink = {
-  href: string;
-  labelKey: string;
+type SidebarLink = Omit<NavigationLink, "iconName"> & {
   icon: typeof LayoutDashboard;
-  requiredPermissions: string[];
-  allowedRoles?: AuthUser["role"][];
-  children?: SidebarChildLink[];
 };
 
-const links: SidebarLink[] = [
-  { href: "/dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard, requiredPermissions: ["dashboard.view"] },
-  { href: "/clinics", labelKey: "nav.clinics", icon: Building2, requiredPermissions: ["clinics.read"] },
-  {
-    href: "/specialties",
-    labelKey: "nav.specialties",
-    icon: ClipboardList,
-    requiredPermissions: [],
-    allowedRoles: ["SuperAdmin"],
-    children: [
-      { href: "/specialties/templates", labelKey: "nav.specialtiesTemplates" },
-      { href: "/specialties/rules", labelKey: "nav.specialtiesRulesBuilder" },
-      { href: "/specialties/lookup", labelKey: "nav.specialtiesLookup" }
-    ]
-  },
-  { href: "/users", labelKey: "nav.users", icon: UserCog, requiredPermissions: ["users.read"] },
-  { href: "/doctors", labelKey: "nav.doctors", icon: Stethoscope, requiredPermissions: ["doctors.read"] },
-  { href: "/patients", labelKey: "nav.patients", icon: Users, requiredPermissions: ["patients.read"] },
-  { href: "/appointments", labelKey: "nav.appointments", icon: Calendar, requiredPermissions: ["appointments.read"] },
-  { href: "/pharmacy", labelKey: "nav.pharmacy", icon: Pill, requiredPermissions: ["pharmacy.view"] },
-  { href: "/billing", labelKey: "nav.billing", icon: CreditCard, requiredPermissions: ["billing.read"] },
-  { href: "/payments", labelKey: "nav.payments", icon: Wallet, requiredPermissions: ["payments.read"] },
-  { href: "/dashboard/leads", labelKey: "nav.leads", icon: ClipboardList, requiredPermissions: ["leads.read"] },
-  { href: "/settings", labelKey: "nav.settings", icon: Settings, requiredPermissions: [] }
-];
+const ICON_BY_NAME = {
+  LayoutDashboard,
+  Building2,
+  ClipboardList,
+  UserCog,
+  Stethoscope,
+  Users,
+  Calendar,
+  Pill,
+  CreditCard,
+  Wallet,
+  Settings
+} as const;
+
+const links: SidebarLink[] = NAVIGATION_LINKS.map((link) => ({
+  ...link,
+  icon: ICON_BY_NAME[link.iconName]
+}));
 
 interface SidebarProps {
   collapsed: boolean;
