@@ -832,103 +832,100 @@ export default function AppointmentsPage() {
           </div>
         </section>
       ) : null}
-      {appointmentsQuery.isLoading ? (
-        <div className="card p-6 text-sm text-slate-500">{t("appointments.loading")}</div>
-      ) : (
-        <EntityCollectionView
-          title={t("nav.appointments")}
-          columns={columns}
-          data={data}
-          storageKey="appointment-view"
-          belowHeader={formBlock}
-          statusOptions={[
-            { label: t("common.allStatuses"), value: "all" },
-            ...statuses.map((status) => ({ label: statusLabel(status), value: status }))
-          ]}
-          searchPlaceholder={`${t("common.search")} ${t("nav.appointments")}`}
-          addButton={
-            canManageAppointments ? (
-              <RippleButton
-                onClick={() => {
-                  resetForm();
-                  setFormExpanded((prev) => !prev);
-                }}
+      <EntityCollectionView
+        title={t("nav.appointments")}
+        columns={columns}
+        data={data}
+        storageKey="appointment-view"
+        belowHeader={formBlock}
+        listLoading={isQueryScopeReady && appointmentsQuery.isFetching && !appointmentsQuery.isFetched}
+        statusOptions={[
+          { label: t("common.allStatuses"), value: "all" },
+          ...statuses.map((status) => ({ label: statusLabel(status), value: status }))
+        ]}
+        searchPlaceholder={`${t("common.search")} ${t("nav.appointments")}`}
+        addButton={
+          canManageAppointments ? (
+            <RippleButton
+              onClick={() => {
+                resetForm();
+                setFormExpanded((prev) => !prev);
+              }}
+            >
+              {formExpanded ? t("common.close") : `+ ${t("nav.appointments")}`}
+            </RippleButton>
+          ) : undefined
+        }
+        getSearchText={(row) => `${row.patient} ${row.doctor} ${row.start} ${row.status} ${row.entryType}`}
+        getStatus={(row) => row.status}
+        getDate={(row) => row.start.slice(0, 10)}
+        renderCard={(row) => (
+          <div className="space-y-3 rounded-2xl border border-slate-200/80 border-l-4 border-l-orange-500 bg-gradient-to-br from-white to-orange-50/30 p-4 shadow-sm transition hover:shadow-md">
+            <h3 className="text-base font-bold text-slate-900">{row.patient}</h3>
+            <p className="text-sm font-medium text-slate-600">{row.doctor}</p>
+            <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200/70 bg-white/80 px-3 py-2">
+              <p className="text-xs font-medium text-slate-600">
+                {t("field.phone")}: <span className="font-semibold text-slate-800">{row.patientPhone || t("patients.card.notSet")}</span>
+              </p>
+              <button
+                type="button"
+                className="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => openWhatsappPopup(row)}
+                disabled={!row.patientWhatsapp || row.patientWhatsapp === "-"}
+                aria-label={t("patients.whatsappPopup.open")}
               >
-                {formExpanded ? t("common.close") : `+ ${t("nav.appointments")}`}
-              </RippleButton>
-            ) : undefined
-          }
-          getSearchText={(row) => `${row.patient} ${row.doctor} ${row.start} ${row.status} ${row.entryType}`}
-          getStatus={(row) => row.status}
-          getDate={(row) => row.start.slice(0, 10)}
-          renderCard={(row) => (
-            <div className="space-y-3 rounded-2xl border border-slate-200/80 border-l-4 border-l-orange-500 bg-gradient-to-br from-white to-orange-50/30 p-4 shadow-sm transition hover:shadow-md">
-              <h3 className="text-base font-bold text-slate-900">{row.patient}</h3>
-              <p className="text-sm font-medium text-slate-600">{row.doctor}</p>
-              <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-200/70 bg-white/80 px-3 py-2">
-                <p className="text-xs font-medium text-slate-600">
-                  {t("field.phone")}: <span className="font-semibold text-slate-800">{row.patientPhone || t("patients.card.notSet")}</span>
-                </p>
+                <FaWhatsapp size={13} />
+                <span>{row.patientWhatsapp || t("patients.card.notSet")}</span>
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 font-semibold text-orange-700">
+                {entryTypeLabel(row.entryType)}
+              </span>
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-medium text-slate-600">
+                {row.start}
+              </span>
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">
+                {statusLabel(row.status)}
+              </span>
+            </div>
+            {canManageAppointments || canOpenMedicalFile ? (
+              <div className="flex items-center gap-2 pt-1">
+                {canOpenMedicalFile ? (
+                  <button
+                    type="button"
+                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-orange-300 bg-orange-50 px-2.5 text-xs font-semibold text-orange-700 transition hover:bg-orange-100"
+                    onClick={() => openMedicalFile(row)}
+                  >
+                    <ClipboardList size={12} />
+                    {t("patients.assessment.open")}
+                  </button>
+                ) : null}
+                {canManageAppointments ? (
                 <button
                   type="button"
-                  className="inline-flex h-8 items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
-                  onClick={() => openWhatsappPopup(row)}
-                  disabled={!row.patientWhatsapp || row.patientWhatsapp === "-"}
-                  aria-label={t("patients.whatsappPopup.open")}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-cyan-200 bg-cyan-50 text-cyan-700 transition hover:bg-cyan-100"
+                  onClick={() => startEdit(row)}
+                  aria-label="Edit appointment"
                 >
-                  <FaWhatsapp size={13} />
-                  <span>{row.patientWhatsapp || t("patients.card.notSet")}</span>
+                  <SquarePen size={13} />
                 </button>
+                ) : null}
+                {canManageAppointments ? (
+                <button
+                  type="button"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 transition hover:bg-rose-100"
+                  onClick={() => setDeleteTarget(row)}
+                  aria-label="Delete appointment"
+                >
+                  <Trash2 size={13} />
+                </button>
+                ) : null}
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 font-semibold text-orange-700">
-                  {entryTypeLabel(row.entryType)}
-                </span>
-                <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 font-medium text-slate-600">
-                  {row.start}
-                </span>
-                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">
-                  {statusLabel(row.status)}
-                </span>
-              </div>
-              {canManageAppointments || canOpenMedicalFile ? (
-                <div className="flex items-center gap-2 pt-1">
-                  {canOpenMedicalFile ? (
-                    <button
-                      type="button"
-                      className="inline-flex h-8 items-center gap-1 rounded-lg border border-orange-300 bg-orange-50 px-2.5 text-xs font-semibold text-orange-700 transition hover:bg-orange-100"
-                      onClick={() => openMedicalFile(row)}
-                    >
-                      <ClipboardList size={12} />
-                      {t("patients.assessment.open")}
-                    </button>
-                  ) : null}
-                  {canManageAppointments ? (
-                  <button
-                    type="button"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-cyan-200 bg-cyan-50 text-cyan-700 transition hover:bg-cyan-100"
-                    onClick={() => startEdit(row)}
-                    aria-label="Edit appointment"
-                  >
-                    <SquarePen size={13} />
-                  </button>
-                  ) : null}
-                  {canManageAppointments ? (
-                  <button
-                    type="button"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 transition hover:bg-rose-100"
-                    onClick={() => setDeleteTarget(row)}
-                    aria-label="Delete appointment"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          )}
-        />
-      )}
+            ) : null}
+          </div>
+        )}
+      />
       <MedicalRecordModal
         open={Boolean(medicalFileAppointment)}
         mode="appointment"
