@@ -71,9 +71,13 @@ $env:VERCEL_TOKEN = "<your-token>"
 
 `backend/prisma/prisma/dev.db` can be **tracked in git** so CI/build can copy it. Before `next build`, [`scripts/copy-vercel-sqlite.mjs`](../scripts/copy-vercel-sqlite.mjs) copies it to **`apps/frontend/api/dev.db`** so Next **file tracing** bundles it with the `/api` serverless function (see [`next.config.mjs`](../apps/frontend/next.config.mjs) `outputFileTracingIncludes`). At runtime [`backend/src/config/prisma.ts`](../backend/src/config/prisma.ts) finds that file (or paths under `backend/prisma/…`) and copies it to **`/tmp`** for SQLite writes.
 
-## Uploads on Vercel
+## Uploads on Vercel (fix `/uploads/...` 404)
 
-The API stores uploads under **`/tmp/healthcare-crm-uploads`** when **`VERCEL`** is set (see [`backend/src/config/uploads.ts`](../backend/src/config/uploads.ts)). The deployment image under `/var/task` is **read-only**; creating `backend/dist/uploads/...` would throw **ENOENT**. Files in `/tmp` do not persist across invocations—use object storage for production.
+The deployment image under `/var/task` is **read-only**. The API uses **`/tmp/healthcare-crm-uploads`** for writes and **`express.static`** for **`/uploads`**.
+
+**Ship existing files from your machine:** keep images under **`backend/uploads/clinic-images/`** and **`backend/uploads/patient-exams/`** and **commit them** (see [`.gitignore`](../.gitignore): those folders are tracked; other paths under `uploads/` stay ignored). Before `next build`, [`scripts/copy-vercel-uploads.mjs`](../scripts/copy-vercel-uploads.mjs) copies **`backend/uploads`** → **`apps/frontend/api/bundle-uploads`**, which Next traces into the serverless bundle. At cold start, [`backend/src/config/uploads.ts`](../backend/src/config/uploads.ts) copies that bundle into **`/tmp`** so URLs like **`/uploads/clinic-images/<file>.jpg`** resolve.
+
+New uploads in production still land in **`/tmp`** only for that instance—use **S3 / R2 / Blob** if you need persistence across deploys and regions.
 
 ## Vercel project settings
 

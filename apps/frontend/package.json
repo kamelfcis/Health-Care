@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "prebuild": "node ../../scripts/copy-vercel-sqlite.mjs",
+    "prebuild": "node ../../scripts/copy-vercel-sqlite.mjs && node ../../scripts/copy-vercel-uploads.mjs",
     "build": "next build",
-    "vercel-build": "cd ../../backend && npx prisma generate && npx prisma migrate deploy && npx tsc -p tsconfig.json && cd ../apps/frontend && node ../../scripts/copy-vercel-sqlite.mjs && next build",
+    "vercel-build": "cd ../../backend && npx prisma generate && npx prisma migrate deploy && npx tsc -p tsconfig.json && cd ../apps/frontend && node ../../scripts/copy-vercel-sqlite.mjs && node ../../scripts/copy-vercel-uploads.mjs && next build",
     "start": "next start",
     "lint": "next lint"
   },

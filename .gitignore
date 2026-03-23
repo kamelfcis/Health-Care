@@ -18,10 +18,16 @@ backend/prisma/**/*.db
 backend/prisma/**/*.db-*
 # Allow demo DB for Vercel bundle (runtime copies to /tmp; see backend/src/config/prisma.ts)
 !backend/prisma/prisma/dev.db
-backend/uploads/
+# Track demo images for Vercel: allow clinic-images + patient-exams, ignore other junk under uploads/
+backend/uploads/**
+!backend/uploads/clinic-images/
+!backend/uploads/clinic-images/**
+!backend/uploads/patient-exams/
+!backend/uploads/patient-exams/**
 
-# Copied from backend/prisma for Next serverless bundle (see scripts/copy-vercel-sqlite.mjs)
+# Copied for Next serverless bundle (see scripts/copy-vercel-*.mjs)
 apps/frontend/api/dev.db
+apps/frontend/api/bundle-uploads
 
 .cursor/
 .vscode/

@@ -8,6 +8,7 @@ const nextConfig = {
       // Serverless `/api` handler imports `backend/app` (compiled CJS under backend/dist); keep Prisma DB + dist in trace.
       "/api": [
         "./api/dev.db",
+        "./api/bundle-uploads/**",
         "../../backend/prisma/prisma/dev.db",
         "../../backend/dist/src/**"
       ],
