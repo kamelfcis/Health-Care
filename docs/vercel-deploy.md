@@ -67,9 +67,11 @@ $env:VERCEL_TOKEN = "<your-token>"
 4. **Install Command:** `cd ../.. && npm ci` (or leave empty to follow `vercel.json`).
 5. Add the [environment variables](#vercel-project-settings) below for Production and Preview, then deploy.
 
-## Demo database (`dev.db`)
+## Demo database (`dev.db`) — legacy SQLite bundle
 
-`backend/prisma/prisma/dev.db` can be **tracked in git** so CI/build can copy it. Before `next build`, [`scripts/copy-vercel-sqlite.mjs`](../scripts/copy-vercel-sqlite.mjs) copies it to **`apps/frontend/api/dev.db`** so Next **file tracing** bundles it with the `/api` serverless function (see [`next.config.mjs`](../apps/frontend/next.config.mjs) `outputFileTracingIncludes`). At runtime [`backend/src/config/prisma.ts`](../backend/src/config/prisma.ts) finds that file (or paths under `backend/prisma/…`) and copies it to **`/tmp`** for SQLite writes.
+The repo can still copy `backend/prisma/prisma/dev.db` into the serverless bundle for **SQLite-only** demos. The **current Prisma schema uses `provider = "postgresql"`**, so production and `prisma migrate deploy` expect a **PostgreSQL** `DATABASE_URL`. SQLite at runtime only applies if you deliberately set a `file:` URL (not compatible with `migrate deploy` on Postgres).
+
+Before `next build`, [`scripts/copy-vercel-sqlite.mjs`](../scripts/copy-vercel-sqlite.mjs) may copy the file for tracing; [`backend/src/config/prisma.ts`](../backend/src/config/prisma.ts) only rewires SQLite into `/tmp` when `DATABASE_URL` starts with `file:`.
 
 ## Uploads on Vercel (fix `/uploads/...` 404)
 
@@ -97,7 +99,7 @@ Routing: [`vercel.json`](../apps/frontend/vercel.json) rewrites `/api/*` and `/u
 | Variable | Example / notes |
 |----------|-----------------|
 | `NODE_ENV` | `production` |
-| `DATABASE_URL` | `file:./prisma/prisma/dev.db` (demo SQLite) or your **Postgres** URL |
+| `DATABASE_URL` | **PostgreSQL** URL (recommended), e.g. `postgresql://USER:PASS@HOST:5432/DB?schema=public`. Demo SQLite `file:…` only if you intentionally keep the bundled demo DB; the Prisma schema provider is **postgresql**, so production must use Postgres. See [`postgresql-vps-migration.md`](postgresql-vps-migration.md). |
 | `JWT_ACCESS_SECRET` | Long random string (16+ chars) |
 | `JWT_REFRESH_SECRET` | Different long random string |
 | `JWT_ACCESS_EXPIRES_IN` | `15m` or `never` |

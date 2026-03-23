@@ -49,6 +49,7 @@ const findBundledSqliteSource = (): string | undefined => {
   return undefined;
 };
 
+/** Only for SQLite demo (`DATABASE_URL` starts with `file:`). PostgreSQL URLs skip this entirely. */
 const prepareVercelSqliteRuntime = () => {
   const isVercel = Boolean(process.env.VERCEL);
   const configuredUrl = process.env.DATABASE_URL ?? "";

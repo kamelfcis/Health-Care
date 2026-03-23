@@ -18,9 +18,10 @@ Production-ready monorepo containing:
 1. Install dependencies:
    - `npm install`
 2. Ensure root `.env` includes backend + frontend keys from [`docs/environment.md`](docs/environment.md).
-3. Generate Prisma client and run DB setup:
-   - `npm run db:migrate`
-   - `npm run db:seed`
+3. Set `DATABASE_URL` in root `.env` to PostgreSQL (see [`docs/environment.md`](docs/environment.md)). Then:
+   - `npm run db:migrate:deploy --workspace backend`
+   - Optional: copy old SQLite data — [`docs/postgresql-vps-migration.md`](docs/postgresql-vps-migration.md)
+   - `npm run db:seed --workspace backend`
 4. Start frontend + backend together:
    - `npm run dev`
 
@@ -33,7 +34,8 @@ Frontend runs on `http://localhost:3000` and backend on `http://localhost:5000`.
 - `npm run dev:backend`: run backend only
 - `npm run build`: build both applications
 - `npm run lint`: type/lint checks for both applications
-- `npm run db:migrate`: run Prisma migration
+- `npm run db:migrate:deploy --workspace backend`: apply Prisma migrations (production / CI)
+- `npm run db:migrate --workspace backend`: create a new migration in development (`prisma migrate dev`)
 - `npm run db:seed`: run seed script
 
 ## Windows VPS (PM2 quick run)
@@ -47,7 +49,7 @@ Basic production flow:
 
 1. `npm install`
 2. `npm run build`
-3. `npm run db:migrate --workspace backend`
+3. `npm run db:migrate:deploy --workspace backend`
 4. `pm2 start ecosystem.config.cjs`
 5. `pm2 save`
 

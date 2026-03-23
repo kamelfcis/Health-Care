@@ -14,14 +14,14 @@ const databaseUrl =
 
 if (!databaseUrl) {
   throw new Error(
-    "DATABASE_URL is missing. Add a SQLite/PostgreSQL connection string to your root .env."
+    "DATABASE_URL is missing. Add a PostgreSQL (or file: SQLite for local demo) connection string to your root .env."
   );
 }
 
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
-    path: "prisma/sqlite-migrations"
+    path: "prisma/migrations"
   },
   datasource: {
     url: databaseUrl

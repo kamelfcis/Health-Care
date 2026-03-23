@@ -4,7 +4,7 @@ Use the existing root `.env` file. Do not duplicate secrets across files.
 
 ## Required backend variables
 
-- `DATABASE_URL`: SQLite/PostgreSQL connection string for Prisma
+- `DATABASE_URL`: **PostgreSQL** connection string for Prisma in production; optional `file:` SQLite for local demo only
 - `JWT_ACCESS_SECRET`: secret key for access token signing
 - `JWT_REFRESH_SECRET`: secret key for refresh token signing
 - `JWT_ACCESS_EXPIRES_IN`: token duration (example: `15m`)
@@ -22,11 +22,19 @@ Use the existing root `.env` file. Do not duplicate secrets across files.
 Your current file already contains Supabase-related keys. Those are preserved and untouched.  
 Add the backend JWT/database variables above to enable this Express + Prisma stack.
 
-### SQLite (current default)
+### PostgreSQL (recommended for VPS / production)
 
-Use:
+Example:
 
-- `DATABASE_URL="file:./prisma/dev.db"`
+- `DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/HealthCareDB?schema=public"`
+
+Ensure the database exists, TCP `5432` is reachable from your app host, and run migrations: `npm run db:migrate:deploy --workspace backend`.
+
+Full cutover from SQLite: see [`docs/postgresql-vps-migration.md`](postgresql-vps-migration.md).
+
+### SQLite (local demo only)
+
+If you still use a file DB locally, point `DATABASE_URL` at a `file:` URL **relative to `backend/`** when the API runs from the backend workspace (for example `file:./prisma/prisma/dev.db`). On Vercel, SQLite is only for the bundled demo DB; production should use PostgreSQL.
 
 ## Validation behavior
 
