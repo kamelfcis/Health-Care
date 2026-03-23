@@ -7,7 +7,7 @@
     "dev": "next dev",
     "prebuild": "node ../../scripts/copy-vercel-sqlite.mjs && node ../../scripts/copy-vercel-uploads.mjs",
     "build": "next build",
-    "vercel-build": "cd ../../backend && npx prisma generate && npx prisma migrate deploy && npx tsc -p tsconfig.json && cd ../apps/frontend && node ../../scripts/copy-vercel-sqlite.mjs && node ../../scripts/copy-vercel-uploads.mjs && next build",
+    "vercel-build": "cd ../../backend && node -e \"const fs=require('fs');['prisma/migrations/20260305_clinic_template_assignment','prisma/migrations/20260323132000_add_extended_patient_profile_fields','prisma/migrations/20260323140000_patient_referral_type_other'].forEach((p)=>{try{fs.rmSync(p,{recursive:true,force:true});}catch{}});\" && npx prisma generate && npx prisma migrate deploy && npx tsc -p tsconfig.json && cd ../apps/frontend && node ../../scripts/copy-vercel-sqlite.mjs && node ../../scripts/copy-vercel-uploads.mjs && next build",
     "start": "next start",
     "lint": "next lint"
   },
