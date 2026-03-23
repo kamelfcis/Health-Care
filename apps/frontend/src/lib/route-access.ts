@@ -29,6 +29,8 @@ export interface NavigationLink {
   requiredPermissions?: string[];
   allowedRoles?: RoleName[];
   children?: NavigationChildLink[];
+  /** Visual "coming soon" badge; navigation still works */
+  comingSoon?: boolean;
 }
 
 export const ROUTE_ACCESS_RULES: RouteAccessRule[] = [
@@ -105,19 +107,22 @@ export const NAVIGATION_LINKS: NavigationLink[] = [
     href: "/billing",
     labelKey: "nav.billing",
     iconName: "CreditCard",
-    requiredPermissions: ["billing.read"]
+    requiredPermissions: ["billing.read"],
+    comingSoon: true
   },
   {
     href: "/payments",
     labelKey: "nav.payments",
     iconName: "Wallet",
-    requiredPermissions: ["payments.read"]
+    requiredPermissions: ["payments.read"],
+    comingSoon: true
   },
   {
     href: "/dashboard/leads",
     labelKey: "nav.leads",
     iconName: "ClipboardList",
-    requiredPermissions: ["leads.read"]
+    requiredPermissions: ["leads.read"],
+    comingSoon: true
   },
   {
     href: "/settings",

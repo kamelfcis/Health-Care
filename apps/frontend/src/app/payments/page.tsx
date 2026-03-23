@@ -37,9 +37,9 @@ export default function PaymentsPage() {
     enabled: isSuperAdmin
   });
   const myClinicQuery = useQuery({
-    queryKey: ["settings", "clinic-me"],
+    queryKey: ["settings", "clinic-me", currentUser?.role ?? "none"],
     queryFn: () => clinicService.getMyClinic(),
-    enabled: !isSuperAdmin
+    enabled: !!currentUser && currentUser.role !== "SuperAdmin"
   });
 
   const clinicCurrencyById = useMemo(() => {

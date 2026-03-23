@@ -87,16 +87,20 @@ export default function DoctorsPage() {
     enabled: isSuperAdmin
   });
   const myClinicQuery = useQuery({
-    queryKey: ["clinic", "me", "doctors-form"],
+    queryKey: ["clinic", "me", "doctors-form", currentUser?.role ?? "none"],
     queryFn: () => clinicService.getMyClinic(),
-    enabled: !isSuperAdmin
+    enabled: !!currentUser && currentUser.role !== "SuperAdmin"
   });
-  const listClinicScope = isSuperAdmin ? (selectedClinicId === "all" ? undefined : selectedClinicId) : myClinicQuery.data?.id;
+  const listClinicScope = isSuperAdmin
+    ? selectedClinicId === "all"
+      ? undefined
+      : selectedClinicId
+    : myClinicQuery.data?.id ?? currentUser?.clinicId;
 
   const doctorsQuery = useQuery({
     queryKey: ["doctors", { page: 1, pageSize: 500, clinicId: listClinicScope ?? "mine-pending" }],
     queryFn: () => doctorService.list(listClinicScope),
-    enabled: isSuperAdmin || Boolean(myClinicQuery.data?.id)
+    enabled: isSuperAdmin || Boolean(myClinicQuery.data?.id ?? currentUser?.clinicId)
   });
   const specialtyCatalogQuery = useQuery({
     queryKey: ["specialty-catalog", "doctors-form"],

@@ -89,15 +89,19 @@ export default function DashboardPage() {
     enabled: isSuperAdmin
   });
   const myClinicQuery = useQuery({
-    queryKey: ["settings", "clinic-me"],
+    queryKey: ["settings", "clinic-me", currentUser?.role ?? "none"],
     queryFn: () => clinicService.getMyClinic(),
-    enabled: !isSuperAdmin
+    enabled: !!currentUser && currentUser.role !== "SuperAdmin"
   });
-  const clinicScopeForMetrics = isSuperAdmin ? (selectedClinicId === "all" ? undefined : selectedClinicId) : myClinicQuery.data?.id;
+  const clinicScopeForMetrics = isSuperAdmin
+    ? selectedClinicId === "all"
+      ? undefined
+      : selectedClinicId
+    : myClinicQuery.data?.id ?? currentUser?.clinicId;
   const metricsQuery = useQuery({
     queryKey: ["dashboard", "metrics", clinicScopeForMetrics ?? "mine-pending"],
     queryFn: () => dashboardService.getMetrics(clinicScopeForMetrics),
-    enabled: isSuperAdmin || Boolean(myClinicQuery.data?.id)
+    enabled: isSuperAdmin || Boolean(myClinicQuery.data?.id ?? currentUser?.clinicId)
   });
 
   const rolesQuery = useQuery({

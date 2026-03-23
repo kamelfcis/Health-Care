@@ -49,6 +49,23 @@ interface SidebarProps {
   onNavigate?: () => void;
 }
 
+function ComingSoonPill({ active }: { active: boolean }) {
+  const { t, locale } = useI18n();
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-[5.5rem] shrink-0 items-center justify-center rounded-full border px-2 py-0.5 text-[10px] font-semibold shadow-sm backdrop-blur-sm sm:text-[11px]",
+        locale === "ar" ? "normal-case tracking-normal" : "uppercase tracking-[0.18em]",
+        active
+          ? "border-white/40 bg-white/15 text-white"
+          : "border-amber-400/50 bg-gradient-to-br from-amber-500/20 via-orange-500/15 to-amber-600/10 text-amber-900 dark:border-amber-500/35 dark:from-amber-400/15 dark:text-amber-100"
+      )}
+    >
+      {t("nav.comingSoon")}
+    </span>
+  );
+}
+
 export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -148,11 +165,21 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
           const isExpandable = !collapsed && Boolean(link.children?.length);
           const isExpanded = expandedParents[link.href] ?? hasActiveChild;
           const itemBaseClass = cn(
-            "group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-base transition-all duration-300",
+            "group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-[0.95rem] font-medium transition-all duration-300 sm:text-lg sm:font-semibold",
             isActive
               ? "bg-gradient-to-r from-orange-600 to-orange-500 text-white shadow-md"
               : "text-slate-600 hover:bg-white hover:text-slate-900 hover:shadow-soft dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-slate-100"
           );
+          const navLabel = !collapsed ? (
+            link.comingSoon ? (
+              <>
+                <span className="min-w-0 flex-1 truncate text-right">{t(link.labelKey)}</span>
+                <ComingSoonPill active={isActive} />
+              </>
+            ) : (
+              <span className="flex-1 text-right">{t(link.labelKey)}</span>
+            )
+          ) : null;
           const item = isExpandable ? (
             <button
               type="button"
@@ -165,14 +192,14 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
               }
               className={cn(itemBaseClass, "w-full text-right")}
             >
-              <Icon size={16} className={cn(collapsed && "mx-auto")} />
+              <Icon size={18} className={cn(collapsed && "mx-auto")} />
               <span className="flex-1 text-right">{t(link.labelKey)}</span>
-              <ChevronDown size={14} className={cn("transition-transform", isExpanded ? "rotate-180" : "")} />
+              <ChevronDown size={15} className={cn("shrink-0 transition-transform", isExpanded ? "rotate-180" : "")} />
             </button>
           ) : (
             <Link href={link.href} onClick={onNavigate} className={itemBaseClass}>
-              <Icon size={16} className={cn(collapsed && "mx-auto")} />
-              {!collapsed ? <span className="flex-1 text-right">{t(link.labelKey)}</span> : null}
+              <Icon size={18} className={cn(collapsed && "mx-auto")} />
+              {navLabel}
             </Link>
           );
 
@@ -190,7 +217,7 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
                           href={child.href}
                           onClick={onNavigate}
                           className={cn(
-                            "block rounded-xl px-3 py-2 text-sm font-medium transition",
+                            "block rounded-xl px-3 py-2 text-sm font-medium transition sm:text-base sm:font-semibold",
                             childActive
                               ? "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-200"
                               : "text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
@@ -208,7 +235,14 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
           return (
             <Tooltip key={link.href}>
               <TooltipTrigger asChild>{item}</TooltipTrigger>
-              <TooltipContent side="right">{t(link.labelKey)}</TooltipContent>
+              <TooltipContent side="right" className="max-w-[240px] border-slate-200/90 bg-white/95 text-slate-800 shadow-lg dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-100">
+                <div className="space-y-1.5 text-right">
+                  <p className="text-sm font-semibold leading-tight">{t(link.labelKey)}</p>
+                  {link.comingSoon ? (
+                    <p className="text-xs font-medium text-amber-700 dark:text-amber-300">{t("nav.comingSoon")}</p>
+                  ) : null}
+                </div>
+              </TooltipContent>
             </Tooltip>
           );
         })}

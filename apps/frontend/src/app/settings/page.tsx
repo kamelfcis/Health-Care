@@ -38,7 +38,7 @@ export default function SettingsPage() {
   const isClinicAdmin = userRole === "ClinicAdmin";
 
   const clinicQuery = useQuery({
-    queryKey: ["settings", "clinic-me"],
+    queryKey: ["settings", "clinic-me", userRole ?? "none"],
     queryFn: () => clinicService.getMyClinic(),
     enabled: hasHydrated && isClinicAdmin
   });

@@ -34,7 +34,7 @@ export function TopNavbar() {
   }, []);
 
   const clinicsQuery = useQuery({
-    queryKey: ["top-navbar", "clinics"],
+    queryKey: ["top-navbar", "clinics", user?.role ?? "none"],
     queryFn: async () => {
       if (user?.role === "ClinicAdmin") {
         const clinic = await clinicService.getMyClinic();
