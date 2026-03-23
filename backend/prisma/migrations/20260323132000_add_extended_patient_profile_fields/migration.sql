@@ -1,0 +1,25 @@
+-- AlterTable
+ALTER TABLE "Patient" ADD COLUMN "alternatePhone" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "email" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "gender" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "genderOther" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "nationality" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "nationalityOther" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "country" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "countryOther" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "governorate" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "governorateOther" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "city" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "cityOther" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "maritalStatus" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "maritalStatusOther" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "occupation" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "branch" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "specialtyCode" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "specialtyName" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "clinicName" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "doctorName" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "campaignName" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "referrerName" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "referralType" TEXT;
+ALTER TABLE "Patient" ADD COLUMN "generalNotes" TEXT;

@@ -9,6 +9,45 @@ import { asyncHandler } from "../utils/async-handler";
 import patientSpecialtyRoutes from "./patient-specialty.routes";
 
 const router = Router();
+const genderValues = ["MALE", "FEMALE", "OTHER"] as const;
+const maritalStatusValues = ["SINGLE", "MARRIED", "DIVORCED", "WIDOWED", "OTHER"] as const;
+const governorateValues = [
+  "CAIRO",
+  "GIZA",
+  "ALEXANDRIA",
+  "SHARKIA",
+  "DAKAHLIA",
+  "QALYUBIA",
+  "MINYA",
+  "ASYUT",
+  "SOHAG",
+  "LUXOR",
+  "ASWAN",
+  "OTHER"
+] as const;
+const cityValues = [
+  "NASR_CITY",
+  "HELIOPOLIS",
+  "MAADI",
+  "DOKKI",
+  "MOHANDESSIN",
+  "ZAMALEK",
+  "OTHER"
+] as const;
+const nationalityValues = [
+  "EGYPTIAN",
+  "SAUDI",
+  "EMIRATI",
+  "KUWAITI",
+  "JORDANIAN",
+  "SYRIAN",
+  "LEBANESE",
+  "IRAQI",
+  "PALESTINIAN",
+  "OTHER"
+] as const;
+const countryValues = ["EGYPT", "SAUDI_ARABIA", "UAE", "KUWAIT", "JORDAN", "SYRIA", "LEBANON", "IRAQ", "PALESTINE", "OTHER"] as const;
+const referralTypeValues = ["DOCTOR", "FRIEND", "CAMPAIGN", "SOCIAL_MEDIA", "SEARCH", "OTHER"] as const;
 
 const createSchema = z.object({
   body: z.object({
@@ -22,6 +61,31 @@ const createSchema = z.object({
     leadSource: z.enum(["FACEBOOK_AD", "GOOGLE_SEARCH", "DOCTOR_REFERRAL", "FRIEND", "OTHER"]),
     leadSourceOther: z.string().optional(),
     address: z.string().optional(),
+    alternatePhone: z.string().optional(),
+    email: z.string().email().optional(),
+    gender: z.enum(genderValues).optional(),
+    genderOther: z.string().optional(),
+    nationality: z.enum(nationalityValues).optional(),
+    nationalityOther: z.string().optional(),
+    country: z.enum(countryValues).optional(),
+    countryOther: z.string().optional(),
+    governorate: z.enum(governorateValues).optional(),
+    governorateOther: z.string().optional(),
+    city: z.enum(cityValues).optional(),
+    cityOther: z.string().optional(),
+    maritalStatus: z.enum(maritalStatusValues).optional(),
+    maritalStatusOther: z.string().optional(),
+    occupation: z.string().optional(),
+    branch: z.string().optional(),
+    specialtyCode: z.string().optional(),
+    specialtyName: z.string().optional(),
+    clinicName: z.string().optional(),
+    doctorName: z.string().optional(),
+    campaignName: z.string().optional(),
+    referrerName: z.string().optional(),
+    referralType: z.enum(referralTypeValues).optional(),
+    referralTypeOther: z.string().optional(),
+    generalNotes: z.string().optional()
   }).superRefine((value, ctx) => {
     if (value.profession === "OTHER" && !value.professionOther?.trim()) {
       ctx.addIssue({
@@ -36,6 +100,27 @@ const createSchema = z.object({
         path: ["leadSourceOther"],
         message: "leadSourceOther is required when leadSource is OTHER"
       });
+    }
+    if (value.gender === "OTHER" && !value.genderOther?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["genderOther"], message: "genderOther is required when gender is OTHER" });
+    }
+    if (value.nationality === "OTHER" && !value.nationalityOther?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["nationalityOther"], message: "nationalityOther is required when nationality is OTHER" });
+    }
+    if (value.country === "OTHER" && !value.countryOther?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["countryOther"], message: "countryOther is required when country is OTHER" });
+    }
+    if (value.governorate === "OTHER" && !value.governorateOther?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["governorateOther"], message: "governorateOther is required when governorate is OTHER" });
+    }
+    if (value.city === "OTHER" && !value.cityOther?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["cityOther"], message: "cityOther is required when city is OTHER" });
+    }
+    if (value.maritalStatus === "OTHER" && !value.maritalStatusOther?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["maritalStatusOther"], message: "maritalStatusOther is required when maritalStatus is OTHER" });
+    }
+    if (value.referralType === "OTHER" && !value.referralTypeOther?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["referralTypeOther"], message: "referralTypeOther is required when referralType is OTHER" });
     }
   })
 });
@@ -52,7 +137,32 @@ const updateSchema = z.object({
       professionOther: z.string().optional().nullable(),
       leadSource: z.enum(["FACEBOOK_AD", "GOOGLE_SEARCH", "DOCTOR_REFERRAL", "FRIEND", "OTHER"]).optional(),
       leadSourceOther: z.string().optional().nullable(),
-      address: z.string().optional()
+      address: z.string().optional(),
+      alternatePhone: z.string().optional().nullable(),
+      email: z.union([z.string().email(), z.null()]).optional(),
+      gender: z.enum(genderValues).optional().nullable(),
+      genderOther: z.string().optional().nullable(),
+      nationality: z.enum(nationalityValues).optional().nullable(),
+      nationalityOther: z.string().optional().nullable(),
+      country: z.enum(countryValues).optional().nullable(),
+      countryOther: z.string().optional().nullable(),
+      governorate: z.enum(governorateValues).optional().nullable(),
+      governorateOther: z.string().optional().nullable(),
+      city: z.enum(cityValues).optional().nullable(),
+      cityOther: z.string().optional().nullable(),
+      maritalStatus: z.enum(maritalStatusValues).optional().nullable(),
+      maritalStatusOther: z.string().optional().nullable(),
+      occupation: z.string().optional().nullable(),
+      branch: z.string().optional().nullable(),
+      specialtyCode: z.string().optional().nullable(),
+      specialtyName: z.string().optional().nullable(),
+      clinicName: z.string().optional().nullable(),
+      doctorName: z.string().optional().nullable(),
+      campaignName: z.string().optional().nullable(),
+      referrerName: z.string().optional().nullable(),
+      referralType: z.enum(referralTypeValues).optional().nullable(),
+      referralTypeOther: z.string().optional().nullable(),
+      generalNotes: z.string().optional().nullable()
     })
     .superRefine((value, ctx) => {
       if (value.profession === "OTHER" && !value.professionOther?.trim()) {
@@ -68,6 +178,27 @@ const updateSchema = z.object({
           path: ["leadSourceOther"],
           message: "leadSourceOther is required when leadSource is OTHER"
         });
+      }
+      if (value.gender === "OTHER" && !value.genderOther?.trim()) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["genderOther"], message: "genderOther is required when gender is OTHER" });
+      }
+      if (value.nationality === "OTHER" && !value.nationalityOther?.trim()) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["nationalityOther"], message: "nationalityOther is required when nationality is OTHER" });
+      }
+      if (value.country === "OTHER" && !value.countryOther?.trim()) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["countryOther"], message: "countryOther is required when country is OTHER" });
+      }
+      if (value.governorate === "OTHER" && !value.governorateOther?.trim()) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["governorateOther"], message: "governorateOther is required when governorate is OTHER" });
+      }
+      if (value.city === "OTHER" && !value.cityOther?.trim()) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["cityOther"], message: "cityOther is required when city is OTHER" });
+      }
+      if (value.maritalStatus === "OTHER" && !value.maritalStatusOther?.trim()) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["maritalStatusOther"], message: "maritalStatusOther is required when maritalStatus is OTHER" });
+      }
+      if (value.referralType === "OTHER" && !value.referralTypeOther?.trim()) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["referralTypeOther"], message: "referralTypeOther is required when referralType is OTHER" });
       }
     })
 });

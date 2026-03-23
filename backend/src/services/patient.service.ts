@@ -103,6 +103,31 @@ export const patientService = {
       leadSource: LeadSource;
       leadSourceOther?: string;
       address?: string;
+      alternatePhone?: string;
+      email?: string;
+      gender?: string;
+      genderOther?: string;
+      nationality?: string;
+      nationalityOther?: string;
+      country?: string;
+      countryOther?: string;
+      governorate?: string;
+      governorateOther?: string;
+      city?: string;
+      cityOther?: string;
+      maritalStatus?: string;
+      maritalStatusOther?: string;
+      occupation?: string;
+      branch?: string;
+      specialtyCode?: string;
+      specialtyName?: string;
+      clinicName?: string;
+      doctorName?: string;
+      campaignName?: string;
+      referrerName?: string;
+      referralType?: string;
+      referralTypeOther?: string;
+      generalNotes?: string;
     }
   ) {
     if (data.nationalId && !/^\d{14}$/.test(data.nationalId.trim())) {
@@ -113,6 +138,27 @@ export const patientService = {
     }
     if (data.leadSource === "OTHER" && !data.leadSourceOther?.trim()) {
       throw new AppError("leadSourceOther is required when leadSource is OTHER", 400);
+    }
+    if (data.gender === "OTHER" && !data.genderOther?.trim()) {
+      throw new AppError("genderOther is required when gender is OTHER", 400);
+    }
+    if (data.nationality === "OTHER" && !data.nationalityOther?.trim()) {
+      throw new AppError("nationalityOther is required when nationality is OTHER", 400);
+    }
+    if (data.country === "OTHER" && !data.countryOther?.trim()) {
+      throw new AppError("countryOther is required when country is OTHER", 400);
+    }
+    if (data.governorate === "OTHER" && !data.governorateOther?.trim()) {
+      throw new AppError("governorateOther is required when governorate is OTHER", 400);
+    }
+    if (data.city === "OTHER" && !data.cityOther?.trim()) {
+      throw new AppError("cityOther is required when city is OTHER", 400);
+    }
+    if (data.maritalStatus === "OTHER" && !data.maritalStatusOther?.trim()) {
+      throw new AppError("maritalStatusOther is required when maritalStatus is OTHER", 400);
+    }
+    if (data.referralType === "OTHER" && !data.referralTypeOther?.trim()) {
+      throw new AppError("referralTypeOther is required when referralType is OTHER", 400);
     }
 
     return prisma.$transaction(async (tx) => {
@@ -134,6 +180,31 @@ export const patientService = {
           professionOther: data.profession === "OTHER" ? data.professionOther?.trim() ?? null : null,
           leadSource: data.leadSource,
           leadSourceOther: data.leadSource === "OTHER" ? data.leadSourceOther?.trim() ?? null : null,
+          alternatePhone: data.alternatePhone?.trim() || null,
+          email: data.email?.trim() || null,
+          gender: data.gender?.trim() || null,
+          genderOther: data.gender === "OTHER" ? data.genderOther?.trim() ?? null : null,
+          nationality: data.nationality?.trim() || null,
+          nationalityOther: data.nationality === "OTHER" ? data.nationalityOther?.trim() ?? null : null,
+          country: data.country?.trim() || null,
+          countryOther: data.country === "OTHER" ? data.countryOther?.trim() ?? null : null,
+          governorate: data.governorate?.trim() || null,
+          governorateOther: data.governorate === "OTHER" ? data.governorateOther?.trim() ?? null : null,
+          city: data.city?.trim() || null,
+          cityOther: data.city === "OTHER" ? data.cityOther?.trim() ?? null : null,
+          maritalStatus: data.maritalStatus?.trim() || null,
+          maritalStatusOther: data.maritalStatus === "OTHER" ? data.maritalStatusOther?.trim() ?? null : null,
+          occupation: data.occupation?.trim() || null,
+          branch: data.branch?.trim() || null,
+          specialtyCode: data.specialtyCode?.trim() || null,
+          specialtyName: data.specialtyName?.trim() || null,
+          clinicName: data.clinicName?.trim() || null,
+          doctorName: data.doctorName?.trim() || null,
+          campaignName: data.campaignName?.trim() || null,
+          referrerName: data.referrerName?.trim() || null,
+          referralType: data.referralType?.trim() || null,
+          referralTypeOther: data.referralType === "OTHER" ? data.referralTypeOther?.trim() ?? null : null,
+          generalNotes: data.generalNotes?.trim() || null,
           address: data.address || null,
           fileNumber: counter.lastPatientFileNumber
         }
@@ -142,6 +213,42 @@ export const patientService = {
   },
 
   async update(id: string, clinicId: string | undefined, data: Record<string, unknown>) {
+    const nullableStringFields = [
+      "whatsapp",
+      "alternatePhone",
+      "email",
+      "gender",
+      "genderOther",
+      "nationality",
+      "nationalityOther",
+      "country",
+      "countryOther",
+      "governorate",
+      "governorateOther",
+      "city",
+      "cityOther",
+      "maritalStatus",
+      "maritalStatusOther",
+      "professionOther",
+      "occupation",
+      "leadSourceOther",
+      "branch",
+      "specialtyCode",
+      "specialtyName",
+      "clinicName",
+      "doctorName",
+      "campaignName",
+      "referrerName",
+      "referralType",
+      "referralTypeOther",
+      "generalNotes",
+      "address"
+    ] as const;
+    nullableStringFields.forEach((field) => {
+      if (!Object.prototype.hasOwnProperty.call(data, field)) return;
+      const value = data[field];
+      data[field] = typeof value === "string" ? value.trim() || null : value ?? null;
+    });
     if (Object.prototype.hasOwnProperty.call(data, "nationalId")) {
       const nationalId = data.nationalId;
       if (typeof nationalId === "string" && nationalId.trim()) {
@@ -167,11 +274,53 @@ export const patientService = {
     if (data.leadSource === "OTHER" && !String(data.leadSourceOther ?? "").trim()) {
       throw new AppError("leadSourceOther is required when leadSource is OTHER", 400);
     }
+    if (data.gender === "OTHER" && !String(data.genderOther ?? "").trim()) {
+      throw new AppError("genderOther is required when gender is OTHER", 400);
+    }
+    if (data.nationality === "OTHER" && !String(data.nationalityOther ?? "").trim()) {
+      throw new AppError("nationalityOther is required when nationality is OTHER", 400);
+    }
+    if (data.country === "OTHER" && !String(data.countryOther ?? "").trim()) {
+      throw new AppError("countryOther is required when country is OTHER", 400);
+    }
+    if (data.governorate === "OTHER" && !String(data.governorateOther ?? "").trim()) {
+      throw new AppError("governorateOther is required when governorate is OTHER", 400);
+    }
+    if (data.city === "OTHER" && !String(data.cityOther ?? "").trim()) {
+      throw new AppError("cityOther is required when city is OTHER", 400);
+    }
+    if (data.maritalStatus === "OTHER" && !String(data.maritalStatusOther ?? "").trim()) {
+      throw new AppError("maritalStatusOther is required when maritalStatus is OTHER", 400);
+    }
+    if (data.referralType === "OTHER" && !String(data.referralTypeOther ?? "").trim()) {
+      throw new AppError("referralTypeOther is required when referralType is OTHER", 400);
+    }
     if (data.profession && data.profession !== "OTHER") {
       data.professionOther = null;
     }
     if (data.leadSource && data.leadSource !== "OTHER") {
       data.leadSourceOther = null;
+    }
+    if (data.gender && data.gender !== "OTHER") {
+      data.genderOther = null;
+    }
+    if (data.nationality && data.nationality !== "OTHER") {
+      data.nationalityOther = null;
+    }
+    if (data.country && data.country !== "OTHER") {
+      data.countryOther = null;
+    }
+    if (data.governorate && data.governorate !== "OTHER") {
+      data.governorateOther = null;
+    }
+    if (data.city && data.city !== "OTHER") {
+      data.cityOther = null;
+    }
+    if (data.maritalStatus && data.maritalStatus !== "OTHER") {
+      data.maritalStatusOther = null;
+    }
+    if (data.referralType && data.referralType !== "OTHER") {
+      data.referralTypeOther = null;
     }
     const result = await prisma.patient.updateMany({
       where: { id, ...(clinicId ? { clinicId } : {}), deletedAt: null },

@@ -68,6 +68,7 @@ interface PrescriptionItem {
 }
 
 type PrintPaperSize = "A4" | "A5";
+type PrintLayoutMode = "withHeaderFooter" | "contentOnly";
 
 interface PrintPrescriptionParams {
   patientName: string;
@@ -154,6 +155,8 @@ const escapeHtml = (value: string) =>
 
 const printSizeStorageKeyForDoctor = (doctorStorageKey?: string) =>
   `appointments:prescription:paper-size:${doctorStorageKey?.trim() || "default"}`;
+const printLayoutStorageKeyForDoctor = (doctorStorageKey?: string) =>
+  `appointments:prescription:layout-mode:${doctorStorageKey?.trim() || "default"}`;
 
 interface PatientAssessmentExpanderProps {
   item: PatientAssessmentHistoryItem;
@@ -653,8 +656,10 @@ export function MedicalRecordModal({
   const [appointmentDoctorNotes, setAppointmentDoctorNotes] = useState("");
   const [printSizePickerOpen, setPrintSizePickerOpen] = useState(false);
   const [selectedPrintSize, setSelectedPrintSize] = useState<PrintPaperSize>("A4");
+  const [selectedPrintLayout, setSelectedPrintLayout] = useState<PrintLayoutMode>("withHeaderFooter");
   const [pendingPrintParams, setPendingPrintParams] = useState<PrintPrescriptionParams | null>(null);
   const [loadedStoredPrintSize, setLoadedStoredPrintSize] = useState(false);
+  const [loadedStoredPrintLayout, setLoadedStoredPrintLayout] = useState(false);
   const debouncedMedicineSearch = useDebounce(medicineSearchInput, 350);
 
   useEffect(() => {
@@ -832,15 +837,17 @@ export function MedicalRecordModal({
     date: string;
     diagnoses: string[];
     notes: string;
-  }, paperSize: PrintPaperSize) => {
+  }, paperSize: PrintPaperSize, layoutMode: PrintLayoutMode) => {
     const list = appointmentPrescriptionItems.filter((item) => item.name.trim());
     if (!list.length) {
       toast.warning(t("appointments.prescription.printNeedsItems"));
       return;
     }
 
-    const pageMargin = paperSize === "A5" ? "8mm" : "10mm";
+    const isContentOnly = layoutMode === "contentOnly";
+    const pageMargin = isContentOnly ? (paperSize === "A5" ? "5mm" : "6mm") : paperSize === "A5" ? "8mm" : "10mm";
     const compactClass = paperSize === "A5" ? "compact" : "";
+    const layoutBodyClass = isContentOnly ? "print-mode-content-only" : "print-mode-branded";
 
     const fullWidth = Math.max(window.screen.availWidth, 1200);
     const fullHeight = Math.max(window.screen.availHeight, 800);
@@ -854,17 +861,14 @@ export function MedicalRecordModal({
       return;
     }
 
-    const rowsHtml = list
+    const medicinesHtml = list
       .map(
         (item, index) => `
-          <tr>
-            <td>${index + 1}</td>
-            <td>${escapeHtml(item.name)}</td>
-            <td>${escapeHtml(item.dosage || "-")}</td>
-            <td>${escapeHtml(item.frequency || "-")}</td>
-            <td>${escapeHtml(item.duration || "-")}</td>
-            <td>${escapeHtml(item.instructions || "-")}</td>
-          </tr>
+          <article class="rxItem">
+            <div class="rxLine rxTitle"><span class="rxNum">${index + 1}.</span> ${escapeHtml(item.name)}</div>
+            <div class="rxLine rxMeta">${escapeHtml(item.dosage || "—")} · ${escapeHtml(item.frequency || "—")} · ${escapeHtml(item.duration || "—")}</div>
+            ${item.instructions?.trim() ? `<div class="rxLine rxInstr">${escapeHtml(item.instructions)}</div>` : ""}
+          </article>
         `
       )
       .join("");
@@ -872,163 +876,11 @@ export function MedicalRecordModal({
     const printTitle = t("appointments.prescription.printTitle");
     const isArabic = locale === "ar";
     const direction = isArabic ? "rtl" : "ltr";
-    const alignStart = isArabic ? "right" : "left";
-    const alignEnd = isArabic ? "left" : "right";
     const issueDateLabel = t("appointments.prescription.issueDate");
     const subtitle = t("appointments.prescription.printSubtitle");
-
-    printWindow.document.write(`
-      <html>
-      <head>
-        <title>${printTitle}</title>
-        <style>
-          @page { size: ${paperSize} portrait; margin: ${pageMargin}; }
-          * { box-sizing: border-box; }
-          body {
-            font-family: "Segoe UI", Tahoma, Arial, sans-serif;
-            margin: 0;
-            min-height: 100vh;
-            color: #0f172a;
-            direction: ${direction};
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-            background: #f8fafc;
-          }
-          .sheet {
-            width: 100%;
-            min-height: 100vh;
-            border: 2px solid #0f172a;
-            border-radius: 16px;
-            overflow: hidden;
-            background: #ffffff;
-          }
-          .topBar {
-            height: 6px;
-            background: linear-gradient(90deg, #f97316, #fb923c);
-          }
-          .header {
-            display: grid;
-            grid-template-columns: 76px 1fr auto;
-            gap: 12px;
-            align-items: center;
-            padding: 14px 16px;
-            border-bottom: 1px solid #e2e8f0;
-            page-break-inside: avoid;
-          }
-          .logoWrap {
-            width: 64px;
-            height: 64px;
-            border-radius: 12px;
-            border: 1px solid #e2e8f0;
-            overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: #fff;
-          }
-          .logoWrap img { width: 100%; height: 100%; object-fit: cover; }
-          .clinicTitle { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: 0.3px; }
-          .clinicSub { margin: 4px 0 0; font-size: 12px; color: #64748b; }
-          body.compact .clinicTitle { font-size: 19px; }
-          body.compact .clinicSub { font-size: 11px; }
-          .issueBlock {
-            text-align: ${alignEnd};
-            padding: 8px 10px;
-            border: 1px solid #e2e8f0;
-            border-radius: 10px;
-            background: #fff7ed;
-            min-width: 150px;
-          }
-          .issueLabel { font-size: 11px; color: #9a3412; font-weight: 700; text-transform: uppercase; }
-          .issueValue { margin-top: 4px; font-size: 13px; font-weight: 700; color: #0f172a; }
-          .content { padding: 14px 16px 16px; }
-          .metaGrid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 10px;
-            margin-bottom: 12px;
-            page-break-inside: avoid;
-          }
-          .metaCard {
-            border: 1px solid #e2e8f0;
-            border-radius: 10px;
-            padding: 8px 10px;
-            background: #ffffff;
-          }
-          .metaLabel { font-size: 11px; color: #64748b; margin-bottom: 3px; font-weight: 600; }
-          .metaValue { font-size: 13px; font-weight: 700; color: #0f172a; }
-          body.compact .metaValue { font-size: 12px; }
-          .section {
-            border: 1px solid #e2e8f0;
-            border-radius: 10px;
-            padding: 10px;
-            margin-bottom: 10px;
-            background: #ffffff;
-            page-break-inside: avoid;
-          }
-          .sectionTitle {
-            margin: 0 0 6px;
-            font-size: 12px;
-            font-weight: 800;
-            color: #1e293b;
-            text-align: ${alignStart};
-          }
-          .sectionBody { font-size: 12px; color: #334155; line-height: 1.6; }
-          .tableWrap {
-            border: 1px solid #e2e8f0;
-            border-radius: 10px;
-            overflow: hidden;
-            page-break-inside: avoid;
-            background: #ffffff;
-          }
-          table { width: 100%; border-collapse: collapse; }
-          th, td {
-            border-bottom: 1px solid #e2e8f0;
-            padding: 8px;
-            font-size: 11px;
-            vertical-align: top;
-            text-align: ${alignStart};
-          }
-          th {
-            background: #f8fafc;
-            color: #0f172a;
-            font-weight: 800;
-          }
-          tr:last-child td { border-bottom: 0; }
-          .footer {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 12px;
-            margin-top: 12px;
-            page-break-inside: avoid;
-          }
-          .signBox {
-            border: 1px dashed #94a3b8;
-            border-radius: 10px;
-            padding: 10px;
-            min-height: 56px;
-            display: flex;
-            align-items: flex-end;
-            font-size: 12px;
-            color: #334155;
-            font-weight: 600;
-          }
-          @media screen {
-            body { background: #eef2ff; }
-            .sheet {
-              max-width: ${paperSize === "A5" ? "620px" : "980px"};
-              margin: 16px auto;
-              box-shadow: 0 20px 50px rgba(2, 6, 23, 0.15);
-            }
-          }
-          @media print {
-            body { background: #fff; }
-            .sheet { box-shadow: none; }
-          }
-        </style>
-      </head>
-      <body dir="${direction}" class="${compactClass}">
-        <section class="sheet">
+    const headerHtml = isContentOnly
+      ? ""
+      : `
           <div class="topBar"></div>
           <header class="header">
             <div class="logoWrap">
@@ -1043,71 +895,357 @@ export function MedicalRecordModal({
               <div class="issueValue">${escapeHtml(params.date || "-")}</div>
             </div>
           </header>
-
-          <div class="content">
-            <section class="metaGrid">
-              <article class="metaCard">
-                <div class="metaLabel">${t("appointments.medicalFile.patient")}</div>
-                <div class="metaValue">${escapeHtml(params.patientName || "-")}</div>
-              </article>
-              <article class="metaCard">
-                <div class="metaLabel">${t("appointments.medicalFile.doctor")}</div>
-                <div class="metaValue">${escapeHtml(params.doctorName || "-")}</div>
-              </article>
-              <article class="metaCard">
-                <div class="metaLabel">${t("appointments.medicalRecord.specialty")}</div>
-                <div class="metaValue">${escapeHtml(params.specialtyLabel || "-")}</div>
-              </article>
-              <article class="metaCard">
-                <div class="metaLabel">${t("appointments.medicalFile.entryType")}</div>
-                <div class="metaValue">${escapeHtml(entryTypeLabel(params.entryType))}</div>
-              </article>
-            </section>
-
-            <section class="section">
-              <h2 class="sectionTitle">${t("patients.assessment.diagnoses")}</h2>
-              <div class="sectionBody">${diagnosesText}</div>
-            </section>
-
-            <section class="section">
-              <h2 class="sectionTitle">${t("appointments.medicalRecord.doctorNotes")}</h2>
-              <div class="sectionBody">${escapeHtml(params.notes || "-")}</div>
-            </section>
-
-            <section class="tableWrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>${t("appointments.prescription.name")}</th>
-                    <th>${t("appointments.prescription.dosage")}</th>
-                    <th>${t("appointments.prescription.frequency")}</th>
-                    <th>${t("appointments.prescription.duration")}</th>
-                    <th>${t("appointments.prescription.instructions")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${rowsHtml}
-                </tbody>
-              </table>
-            </section>
-
+        `;
+    const footerHtml = isContentOnly
+      ? ""
+      : `
             <section class="footer">
               <div class="signBox">${t("appointments.prescription.signatureDoctor")}</div>
               <div class="signBox">${t("appointments.prescription.signaturePatient")}</div>
             </section>
+        `;
+
+    printWindow.document.write(`
+      <html>
+      <head>
+        <title>${printTitle}</title>
+        <style>
+          @page { size: ${paperSize} portrait; margin: ${pageMargin}; }
+          * { box-sizing: border-box; }
+          body {
+            --reserve-top: 10mm;
+            --reserve-bottom: 12mm;
+            --fit-scale: 1;
+            --font-scale: 1;
+            --space-scale: 1;
+            --line-scale: 1;
+            --content-max: 640px;
+            --brand-primary: #0ea5b7;
+            --brand-secondary: #2563eb;
+            --ink-strong: #0f172a;
+            --ink-soft: #475569;
+            --surface-soft: #f8fbff;
+            font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+            margin: 0;
+            height: 100vh;
+            color: var(--ink-strong);
+            direction: ${direction};
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+            background: #eef6ff;
+          }
+          body.print-mode-content-only {
+            --reserve-top: 72mm;
+            --reserve-bottom: 58mm;
+            --font-scale: 0.96;
+            --space-scale: 0.9;
+            --line-scale: 0.96;
+            --content-max: 580px;
+          }
+          body.print-mode-branded {
+            --reserve-top: 10mm;
+            --reserve-bottom: 14mm;
+            --font-scale: 1;
+            --space-scale: 0.96;
+            --line-scale: 1;
+            --content-max: 640px;
+          }
+          body.compact.print-mode-content-only {
+            --reserve-top: 58mm;
+            --reserve-bottom: 46mm;
+            --font-scale: 0.88;
+            --space-scale: 0.74;
+            --line-scale: 0.9;
+            --content-max: 410px;
+          }
+          body.compact.print-mode-branded {
+            --reserve-top: 8mm;
+            --reserve-bottom: 10mm;
+            --font-scale: 0.9;
+            --space-scale: 0.78;
+            --line-scale: 0.92;
+            --content-max: 430px;
+          }
+          .sheet {
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            border: 0;
+            border-radius: 0;
+            overflow: hidden;
+            background: #ffffff;
+          }
+          .reserveZone {
+            flex-shrink: 0;
+            width: 100%;
+          }
+          .reserveZone--top { min-height: var(--reserve-top); }
+          .reserveZone--bottom { min-height: var(--reserve-bottom); }
+          .printMain {
+            flex: 1 1 auto;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+          }
+          .contentInner {
+            width: 100%;
+            max-width: min(92%, var(--content-max));
+            margin: 0 auto;
+            padding: calc(10px * var(--space-scale) * var(--fit-scale))
+              calc(12px * var(--space-scale) * var(--fit-scale))
+              calc(14px * var(--space-scale) * var(--fit-scale));
+            text-align: center;
+          }
+          body.compact .contentInner {
+            max-width: min(94%, var(--content-max));
+          }
+          .topBar {
+            height: calc(5px * var(--fit-scale));
+            background: linear-gradient(90deg, var(--brand-primary), var(--brand-secondary));
+          }
+          .header {
+            display: grid;
+            grid-template-columns: 76px 1fr auto;
+            gap: calc(10px * var(--space-scale) * var(--fit-scale));
+            align-items: center;
+            padding: calc(11px * var(--space-scale) * var(--fit-scale))
+              calc(12px * var(--space-scale) * var(--fit-scale));
+            border-bottom: 0;
+            page-break-inside: avoid;
+            width: 100%;
+            max-width: min(96%, 720px);
+            margin: 0 auto;
+            position: relative;
+          }
+          .header::after {
+            content: "";
+            position: absolute;
+            inset-inline: 14px;
+            bottom: 0;
+            height: 1px;
+            background: linear-gradient(90deg, rgba(14, 165, 183, 0), rgba(14, 165, 183, 0.35), rgba(37, 99, 235, 0));
+          }
+          body.compact .header {
+            max-width: min(98%, 480px);
+          }
+          .logoWrap {
+            width: 64px;
+            height: 64px;
+            border-radius: 12px;
+            border: 0;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #fff;
+            box-shadow: 0 4px 14px rgba(14, 165, 183, 0.12);
+          }
+          .logoWrap img { width: 100%; height: 100%; object-fit: cover; }
+          .clinicTitle { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: 0.25px; text-align: center; color: #0b2b4a; }
+          .clinicSub { margin: calc(3px * var(--space-scale) * var(--fit-scale)) 0 0; font-size: calc(12px * var(--font-scale) * var(--fit-scale)); color: #4b6b88; text-align: center; }
+          .clinicTitle { font-size: calc(22px * var(--font-scale) * var(--fit-scale)); }
+          body.compact .clinicTitle { font-size: calc(19px * var(--font-scale) * var(--fit-scale)); }
+          body.compact .clinicSub { font-size: calc(11px * var(--font-scale) * var(--fit-scale)); }
+          .issueBlock {
+            text-align: center;
+            padding: calc(6px * var(--space-scale) * var(--fit-scale))
+              calc(8px * var(--space-scale) * var(--fit-scale));
+            border: 0;
+            border-radius: calc(10px * var(--fit-scale));
+            background: linear-gradient(180deg, #f3fbff, #eef5ff);
+            min-width: 120px;
+          }
+          .issueLabel { font-size: calc(10px * var(--font-scale) * var(--fit-scale)); color: #0f5d8e; font-weight: 700; text-transform: uppercase; }
+          .issueValue { margin-top: calc(3px * var(--space-scale) * var(--fit-scale)); font-size: calc(12px * var(--font-scale) * var(--fit-scale)); font-weight: 700; color: #0b2b4a; }
+          .metaGrid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: calc(6px * var(--space-scale) * var(--fit-scale))
+              calc(10px * var(--space-scale) * var(--fit-scale));
+            margin-bottom: calc(10px * var(--space-scale) * var(--fit-scale));
+            page-break-inside: avoid;
+            justify-items: center;
+            text-align: center;
+          }
+          body.compact .metaGrid { margin-bottom: calc(8px * var(--space-scale) * var(--fit-scale)); }
+          .metaCard {
+            border: 0;
+            border-radius: calc(10px * var(--fit-scale));
+            padding: calc(4px * var(--space-scale) * var(--fit-scale))
+              calc(3px * var(--space-scale) * var(--fit-scale));
+            background: linear-gradient(180deg, #f9fcff, #f2f8ff);
+            width: 100%;
+            max-width: 280px;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+          }
+          .metaLabel { font-size: calc(10px * var(--font-scale) * var(--fit-scale)); color: #4b6b88; margin-bottom: calc(2px * var(--space-scale) * var(--fit-scale)); font-weight: 600; }
+          .metaValue { font-size: calc(12px * var(--font-scale) * var(--fit-scale)); font-weight: 700; color: #0b2b4a; }
+          body.compact .metaValue { font-size: calc(11px * var(--font-scale) * var(--fit-scale)); }
+          .section {
+            border: 0;
+            border-radius: calc(12px * var(--fit-scale));
+            padding: calc(6px * var(--space-scale) * var(--fit-scale)) 0
+              calc(8px * var(--space-scale) * var(--fit-scale));
+            margin-bottom: calc(2px * var(--space-scale) * var(--fit-scale));
+            background: linear-gradient(180deg, rgba(14, 165, 183, 0.06), rgba(37, 99, 235, 0.04));
+            page-break-inside: avoid;
+            text-align: center;
+          }
+          .sectionTitle {
+            margin: 0 0 calc(4px * var(--space-scale) * var(--fit-scale));
+            font-size: calc(12px * var(--font-scale) * var(--fit-scale));
+            font-weight: 800;
+            color: #0b2b4a;
+            text-align: center;
+          }
+          .sectionBody { font-size: calc(11px * var(--font-scale) * var(--fit-scale)); color: var(--ink-soft); line-height: calc(1.5 * var(--line-scale)); text-align: center; }
+          .rxHeading {
+            margin: calc(6px * var(--space-scale) * var(--fit-scale)) 0
+              calc(6px * var(--space-scale) * var(--fit-scale));
+            font-size: calc(12px * var(--font-scale) * var(--fit-scale));
+            font-weight: 800;
+            color: #0b2b4a;
+            text-align: center;
+          }
+          .rxList {
+            margin: 0 0 calc(6px * var(--space-scale) * var(--fit-scale));
+            page-break-inside: avoid;
+          }
+          .rxItem {
+            margin: 0 auto calc(10px * var(--space-scale) * var(--fit-scale));
+            padding: 0 calc(3px * var(--space-scale) * var(--fit-scale))
+              calc(8px * var(--space-scale) * var(--fit-scale));
+            border: 0;
+            max-width: 520px;
+            border-radius: calc(12px * var(--fit-scale));
+            background: linear-gradient(180deg, rgba(14, 165, 183, 0.05), rgba(37, 99, 235, 0.03));
+          }
+          .rxItem:last-child { margin-bottom: 0; padding-bottom: 0; }
+          body.compact .rxItem { max-width: 100%; }
+          .rxLine { font-size: calc(11px * var(--font-scale) * var(--fit-scale)); color: var(--ink-soft); line-height: calc(1.46 * var(--line-scale)); text-align: center; }
+          .rxTitle { font-size: calc(12px * var(--font-scale) * var(--fit-scale)); font-weight: 800; color: #0b2b4a; margin-bottom: calc(3px * var(--space-scale) * var(--fit-scale)); }
+          .rxNum { font-weight: 800; margin-inline-end: 4px; }
+          .rxMeta { color: #3f5f7d; }
+          .rxInstr { margin-top: calc(3px * var(--space-scale) * var(--fit-scale)); color: #315470; font-style: italic; }
+          .footer {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: calc(10px * var(--space-scale) * var(--fit-scale));
+            margin: calc(6px * var(--space-scale) * var(--fit-scale)) auto 0;
+            page-break-inside: avoid;
+            width: 100%;
+            max-width: min(92%, 640px);
+            padding: 0 calc(12px * var(--space-scale) * var(--fit-scale))
+              calc(3px * var(--space-scale) * var(--fit-scale));
+          }
+          body.compact .footer {
+            max-width: min(94%, 420px);
+          }
+          .signBox {
+            border: 0;
+            border-radius: calc(10px * var(--fit-scale));
+            padding: calc(8px * var(--space-scale) * var(--fit-scale))
+              calc(4px * var(--space-scale) * var(--fit-scale));
+            min-height: calc(44px * var(--fit-scale));
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            font-size: calc(11px * var(--font-scale) * var(--fit-scale));
+            color: #2f4f6a;
+            font-weight: 600;
+            text-align: center;
+            background: linear-gradient(180deg, #f5fbff, #edf5ff);
+          }
+          @media screen {
+            body { background: #eef2ff; }
+            .sheet {
+              max-width: ${paperSize === "A5" ? "620px" : "980px"};
+              margin: 16px auto;
+              box-shadow: 0 20px 50px rgba(2, 6, 23, 0.12);
+            }
+          }
+          @media print {
+            body { background: #fff; }
+            .sheet { box-shadow: none; }
+          }
+        </style>
+      </head>
+      <body dir="${direction}" class="${[compactClass, layoutBodyClass].filter(Boolean).join(" ")}">
+        <section class="sheet" id="print-sheet">
+          <div class="reserveZone reserveZone--top" aria-hidden="true"></div>
+          ${headerHtml}
+          <div class="printMain">
+            <div class="contentInner">
+              <section class="metaGrid">
+                <article class="metaCard">
+                  <div class="metaLabel">${t("appointments.medicalFile.patient")}</div>
+                  <div class="metaValue">${escapeHtml(params.patientName || "-")}</div>
+                </article>
+                <article class="metaCard">
+                  <div class="metaLabel">${t("appointments.medicalFile.doctor")}</div>
+                  <div class="metaValue">${escapeHtml(params.doctorName || "-")}</div>
+                </article>
+                <article class="metaCard">
+                  <div class="metaLabel">${t("appointments.medicalRecord.specialty")}</div>
+                  <div class="metaValue">${escapeHtml(params.specialtyLabel || "-")}</div>
+                </article>
+                <article class="metaCard">
+                  <div class="metaLabel">${t("appointments.medicalFile.entryType")}</div>
+                  <div class="metaValue">${escapeHtml(entryTypeLabel(params.entryType))}</div>
+                </article>
+              </section>
+
+              <section class="section">
+                <h2 class="sectionTitle">${t("patients.assessment.diagnoses")}</h2>
+                <div class="sectionBody">${diagnosesText}</div>
+              </section>
+
+              <section class="section">
+                <h2 class="sectionTitle">${t("appointments.medicalRecord.doctorNotes")}</h2>
+                <div class="sectionBody">${escapeHtml(params.notes || "-")}</div>
+              </section>
+
+              <h2 class="rxHeading">${t("appointments.prescription.medicinesHeading")}</h2>
+              <section class="rxList">
+                ${medicinesHtml}
+              </section>
+            </div>
+            ${footerHtml}
           </div>
+          <div class="reserveZone reserveZone--bottom" aria-hidden="true"></div>
         </section>
       </body>
       </html>
     `);
     printWindow.document.close();
+    const fitAndPrintSinglePage = () => {
+      try {
+        const sheet = printWindow.document.getElementById("print-sheet") as HTMLElement | null;
+        const body = printWindow.document.body;
+        if (sheet && body) {
+          let fitScale = 1;
+          const minScale = paperSize === "A5" ? 0.7 : 0.74;
+          const step = 0.03;
+          body.style.setProperty("--fit-scale", fitScale.toFixed(2));
+          for (let attempt = 0; attempt < 14; attempt += 1) {
+            const overflow = sheet.scrollHeight - sheet.clientHeight;
+            if (overflow <= 2) break;
+            fitScale = Math.max(minScale, fitScale - step);
+            body.style.setProperty("--fit-scale", fitScale.toFixed(2));
+            if (fitScale <= minScale) break;
+          }
+        }
+      } catch {}
+      printWindow.focus();
+      printWindow.print();
+    };
     try {
       printWindow.moveTo(0, 0);
       printWindow.resizeTo(fullWidth, fullHeight);
     } catch {}
-    printWindow.focus();
-    printWindow.print();
+    printWindow.setTimeout(fitAndPrintSinglePage, 140);
   };
 
   const openPrintSizePicker = (params: PrintPrescriptionParams) => {
@@ -1117,7 +1255,9 @@ export function MedicalRecordModal({
       return;
     }
     let nextSize: PrintPaperSize = "A4";
+    let nextLayout: PrintLayoutMode = "withHeaderFooter";
     let loadedFromStorage = false;
+    let loadedLayoutFromStorage = false;
     try {
       const storedSize =
         typeof window !== "undefined"
@@ -1127,9 +1267,19 @@ export function MedicalRecordModal({
         nextSize = storedSize;
         loadedFromStorage = true;
       }
+      const storedLayout =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem(printLayoutStorageKeyForDoctor(params.doctorStorageKey))
+          : null;
+      if (storedLayout === "withHeaderFooter" || storedLayout === "contentOnly") {
+        nextLayout = storedLayout;
+        loadedLayoutFromStorage = true;
+      }
     } catch {}
     setSelectedPrintSize(nextSize);
+    setSelectedPrintLayout(nextLayout);
     setLoadedStoredPrintSize(loadedFromStorage);
+    setLoadedStoredPrintLayout(loadedLayoutFromStorage);
     setPendingPrintParams(params);
     setPrintSizePickerOpen(true);
   };
@@ -1139,9 +1289,10 @@ export function MedicalRecordModal({
     try {
       if (typeof window !== "undefined") {
         window.localStorage.setItem(printSizeStorageKeyForDoctor(pendingPrintParams.doctorStorageKey), selectedPrintSize);
+        window.localStorage.setItem(printLayoutStorageKeyForDoctor(pendingPrintParams.doctorStorageKey), selectedPrintLayout);
       }
     } catch {}
-    printAppointmentPrescription(pendingPrintParams, selectedPrintSize);
+    printAppointmentPrescription(pendingPrintParams, selectedPrintSize, selectedPrintLayout);
     setPrintSizePickerOpen(false);
     setPendingPrintParams(null);
   };
@@ -1601,6 +1752,11 @@ export function MedicalRecordModal({
                 ? t("appointments.prescription.paperSizeRememberedLoaded")
                 : t("appointments.prescription.paperSizeRememberHint")}
             </p>
+            <p className="text-xs text-slate-500">
+              {loadedStoredPrintLayout
+                ? t("appointments.prescription.layoutRememberedLoaded")
+                : t("appointments.prescription.layoutRememberHint")}
+            </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <button
@@ -1657,6 +1813,35 @@ export function MedicalRecordModal({
               </div>
               <p className="text-xs text-slate-600">{t("appointments.prescription.paperSizeA5Desc")}</p>
             </button>
+          </div>
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-slate-700">{t("appointments.prescription.layoutModeTitle")}</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setSelectedPrintLayout("withHeaderFooter")}
+                className={`rounded-2xl border p-3 text-left transition ${
+                  selectedPrintLayout === "withHeaderFooter"
+                    ? "border-orange-400 bg-orange-50 ring-2 ring-orange-200/70"
+                    : "border-slate-200 bg-white hover:border-orange-300 hover:bg-orange-50/30"
+                }`}
+              >
+                <p className="text-sm font-semibold text-slate-900">{t("appointments.prescription.layoutWithHeaderFooter")}</p>
+                <p className="mt-1 text-xs text-slate-600">{t("appointments.prescription.layoutWithHeaderFooterDesc")}</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedPrintLayout("contentOnly")}
+                className={`rounded-2xl border p-3 text-left transition ${
+                  selectedPrintLayout === "contentOnly"
+                    ? "border-sky-400 bg-sky-50 ring-2 ring-sky-200/70"
+                    : "border-slate-200 bg-white hover:border-sky-300 hover:bg-sky-50/30"
+                }`}
+              >
+                <p className="text-sm font-semibold text-slate-900">{t("appointments.prescription.layoutContentOnly")}</p>
+                <p className="mt-1 text-xs text-slate-600">{t("appointments.prescription.layoutContentOnlyDesc")}</p>
+              </button>
+            </div>
           </div>
           <div className="flex items-center justify-end gap-2">
             <button

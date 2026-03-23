@@ -39,18 +39,83 @@ import { cn } from "@/lib/utils";
 import { specialtyService, VisitEntryType } from "@/lib/specialty-service";
 import { MedicalRecordModal, PatientMedicalRecordContext } from "@/components/appointments/medical-record-modal";
 
+const REFERRAL_TYPE_ENUM = ["DOCTOR", "FRIEND", "CAMPAIGN", "SOCIAL_MEDIA", "SEARCH", "OTHER"] as const;
+const NATIONALITY_ENUM = [
+  "EGYPTIAN",
+  "SAUDI",
+  "EMIRATI",
+  "KUWAITI",
+  "JORDANIAN",
+  "SYRIAN",
+  "LEBANESE",
+  "IRAQI",
+  "PALESTINIAN",
+  "OTHER"
+] as const;
+const COUNTRY_ENUM = ["EGYPT", "SAUDI_ARABIA", "UAE", "KUWAIT", "JORDAN", "SYRIA", "LEBANON", "IRAQ", "PALESTINE", "OTHER"] as const;
+const GOVERNORATE_ENUM = [
+  "CAIRO",
+  "GIZA",
+  "ALEXANDRIA",
+  "SHARKIA",
+  "DAKAHLIA",
+  "QALYUBIA",
+  "MINYA",
+  "ASYUT",
+  "SOHAG",
+  "LUXOR",
+  "ASWAN",
+  "OTHER"
+] as const;
+
+function splitReferralForForm(
+  referralType: string | null | undefined,
+  referralTypeOther: string | null | undefined
+): { referralType?: PatientFormValues["referralType"]; referralTypeOther: string } {
+  if (!referralType) return { referralType: undefined, referralTypeOther: referralTypeOther ?? "" };
+  if ((REFERRAL_TYPE_ENUM as readonly string[]).includes(referralType)) {
+    return { referralType: referralType as PatientFormValues["referralType"], referralTypeOther: referralTypeOther ?? "" };
+  }
+  return { referralType: "OTHER", referralTypeOther: (referralTypeOther?.trim() || referralType).trim() };
+}
+
 type PatientRow = {
   id: string;
   name: string;
   nationalId?: string | null;
   phone: string;
   whatsapp: string;
+  alternatePhone?: string | null;
+  email?: string | null;
   fileNumber: number;
   age: number | null;
+  gender?: string | null;
+  genderOther?: string | null;
+  nationality?: string | null;
+  nationalityOther?: string | null;
+  country?: string | null;
+  countryOther?: string | null;
+  governorate?: string | null;
+  governorateOther?: string | null;
+  city?: string | null;
+  cityOther?: string | null;
+  maritalStatus?: string | null;
+  maritalStatusOther?: string | null;
   profession: string;
   professionOther?: string | null;
+  occupation?: string | null;
   leadSource: string;
   leadSourceOther?: string | null;
+  branch?: string | null;
+  specialtyCode?: string | null;
+  specialtyName?: string | null;
+  clinicNameValue?: string | null;
+  doctorName?: string | null;
+  campaignName?: string | null;
+  referrerName?: string | null;
+  referralType?: string | null;
+  referralTypeOther?: string | null;
+  generalNotes?: string | null;
   dateOfBirth?: string | null;
   address?: string | null;
   clinicId?: string;
@@ -263,12 +328,37 @@ export default function PatientsPage() {
         nationalId: item.nationalId ?? null,
         phone: item.phone,
         whatsapp: item.whatsapp ?? "-",
+        alternatePhone: item.alternatePhone ?? null,
+        email: item.email ?? null,
         fileNumber: item.fileNumber,
         age: item.age ?? null,
+        gender: item.gender ?? null,
+        genderOther: item.genderOther ?? null,
+        nationality: item.nationality ?? null,
+        nationalityOther: item.nationalityOther ?? null,
+        country: item.country ?? null,
+        countryOther: item.countryOther ?? null,
+        governorate: item.governorate ?? null,
+        governorateOther: item.governorateOther ?? null,
+        city: item.city ?? null,
+        cityOther: item.cityOther ?? null,
+        maritalStatus: item.maritalStatus ?? null,
+        maritalStatusOther: item.maritalStatusOther ?? null,
         profession: item.profession,
         professionOther: item.professionOther ?? null,
+        occupation: item.occupation ?? null,
         leadSource: item.leadSource,
         leadSourceOther: item.leadSourceOther ?? null,
+        branch: item.branch ?? null,
+        specialtyCode: item.specialtyCode ?? null,
+        specialtyName: item.specialtyName ?? null,
+        clinicNameValue: item.clinicName ?? null,
+        doctorName: item.doctorName ?? null,
+        campaignName: item.campaignName ?? null,
+        referrerName: item.referrerName ?? null,
+        referralType: item.referralType ?? null,
+        referralTypeOther: item.referralTypeOther ?? null,
+        generalNotes: item.generalNotes ?? null,
         dateOfBirth: item.dateOfBirth ?? null,
         address: item.address ?? null,
         clinicId: clinic?.id,
@@ -697,11 +787,34 @@ export default function PatientsPage() {
         nationalId: values.nationalId?.trim() || undefined,
         phone: values.phone.trim(),
         whatsapp: values.whatsapp || undefined,
+        alternatePhone: values.alternatePhone || undefined,
+        email: values.email?.trim() || undefined,
         dateOfBirth: values.dateOfBirth || undefined,
+        gender: values.gender || undefined,
+        genderOther: values.genderOther || undefined,
+        nationality: values.nationality || undefined,
+        nationalityOther: values.nationalityOther || undefined,
+        country: values.country || undefined,
+        countryOther: values.countryOther || undefined,
+        governorate: values.governorate || undefined,
+        governorateOther: values.governorateOther || undefined,
+        maritalStatus: values.maritalStatus || undefined,
+        maritalStatusOther: values.maritalStatusOther || undefined,
         profession: values.profession,
         professionOther: values.professionOther || undefined,
+        occupation: values.occupation || undefined,
         leadSource: values.leadSource,
         leadSourceOther: values.leadSourceOther || undefined,
+        branch: values.branch || undefined,
+        specialtyCode: values.specialtyCode || undefined,
+        specialtyName: values.specialtyName || undefined,
+        clinicName: values.clinicName || undefined,
+        doctorName: values.doctorName || undefined,
+        campaignName: values.campaignName || undefined,
+        referrerName: values.referrerName || undefined,
+        referralType: values.referralType,
+        referralTypeOther: values.referralTypeOther || undefined,
+        generalNotes: values.generalNotes || undefined,
         address: values.address || undefined
       };
       let patientId = editing?.id ?? "";
@@ -770,6 +883,31 @@ export default function PatientsPage() {
                   nationalId: editing.nationalId ?? "",
                   phone: editing.phone === "-" ? "" : editing.phone,
                   whatsapp: editing.whatsapp === "-" ? "" : editing.whatsapp,
+                  alternatePhone: editing.alternatePhone ?? "",
+                  email: editing.email ?? "",
+                  gender:
+                    (["MALE", "FEMALE", "OTHER"].includes(String(editing.gender)) ? editing.gender : "MALE") as PatientFormValues["gender"],
+                  genderOther: editing.genderOther ?? "",
+                  nationality:
+                    ((NATIONALITY_ENUM as readonly string[]).includes(String(editing.nationality))
+                      ? editing.nationality
+                      : "EGYPTIAN") as PatientFormValues["nationality"],
+                  nationalityOther: editing.nationalityOther ?? "",
+                  country:
+                    ((COUNTRY_ENUM as readonly string[]).includes(String(editing.country))
+                      ? editing.country
+                      : "EGYPT") as PatientFormValues["country"],
+                  countryOther: editing.countryOther ?? "",
+                  governorate:
+                    ((GOVERNORATE_ENUM as readonly string[]).includes(String(editing.governorate))
+                      ? editing.governorate
+                      : "CAIRO") as PatientFormValues["governorate"],
+                  governorateOther: editing.governorateOther ?? "",
+                  maritalStatus:
+                    (["SINGLE", "MARRIED", "DIVORCED", "WIDOWED", "OTHER"].includes(String(editing.maritalStatus))
+                      ? editing.maritalStatus
+                      : "SINGLE") as PatientFormValues["maritalStatus"],
+                  maritalStatusOther: editing.maritalStatusOther ?? "",
                   profession:
                     ([
                       "ADMIN_EMPLOYEE",
@@ -788,6 +926,16 @@ export default function PatientsPage() {
                   leadSourceOther: editing.leadSourceOther ?? "",
                   dateOfBirth: editing.dateOfBirth ? String(editing.dateOfBirth).slice(0, 10) : "",
                   professionOther: editing.professionOther ?? "",
+                  occupation: editing.occupation ?? "",
+                  branch: editing.branch ?? "",
+                  specialtyCode: editing.specialtyCode ?? "",
+                  specialtyName: editing.specialtyName ?? "",
+                  clinicName: editing.clinicNameValue ?? "",
+                  doctorName: editing.doctorName ?? "",
+                  campaignName: editing.campaignName ?? "",
+                  referrerName: editing.referrerName ?? "",
+                  ...splitReferralForForm(editing.referralType, editing.referralTypeOther),
+                  generalNotes: editing.generalNotes ?? "",
                   address: editing.address ?? "",
                   createAppointmentNow: false
                 }
@@ -1125,7 +1273,7 @@ export default function PatientsPage() {
                         <div
                           className={cn(
                             "overflow-hidden transition-all duration-300 ease-out",
-                            isExpanded ? "mt-1 max-h-[1200px] opacity-100 pointer-events-auto" : "max-h-0 opacity-0 pointer-events-none"
+                            isExpanded ? "mt-1 max-h-[2200px] opacity-100 pointer-events-auto" : "max-h-0 opacity-0 pointer-events-none"
                           )}
                         >
                           <div className={cn("space-y-3", isExpanded && "pt-2")}>
@@ -1162,6 +1310,60 @@ export default function PatientsPage() {
                               <div className="col-span-2 rounded-xl bg-white/90 p-2">
                                 <p className="text-xs text-slate-500">{t("patients.card.address")}</p>
                                 <p className="mt-0.5 font-semibold text-slate-800 break-words">{row.address || t("patients.card.notSet")}</p>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                              <div className="rounded-xl bg-white/90 p-2">
+                                <p className="text-xs text-slate-500">البريد الإلكتروني</p>
+                                <p className="mt-0.5 font-semibold text-slate-800 break-words">{row.email || t("patients.card.notSet")}</p>
+                              </div>
+                              <div className="rounded-xl bg-white/90 p-2">
+                                <p className="text-xs text-slate-500">هاتف بديل</p>
+                                <p className="mt-0.5 font-semibold text-slate-800 break-words">{row.alternatePhone || t("patients.card.notSet")}</p>
+                              </div>
+                              <div className="rounded-xl bg-white/90 p-2">
+                                <p className="text-xs text-slate-500">الفرع / العيادة</p>
+                                <p className="mt-0.5 font-semibold text-slate-800 break-words">{row.branch || row.clinicNameValue || t("patients.card.notSet")}</p>
+                              </div>
+                              <div className="rounded-xl bg-white/90 p-2">
+                                <p className="text-xs text-slate-500">التخصص / الطبيب</p>
+                                <p className="mt-0.5 font-semibold text-slate-800 break-words">{row.specialtyName || row.doctorName || t("patients.card.notSet")}</p>
+                              </div>
+                              <div className="rounded-xl bg-white/90 p-2">
+                                <p className="text-xs text-slate-500">النوع</p>
+                                <p className="mt-0.5 font-semibold text-slate-800 break-words">
+                                  {row.gender === "FEMALE"
+                                    ? "انثى"
+                                    : row.gender === "MALE"
+                                      ? "ذكر"
+                                      : row.gender === "OTHER"
+                                        ? row.genderOther || "اخرى"
+                                        : t("patients.card.notSet")}
+                                </p>
+                              </div>
+                              <div className="rounded-xl bg-white/90 p-2">
+                                <p className="text-xs text-slate-500">نوع التحويل</p>
+                                <p className="mt-0.5 font-semibold text-slate-800 break-words">
+                                  {row.referralType === "OTHER"
+                                    ? row.referralTypeOther || t("patients.card.notSet")
+                                    : row.referralType
+                                      ? row.referralType
+                                      : t("patients.card.notSet")}
+                                </p>
+                              </div>
+                              <div className="rounded-xl bg-white/90 p-2">
+                                <p className="text-xs text-slate-500">اسم المحول / الحملة</p>
+                                <p className="mt-0.5 font-semibold text-slate-800 break-words">
+                                  {[row.referrerName, row.campaignName].filter(Boolean).join(" · ") || t("patients.card.notSet")}
+                                </p>
+                              </div>
+                              <div className="rounded-xl bg-white/90 p-2">
+                                <p className="text-xs text-slate-500">المهنة (نص)</p>
+                                <p className="mt-0.5 font-semibold text-slate-800 break-words">{row.occupation || t("patients.card.notSet")}</p>
+                              </div>
+                              <div className="col-span-2 rounded-xl bg-white/90 p-2">
+                                <p className="text-xs text-slate-500">ملاحظات عامة</p>
+                                <p className="mt-0.5 font-semibold text-slate-800 break-words">{row.generalNotes || t("patients.card.notSet")}</p>
                               </div>
                             </div>
                           </div>

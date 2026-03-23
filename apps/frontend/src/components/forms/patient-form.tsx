@@ -13,16 +13,70 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { doctorService } from "@/lib/doctor-service";
 import { specialtyService, VisitEntryType } from "@/lib/specialty-service";
 
+const referralTypeValues = ["DOCTOR", "FRIEND", "CAMPAIGN", "SOCIAL_MEDIA", "SEARCH", "OTHER"] as const;
+const nationalityValues = [
+  "EGYPTIAN",
+  "SAUDI",
+  "EMIRATI",
+  "KUWAITI",
+  "JORDANIAN",
+  "SYRIAN",
+  "LEBANESE",
+  "IRAQI",
+  "PALESTINIAN",
+  "OTHER"
+] as const;
+const countryValues = ["EGYPT", "SAUDI_ARABIA", "UAE", "KUWAIT", "JORDAN", "SYRIA", "LEBANON", "IRAQ", "PALESTINE", "OTHER"] as const;
+const governorateValues = [
+  "CAIRO",
+  "GIZA",
+  "ALEXANDRIA",
+  "SHARKIA",
+  "DAKAHLIA",
+  "QALYUBIA",
+  "MINYA",
+  "ASYUT",
+  "SOHAG",
+  "LUXOR",
+  "ASWAN",
+  "OTHER"
+] as const;
 const patientSchema = z.object({
   fullName: z.string().min(2, "Full name is required"),
   nationalId: z.string().optional(),
   phone: z.string().min(3, "Phone is required"),
   whatsapp: z.string().optional(),
+  alternatePhone: z.string().optional(),
+  email: z.preprocess((val) => (val === "" ? undefined : val), z.string().email("Invalid email").optional()),
   dateOfBirth: z.string().optional(),
+  gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
+  genderOther: z.string().optional(),
+  nationality: z.enum(nationalityValues).optional(),
+  nationalityOther: z.string().optional(),
+  country: z.enum(countryValues).optional(),
+  countryOther: z.string().optional(),
+  governorate: z.enum(governorateValues).optional(),
+  governorateOther: z.string().optional(),
+  maritalStatus: z.enum(["SINGLE", "MARRIED", "DIVORCED", "WIDOWED", "OTHER"]).optional(),
+  maritalStatusOther: z.string().optional(),
   profession: z.enum(["ADMIN_EMPLOYEE", "FREELANCER", "DRIVER", "ENGINEER", "FACTORY_WORKER", "OTHER"]),
   professionOther: z.string().optional(),
+  occupation: z.string().optional(),
   leadSource: z.enum(["FACEBOOK_AD", "GOOGLE_SEARCH", "DOCTOR_REFERRAL", "FRIEND", "OTHER"]),
   leadSourceOther: z.string().optional(),
+  branch: z.string().optional(),
+  specialtyCode: z.string().optional(),
+  specialtyName: z.string().optional(),
+  clinicName: z.string().optional(),
+  doctorName: z.string().optional(),
+  campaignName: z.string().optional(),
+  referrerName: z.string().optional(),
+  referralType: z.preprocess(
+    (v) => (v === "" || v === null || v === undefined ? undefined : v),
+    z.enum(referralTypeValues).optional()
+  ),
+  referralTypeOther: z.string().optional(),
+  generalNotes: z.string().optional(),
   address: z.string().optional(),
   createAppointmentNow: z.boolean().optional(),
   appointmentSpecialtyCode: z.string().optional(),
@@ -54,6 +108,24 @@ const patientSchema = z.object({
       path: ["leadSourceOther"],
       message: "Lead source other is required when lead source is OTHER"
     });
+  }
+  if (value.gender === "OTHER" && !value.genderOther?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["genderOther"], message: "Gender other is required" });
+  }
+  if (value.nationality === "OTHER" && !value.nationalityOther?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["nationalityOther"], message: "Nationality other is required" });
+  }
+  if (value.country === "OTHER" && !value.countryOther?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["countryOther"], message: "Country other is required" });
+  }
+  if (value.governorate === "OTHER" && !value.governorateOther?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["governorateOther"], message: "Governorate other is required" });
+  }
+  if (value.maritalStatus === "OTHER" && !value.maritalStatusOther?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["maritalStatusOther"], message: "Marital status other is required" });
+  }
+  if (value.referralType === "OTHER" && !value.referralTypeOther?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["referralTypeOther"], message: "Referral type other is required" });
   }
   if (value.createAppointmentNow) {
     if (!value.appointmentSpecialtyCode?.trim()) {
@@ -113,11 +185,34 @@ export function PatientForm({ onSubmit, initialValues, submitLabel, clinicScope,
       nationalId: initialValues?.nationalId ?? "",
       phone: initialValues?.phone ?? "",
       whatsapp: initialValues?.whatsapp ?? "",
+      alternatePhone: initialValues?.alternatePhone ?? "",
+      email: initialValues?.email ?? "",
       dateOfBirth: initialValues?.dateOfBirth ?? "",
+      gender: initialValues?.gender ?? "MALE",
+      genderOther: initialValues?.genderOther ?? "",
+      nationality: initialValues?.nationality ?? "EGYPTIAN",
+      nationalityOther: initialValues?.nationalityOther ?? "",
+      country: initialValues?.country ?? "EGYPT",
+      countryOther: initialValues?.countryOther ?? "",
+      governorate: initialValues?.governorate ?? "CAIRO",
+      governorateOther: initialValues?.governorateOther ?? "",
+      maritalStatus: initialValues?.maritalStatus ?? "SINGLE",
+      maritalStatusOther: initialValues?.maritalStatusOther ?? "",
       profession: initialValues?.profession ?? "ADMIN_EMPLOYEE",
       professionOther: initialValues?.professionOther ?? "",
+      occupation: initialValues?.occupation ?? "",
       leadSource: initialValues?.leadSource ?? "GOOGLE_SEARCH",
       leadSourceOther: initialValues?.leadSourceOther ?? "",
+      branch: initialValues?.branch ?? "",
+      specialtyCode: initialValues?.specialtyCode ?? "",
+      specialtyName: initialValues?.specialtyName ?? "",
+      clinicName: initialValues?.clinicName ?? "",
+      doctorName: initialValues?.doctorName ?? "",
+      campaignName: initialValues?.campaignName ?? "",
+      referrerName: initialValues?.referrerName ?? "",
+      referralType: initialValues?.referralType,
+      referralTypeOther: initialValues?.referralTypeOther ?? "",
+      generalNotes: initialValues?.generalNotes ?? "",
       address: initialValues?.address ?? "",
       createAppointmentNow: initialValues?.createAppointmentNow ?? false,
       appointmentSpecialtyCode: initialValues?.appointmentSpecialtyCode ?? "",
@@ -132,25 +227,44 @@ export function PatientForm({ onSubmit, initialValues, submitLabel, clinicScope,
   });
 
   const dateOfBirth = watch("dateOfBirth");
+  const gender = watch("gender");
+  const nationality = watch("nationality");
+  const country = watch("country");
+  const governorate = watch("governorate");
+  const maritalStatus = watch("maritalStatus");
+  const referralType = watch("referralType");
   const profession = watch("profession");
   const leadSource = watch("leadSource");
+  const specialtyCode = watch("specialtyCode");
   const createAppointmentNow = watch("createAppointmentNow");
   const appointmentSpecialtyCode = watch("appointmentSpecialtyCode");
   const clinicSpecialtiesQuery = useQuery({
     queryKey: ["patients", "form", "clinic-specialties", clinicScope ?? "mine"],
     queryFn: () => specialtyService.listMyClinicSpecialties(clinicScope),
-    enabled: enableAppointmentSection
+    enabled: true
   });
-  const selectedSpecialtyName = useMemo(
+  const selectedAppointmentSpecialtyName = useMemo(
     () =>
       (clinicSpecialtiesQuery.data ?? [])
         .find((item) => item.specialty.code === appointmentSpecialtyCode)
         ?.specialty.name ?? "",
     [appointmentSpecialtyCode, clinicSpecialtiesQuery.data]
   );
+  const selectedSpecialtyName = useMemo(
+    () =>
+      (clinicSpecialtiesQuery.data ?? [])
+        .find((item) => item.specialty.code === specialtyCode)
+        ?.specialty.name ?? "",
+    [specialtyCode, clinicSpecialtiesQuery.data]
+  );
   const doctorsQuery = useQuery({
     queryKey: ["patients", "form", "doctors", clinicScope ?? "mine", selectedSpecialtyName ?? "all"],
     queryFn: () => doctorService.list(clinicScope, selectedSpecialtyName || undefined),
+    enabled: Boolean(specialtyCode)
+  });
+  const appointmentDoctorsQuery = useQuery({
+    queryKey: ["patients", "form", "appointment-doctors", clinicScope ?? "mine", selectedAppointmentSpecialtyName ?? "all"],
+    queryFn: () => doctorService.list(clinicScope, selectedAppointmentSpecialtyName || undefined),
     enabled: enableAppointmentSection && createAppointmentNow && Boolean(appointmentSpecialtyCode)
   });
   const liveAge = (() => {
@@ -176,7 +290,7 @@ export function PatientForm({ onSubmit, initialValues, submitLabel, clinicScope,
         </motion.div>
         <div>
           <div className="mb-1 flex items-center justify-between">
-            <label className="block text-base text-slate-600">{t("field.nationalId")}</label>
+            <label className="block text-base text-slate-600">{t("field.nationalId")} (اختياري)</label>
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -204,21 +318,200 @@ export function PatientForm({ onSubmit, initialValues, submitLabel, clinicScope,
           <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("phone")} />
         </div>
         <div>
-          <label className="mb-1 block text-base text-slate-600">{t("field.whatsapp")}</label>
+          <label className="mb-1 block text-base text-slate-600">{t("field.whatsapp")} (اختياري)</label>
           <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("whatsapp")} />
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <label className="mb-1 block text-base text-slate-600">{t("field.dateOfBirth")}</label>
+          <label className="mb-1 block text-base text-slate-600">هاتف بديل (اختياري)</label>
+          <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("alternatePhone")} />
+        </div>
+        <div>
+          <label className="mb-1 block text-base text-slate-600">البريد الإلكتروني (اختياري)</label>
+          <input type="email" className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("email")} />
+          {errors.email ? <p className="mt-1 text-xs text-red-500">{errors.email.message}</p> : null}
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-base text-slate-600">النوع (اختياري)</label>
+          <select className="w-full rounded-2xl border border-slate-200 px-3 py-2 focus:border-orange-500 focus:outline-none" {...register("gender")}>
+            <option value="MALE">ذكر</option>
+            <option value="FEMALE">انثى</option>
+            <option value="OTHER">اخرى</option>
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-base text-slate-600">الحالة الاجتماعية (اختياري)</label>
+          <select className="w-full rounded-2xl border border-slate-200 px-3 py-2 focus:border-orange-500 focus:outline-none" {...register("maritalStatus")}>
+            <option value="SINGLE">اعزب</option>
+            <option value="MARRIED">متزوج</option>
+            <option value="DIVORCED">مطلق</option>
+            <option value="WIDOWED">ارمل</option>
+            <option value="OTHER">اخرى</option>
+          </select>
+        </div>
+      </div>
+      {gender === "OTHER" ? (
+        <div>
+          <label className="mb-1 block text-base text-slate-600">النوع (أخرى)</label>
+          <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("genderOther")} />
+        </div>
+      ) : null}
+      {maritalStatus === "OTHER" ? (
+        <div>
+          <label className="mb-1 block text-base text-slate-600">الحالة الاجتماعية (أخرى)</label>
+          <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("maritalStatusOther")} />
+        </div>
+      ) : null}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-base text-slate-600">{t("field.dateOfBirth")} (اختياري)</label>
           <input type="date" className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("dateOfBirth")} />
           <p className="mt-1 text-xs text-slate-500">Age: {liveAge ?? "-"}</p>
         </div>
         <div>
-          <label className="mb-1 block text-base text-slate-600">{t("field.address")}</label>
+          <label className="mb-1 block text-base text-slate-600">{t("field.address")} (اختياري)</label>
           <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("address")} />
         </div>
       </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div>
+          <label className="mb-1 block text-base text-slate-600">الجنسية (اختياري)</label>
+          <select className="w-full rounded-2xl border border-slate-200 px-3 py-2 focus:border-orange-500 focus:outline-none" {...register("nationality")}>
+            <option value="EGYPTIAN">مصري</option>
+            <option value="SAUDI">سعودي</option>
+            <option value="EMIRATI">إماراتي</option>
+            <option value="KUWAITI">كويتي</option>
+            <option value="JORDANIAN">أردني</option>
+            <option value="SYRIAN">سوري</option>
+            <option value="LEBANESE">لبناني</option>
+            <option value="IRAQI">عراقي</option>
+            <option value="PALESTINIAN">فلسطيني</option>
+            <option value="OTHER">اخرى</option>
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-base text-slate-600">الدولة (اختياري)</label>
+          <select className="w-full rounded-2xl border border-slate-200 px-3 py-2 focus:border-orange-500 focus:outline-none" {...register("country")}>
+            <option value="EGYPT">مصر</option>
+            <option value="SAUDI_ARABIA">السعودية</option>
+            <option value="UAE">الإمارات</option>
+            <option value="KUWAIT">الكويت</option>
+            <option value="JORDAN">الأردن</option>
+            <option value="SYRIA">سوريا</option>
+            <option value="LEBANON">لبنان</option>
+            <option value="IRAQ">العراق</option>
+            <option value="PALESTINE">فلسطين</option>
+            <option value="OTHER">اخرى</option>
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-base text-slate-600">المحافظة (اختياري)</label>
+          <select className="w-full rounded-2xl border border-slate-200 px-3 py-2 focus:border-orange-500 focus:outline-none" {...register("governorate")}>
+            <option value="CAIRO">القاهرة</option>
+            <option value="GIZA">الجيزة</option>
+            <option value="ALEXANDRIA">الاسكندرية</option>
+            <option value="SHARKIA">الشرقية</option>
+            <option value="DAKAHLIA">الدقهلية</option>
+            <option value="QALYUBIA">القليوبية</option>
+            <option value="MINYA">المنيا</option>
+            <option value="ASYUT">أسيوط</option>
+            <option value="SOHAG">سوهاج</option>
+            <option value="LUXOR">الأقصر</option>
+            <option value="ASWAN">أسوان</option>
+            <option value="OTHER">اخرى</option>
+          </select>
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-base text-slate-600">المهنة (نص) (اختياري)</label>
+          <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("occupation")} />
+        </div>
+      </div>
+      {nationality === "OTHER" ? <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" placeholder="الجنسية (أخرى)" {...register("nationalityOther")} /> : null}
+      {country === "OTHER" ? <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" placeholder="الدولة (أخرى)" {...register("countryOther")} /> : null}
+      {governorate === "OTHER" ? <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" placeholder="المحافظة (أخرى)" {...register("governorateOther")} /> : null}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div>
+          <label className="mb-1 block text-base text-slate-600">الفرع (اختياري)</label>
+          <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("branch")} />
+        </div>
+        <div>
+          <label className="mb-1 block text-base text-slate-600">العيادة (اختياري)</label>
+          <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("clinicName")} />
+        </div>
+        <div>
+          <label className="mb-1 block text-base text-slate-600">التخصص (اختياري)</label>
+          <select
+            className="w-full rounded-2xl border border-slate-200 px-3 py-2 focus:border-orange-500 focus:outline-none"
+            {...register("specialtyCode")}
+            onChange={(event) => {
+              const code = event.target.value;
+              setValue("specialtyCode", code, { shouldDirty: true });
+              const selected = (clinicSpecialtiesQuery.data ?? []).find((item) => item.specialty.code === code);
+              setValue("specialtyName", selected?.specialty.nameAr ?? selected?.specialty.name ?? "", { shouldDirty: true });
+              setValue("doctorName", "", { shouldDirty: true });
+            }}
+          >
+            <option value="">اختر التخصص</option>
+            {(clinicSpecialtiesQuery.data ?? []).map((item) => (
+              <option key={item.id} value={item.specialty.code}>
+                {item.specialty.nameAr}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-base text-slate-600">اسم الطبيب (اختياري)</label>
+          <select
+            className="w-full rounded-2xl border border-slate-200 px-3 py-2 focus:border-orange-500 focus:outline-none"
+            {...register("doctorName")}
+          >
+            <option value="">اختر الطبيب</option>
+            {(doctorsQuery.data ?? []).map((doctor) => {
+              const name = `${doctor.user?.firstName ?? ""} ${doctor.user?.lastName ?? ""}`.trim();
+              return (
+                <option key={doctor.id} value={name}>
+                  {name}
+                </option>
+              );
+            })}
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-base text-slate-600">اسم الحملة (اختياري)</label>
+          <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("campaignName")} />
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-base text-slate-600">اسم المحول (اختياري)</label>
+          <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("referrerName")} />
+        </div>
+        <div>
+          <label className="mb-1 block text-base text-slate-600">نوع التحويل (اختياري)</label>
+          <select className="w-full rounded-2xl border border-slate-200 px-3 py-2 focus:border-orange-500 focus:outline-none" {...register("referralType")}>
+            <option value="">—</option>
+            <option value="DOCTOR">طبيب</option>
+            <option value="FRIEND">صديق</option>
+            <option value="CAMPAIGN">حملة</option>
+            <option value="SOCIAL_MEDIA">وسائل التواصل</option>
+            <option value="SEARCH">بحث</option>
+            <option value="OTHER">اخرى</option>
+          </select>
+        </div>
+      </div>
+      {referralType === "OTHER" ? (
+        <div>
+          <label className="mb-1 block text-base text-slate-600">نوع التحويل (أخرى)</label>
+          <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("referralTypeOther")} />
+        </div>
+      ) : null}
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <div className="mb-1 flex items-center justify-between">
@@ -280,6 +573,14 @@ export function PatientForm({ onSubmit, initialValues, submitLabel, clinicScope,
           {errors.leadSourceOther ? <p className="mt-1 text-xs text-red-500">{errors.leadSourceOther.message}</p> : null}
         </motion.div>
       ) : null}
+      <div>
+        <label className="mb-1 block text-base text-slate-600">ملاحظات عامة (اختياري)</label>
+        <textarea
+          rows={3}
+          className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"
+          {...register("generalNotes")}
+        />
+      </div>
       {enableAppointmentSection ? (
         <section className="space-y-3 rounded-2xl border border-orange-100 bg-orange-50/40 p-3">
           <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
@@ -314,7 +615,7 @@ export function PatientForm({ onSubmit, initialValues, submitLabel, clinicScope,
                   disabled={!appointmentSpecialtyCode}
                 >
                   <option value="">{appointmentSpecialtyCode ? t("appointments.chooseDoctor") : t("appointments.chooseSpecialty")}</option>
-                  {(doctorsQuery.data ?? []).map((doctor) => (
+                  {(appointmentDoctorsQuery.data ?? []).map((doctor) => (
                     <option key={doctor.id} value={doctor.id}>
                       {`${doctor.user?.firstName ?? ""} ${doctor.user?.lastName ?? ""}`.trim()}
                     </option>

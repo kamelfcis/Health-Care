@@ -257,11 +257,36 @@ model Patient {
   nationalId     String?
   phone          String
   whatsapp       String?
+  alternatePhone String?
+  email          String?
   dateOfBirth    DateTime?
+  gender         String?
+  genderOther    String?
+  nationality    String?
+  nationalityOther String?
+  country        String?
+  countryOther   String?
+  governorate    String?
+  governorateOther String?
+  city           String?
+  cityOther      String?
+  maritalStatus  String?
+  maritalStatusOther String?
   profession     Profession
   professionOther String?
+  occupation     String?
   leadSource     LeadSource
   leadSourceOther String?
+  branch         String?
+  specialtyCode  String?
+  specialtyName  String?
+  clinicName     String?
+  doctorName     String?
+  campaignName   String?
+  referrerName   String?
+  referralType   String?
+  referralTypeOther String?
+  generalNotes   String?
   fileNumber     Int
   firstVisitDate DateTime        @default(now())
   address        String?
