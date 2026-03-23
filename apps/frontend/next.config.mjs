@@ -7,6 +7,7 @@ const nextConfig = {
     outputFileTracingIncludes: {
       // Serverless `/api` handler imports `backend/app` (compiled CJS under backend/dist); keep Prisma DB + dist in trace.
       "/api": [
+        "./api/dev.db",
         "../../backend/prisma/prisma/dev.db",
         "../../backend/dist/src/**"
       ],

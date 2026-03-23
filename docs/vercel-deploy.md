@@ -69,7 +69,11 @@ $env:VERCEL_TOKEN = "<your-token>"
 
 ## Demo database (`dev.db`)
 
-`backend/prisma/prisma/dev.db` can be **tracked in git** so the serverless bundle includes SQLite; at runtime [`backend/src/config/prisma.ts`](../backend/src/config/prisma.ts) copies it to `/tmp` for writes. Push commits that include `dev.db` when you want production demo data updated.
+`backend/prisma/prisma/dev.db` can be **tracked in git** so CI/build can copy it. Before `next build`, [`scripts/copy-vercel-sqlite.mjs`](../scripts/copy-vercel-sqlite.mjs) copies it to **`apps/frontend/api/dev.db`** so Next **file tracing** bundles it with the `/api` serverless function (see [`next.config.mjs`](../apps/frontend/next.config.mjs) `outputFileTracingIncludes`). At runtime [`backend/src/config/prisma.ts`](../backend/src/config/prisma.ts) finds that file (or paths under `backend/prisma/…`) and copies it to **`/tmp`** for SQLite writes.
+
+## Uploads on Vercel
+
+The API stores uploads under **`/tmp/healthcare-crm-uploads`** when **`VERCEL`** is set (see [`backend/src/config/uploads.ts`](../backend/src/config/uploads.ts)). The deployment image under `/var/task` is **read-only**; creating `backend/dist/uploads/...` would throw **ENOENT**. Files in `/tmp` do not persist across invocations—use object storage for production.
 
 ## Vercel project settings
 

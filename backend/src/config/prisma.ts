@@ -6,13 +6,25 @@ import { PrismaClient } from "@prisma/client";
 const findBundledSqliteSource = (): string | undefined => {
   const cwd = process.cwd();
   const candidates = [
+    // Copied next to Vercel / Next serverless entry (see scripts/copy-vercel-sqlite.mjs)
+    path.join(cwd, "api", "dev.db"),
+    // Repo root as cwd (e.g. /var/task): Next app under apps/frontend
+    path.join(cwd, "apps", "frontend", "api", "dev.db"),
     path.join(cwd, "prisma", "prisma", "dev.db"),
     path.join(cwd, "backend", "prisma", "prisma", "dev.db"),
     path.join(cwd, "apps", "backend", "prisma", "prisma", "dev.db"),
+    // Monorepo: cwd is apps/frontend
+    path.join(cwd, "..", "..", "backend", "prisma", "prisma", "dev.db"),
     process.env.SQLITE_BUNDLE_PATH,
     // Lambda/Vercel sometimes set task root
     process.env.LAMBDA_TASK_ROOT
       ? path.join(process.env.LAMBDA_TASK_ROOT, "backend", "prisma", "prisma", "dev.db")
+      : undefined,
+    process.env.LAMBDA_TASK_ROOT
+      ? path.join(process.env.LAMBDA_TASK_ROOT, "api", "dev.db")
+      : undefined,
+    process.env.LAMBDA_TASK_ROOT
+      ? path.join(process.env.LAMBDA_TASK_ROOT, "apps", "frontend", "api", "dev.db")
       : undefined
   ].filter((p): p is string => Boolean(p));
 
@@ -21,9 +33,9 @@ const findBundledSqliteSource = (): string | undefined => {
     if (fs.existsSync(resolved)) return resolved;
   }
 
-  // Compiled backend: .../dist/config/prisma.js -> .../prisma/prisma/dev.db
+  // Compiled: dist/src/config/prisma.js -> ../../../prisma/prisma/dev.db = backend root
   try {
-    const fromDist = path.join(__dirname, "..", "..", "prisma", "prisma", "dev.db");
+    const fromDist = path.join(__dirname, "..", "..", "..", "prisma", "prisma", "dev.db");
     if (fs.existsSync(fromDist)) return fromDist;
   } catch {
     /* ignore */

@@ -1,12 +1,14 @@
-import fs from "fs";
-import path from "path";
 import multer from "multer";
 import { AppError } from "../utils/app-error";
+import {
+  ensureUploadDirs,
+  getClinicImagesUploadDir,
+  getPatientExamsUploadDir
+} from "../config/uploads";
 
-const uploadBaseDir = path.resolve(__dirname, "..", "..", "uploads", "clinic-images");
-fs.mkdirSync(uploadBaseDir, { recursive: true });
-const patientExamUploadDir = path.resolve(__dirname, "..", "..", "uploads", "patient-exams");
-fs.mkdirSync(patientExamUploadDir, { recursive: true });
+ensureUploadDirs();
+const uploadBaseDir = getClinicImagesUploadDir();
+const patientExamUploadDir = getPatientExamsUploadDir();
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadBaseDir),

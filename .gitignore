@@ -20,6 +20,9 @@ backend/prisma/**/*.db-*
 !backend/prisma/prisma/dev.db
 backend/uploads/
 
+# Copied from backend/prisma for Next serverless bundle (see scripts/copy-vercel-sqlite.mjs)
+apps/frontend/api/dev.db
+
 .cursor/
 .vscode/
 

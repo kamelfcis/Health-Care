@@ -4,10 +4,10 @@ import helmet from "helmet";
 import morgan from "morgan";
 import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
-import path from "path";
 import fs from "fs";
 import routes from "./routes";
 import { env } from "./config/env";
+import { getUploadRoot } from "./config/uploads";
 import { errorMiddleware } from "./middleware/error.middleware";
 
 export const app = express();
@@ -39,9 +39,10 @@ app.use(
   })
 );
 
-const uploadsDir = path.resolve(__dirname, "..", "uploads");
-const fallbackUploadsDir = path.resolve(process.cwd(), "uploads");
-const staticUploadsDir = fs.existsSync(uploadsDir) ? uploadsDir : fallbackUploadsDir;
+const staticUploadsDir = getUploadRoot();
+if (!fs.existsSync(staticUploadsDir)) {
+  fs.mkdirSync(staticUploadsDir, { recursive: true });
+}
 app.use("/uploads", express.static(staticUploadsDir));
 app.use("/api", routes);
 app.use(errorMiddleware);
