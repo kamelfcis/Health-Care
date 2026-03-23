@@ -1,8 +1,8 @@
-import { AppointmentStatus, VisitEntryType } from "@prisma/client";
+import { AppointmentStatus, Prisma, VisitEntryType } from "@prisma/client";
 import { prisma } from "../config/prisma";
 import { AppError } from "../utils/app-error";
 
-interface ListInput {
+export interface AppointmentListInput {
   clinicId?: string;
   doctorUserId?: string;
   page: number;
@@ -10,38 +10,112 @@ interface ListInput {
   search?: string;
   status?: AppointmentStatus;
   entryType?: VisitEntryType;
+  patientFullName?: string;
+  patientPhone?: string;
+  patientFileNumber?: number;
+  doctorName?: string;
+  specialtyCode?: string;
+  startsFrom?: Date;
+  startsTo?: Date;
+}
+
+function buildAppointmentListWhere(input: AppointmentListInput): Prisma.AppointmentWhereInput {
+  const and: Prisma.AppointmentWhereInput[] = [{ deletedAt: null }];
+
+  if (input.clinicId) {
+    and.push({ clinicId: input.clinicId });
+  }
+
+  if (input.status) {
+    and.push({ status: input.status });
+  }
+
+  if (input.entryType) {
+    and.push({ entryType: input.entryType });
+  }
+
+  const doctorIs: Prisma.DoctorWhereInput = { deletedAt: null };
+  if (input.doctorUserId) {
+    doctorIs.userId = input.doctorUserId;
+  }
+  if (input.doctorName?.trim()) {
+    const q = input.doctorName.trim();
+    doctorIs.user = {
+      OR: [
+        { firstName: { contains: q, mode: "insensitive" } },
+        { lastName: { contains: q, mode: "insensitive" } }
+      ]
+    };
+  }
+  if (input.doctorUserId || input.doctorName?.trim()) {
+    and.push({ doctor: { is: doctorIs } });
+  }
+
+  if (input.patientFullName?.trim()) {
+    and.push({
+      patient: {
+        is: { fullName: { contains: input.patientFullName.trim(), mode: "insensitive" } }
+      }
+    });
+  }
+
+  if (input.patientPhone?.trim()) {
+    const q = input.patientPhone.trim();
+    and.push({
+      patient: {
+        is: {
+          OR: [
+            { phone: { contains: q, mode: "insensitive" } },
+            { whatsapp: { contains: q, mode: "insensitive" } },
+            { alternatePhone: { contains: q, mode: "insensitive" } }
+          ]
+        }
+      }
+    });
+  }
+
+  if (input.patientFileNumber !== undefined && Number.isFinite(input.patientFileNumber)) {
+    and.push({
+      patient: { is: { fileNumber: input.patientFileNumber } }
+    });
+  }
+
+  if (input.specialtyCode?.trim()) {
+    and.push({
+      specialty: {
+        is: {
+          code: input.specialtyCode.trim().toUpperCase(),
+          deletedAt: null
+        }
+      }
+    });
+  }
+
+  if (input.startsFrom || input.startsTo) {
+    and.push({
+      startsAt: {
+        ...(input.startsFrom ? { gte: input.startsFrom } : {}),
+        ...(input.startsTo ? { lte: input.startsTo } : {})
+      }
+    });
+  }
+
+  if (input.search?.trim()) {
+    const s = input.search.trim();
+    and.push({
+      OR: [
+        { reason: { contains: s, mode: "insensitive" } },
+        { patient: { is: { fullName: { contains: s, mode: "insensitive" } } } }
+      ]
+    });
+  }
+
+  return { AND: and };
 }
 
 export const appointmentService = {
-  async list(input: ListInput) {
-    const where = {
-      ...(input.clinicId ? { clinicId: input.clinicId } : {}),
-      ...(input.doctorUserId
-        ? {
-            doctor: {
-              is: {
-                userId: input.doctorUserId,
-                deletedAt: null
-              }
-            }
-          }
-        : {}),
-      deletedAt: null,
-      ...(input.status ? { status: input.status } : {}),
-      ...(input.entryType ? { entryType: input.entryType } : {}),
-      ...(input.search
-        ? {
-            OR: [
-              { reason: { contains: input.search, mode: "insensitive" as const } },
-              {
-                patient: {
-                  is: { fullName: { contains: input.search, mode: "insensitive" as const } }
-                }
-              }
-            ]
-          }
-        : {})
-    };
+  async list(input: AppointmentListInput) {
+    const where = buildAppointmentListWhere(input);
 
     const [items, total] = await Promise.all([
       prisma.appointment.findMany({

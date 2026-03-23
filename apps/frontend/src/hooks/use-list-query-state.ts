@@ -33,7 +33,15 @@ export function useListQueryState() {
     const pageSize = [10, 20, 50, 100].includes(Number(searchParams.get("pageSize")))
       ? Number(searchParams.get("pageSize"))
       : defaultState.pageSize;
-    const view = searchParams.get("view") === "cards" ? "cards" : "table";
+    const viewParam = searchParams.get("view");
+    const view: "table" | "cards" =
+      viewParam === "cards"
+        ? "cards"
+        : viewParam === "table"
+          ? "table"
+          : pathname === "/patients" || pathname === "/appointments"
+            ? "cards"
+            : "table";
 
     return {
       page,
@@ -44,7 +52,7 @@ export function useListQueryState() {
       to: searchParams.get("to") ?? "",
       view
     };
-  }, [searchParams]);
+  }, [pathname, searchParams]);
 
   const setQuery = (updates: Partial<ListQueryState>) => {
     const params = new URLSearchParams(searchParams.toString());

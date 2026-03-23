@@ -83,10 +83,68 @@ interface AppointmentListPayload {
   totalPages: number;
 }
 
+/** Mirrors backend appointment list query params (see appointment.controller list). */
+export interface AppointmentListQuery {
+  search?: string;
+  status?: string;
+  entryType?: VisitEntryType | "";
+  patientFullName?: string;
+  patientPhone?: string;
+  patientFileNumber?: string;
+  doctorName?: string;
+  specialtyCode?: string;
+  startsFrom?: string;
+  startsTo?: string;
+}
+
+const APPOINTMENT_LIST_PAGE_SIZE = 500;
+
+/** Default filters for appointment list (server-side search). */
+export function emptyAppointmentListQuery(): AppointmentListQuery {
+  return {
+    search: "",
+    status: "",
+    entryType: "",
+    patientFullName: "",
+    patientPhone: "",
+    patientFileNumber: "",
+    doctorName: "",
+    specialtyCode: "",
+    startsFrom: "",
+    startsTo: ""
+  };
+}
+
+function buildAppointmentListParams(clinicId: string | undefined, query: AppointmentListQuery = {}) {
+  const params: Record<string, string | number> = {
+    page: 1,
+    pageSize: APPOINTMENT_LIST_PAGE_SIZE,
+    ...(clinicId ? { clinicId } : {})
+  };
+  const entries: [keyof AppointmentListQuery, string | undefined][] = [
+    ["search", query.search],
+    ["status", query.status],
+    ["entryType", query.entryType ? String(query.entryType) : undefined],
+    ["patientFullName", query.patientFullName],
+    ["patientPhone", query.patientPhone],
+    ["patientFileNumber", query.patientFileNumber],
+    ["doctorName", query.doctorName],
+    ["specialtyCode", query.specialtyCode],
+    ["startsFrom", query.startsFrom],
+    ["startsTo", query.startsTo]
+  ];
+  for (const [key, value] of entries) {
+    if (value !== undefined && String(value).trim() !== "") {
+      params[key] = String(value).trim();
+    }
+  }
+  return params;
+}
+
 export const appointmentService = {
-  async list(clinicId?: string) {
+  async list(clinicId?: string, query: AppointmentListQuery = {}) {
     const res = await api.get<{ data: AppointmentListPayload }>("/appointments", {
-      params: { page: 1, pageSize: 500, ...(clinicId ? { clinicId } : {}) }
+      params: buildAppointmentListParams(clinicId, query)
     });
     return res.data.data.data;
   },

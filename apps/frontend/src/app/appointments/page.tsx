@@ -1,8 +1,8 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ColumnDef } from "@tanstack/react-table";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ClipboardList, Mic, Square, SquarePen, Trash2 } from "lucide-react";
 import { FaWhatsapp } from "react-icons/fa";
 import { toast } from "sonner";
@@ -11,7 +11,10 @@ import { EntityCollectionView } from "@/components/ui/entity-collection-view";
 import { RippleButton } from "@/components/ui/ripple-button";
 import { ConfirmDeleteModal } from "@/components/ui/confirm-delete-modal";
 import { useI18n } from "@/components/providers/i18n-provider";
-import { appointmentService } from "@/lib/appointment-service";
+import { appointmentService, emptyAppointmentListQuery } from "@/lib/appointment-service";
+import { useDebounce } from "@/hooks/use-debounce";
+import { AppointmentSearchBar } from "@/components/appointments/appointment-search-bar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { clinicService } from "@/lib/clinic-service";
 import { doctorService } from "@/lib/doctor-service";
 import { patientService } from "@/lib/patient-service";
@@ -101,6 +104,8 @@ export default function AppointmentsPage() {
   const whatsappAnalyserRef = useRef<AnalyserNode | null>(null);
   const whatsappAudioStreamRef = useRef<MediaStream | null>(null);
   const whatsappRafRef = useRef<number | null>(null);
+  const [appointmentFilterDraft, setAppointmentFilterDraft] = useState(() => emptyAppointmentListQuery());
+  const debouncedAppointmentFilters = useDebounce(appointmentFilterDraft, 400);
   const [form, setForm] = useState({
     patientId: "",
     specialtyCode: "",
@@ -130,12 +135,19 @@ export default function AppointmentsPage() {
     queryKey: [
       "appointments",
       "list",
-      { page: 1, pageSize: 500, clinicScope: queryScopeClinicId, viewerId: queryViewerId, viewerRole: queryViewerRole }
+      {
+        page: 1,
+        clinicScope: queryScopeClinicId,
+        viewerId: queryViewerId,
+        viewerRole: queryViewerRole,
+        filters: debouncedAppointmentFilters
+      }
     ],
-    queryFn: () => appointmentService.list(appointmentClinicScope),
+    queryFn: () => appointmentService.list(appointmentClinicScope, debouncedAppointmentFilters),
     enabled: isQueryScopeReady,
     staleTime: 5_000,
-    refetchOnMount: "always"
+    refetchOnMount: "always",
+    placeholderData: keepPreviousData
   });
   const clinicSpecialtiesQuery = useQuery({
     queryKey: ["appointments", "clinic-specialties", { clinicScope: queryScopeClinicId }],
@@ -237,7 +249,6 @@ export default function AppointmentsPage() {
     [appointmentsQuery.data]
   );
 
-  const statuses = useMemo(() => Array.from(new Set(data.map((item) => item.status))), [data]);
   const specialtyOptions = useMemo(
     () =>
       (clinicSpecialtiesQuery.data ?? [])
@@ -832,34 +843,48 @@ export default function AppointmentsPage() {
           </div>
         </section>
       ) : null}
-      <EntityCollectionView
-        title={t("nav.appointments")}
-        columns={columns}
-        data={data}
-        storageKey="appointment-view"
-        belowHeader={formBlock}
-        listLoading={isQueryScopeReady && appointmentsQuery.isFetching && !appointmentsQuery.isFetched}
-        statusOptions={[
-          { label: t("common.allStatuses"), value: "all" },
-          ...statuses.map((status) => ({ label: statusLabel(status), value: status }))
-        ]}
-        searchPlaceholder={`${t("common.search")} ${t("nav.appointments")}`}
-        addButton={
-          canManageAppointments ? (
-            <RippleButton
-              onClick={() => {
-                resetForm();
-                setFormExpanded((prev) => !prev);
-              }}
-            >
-              {formExpanded ? t("common.close") : `+ ${t("nav.appointments")}`}
-            </RippleButton>
-          ) : undefined
+      <Suspense
+        fallback={
+          <section className="space-y-3">
+            <Skeleton className="h-9 w-48 rounded-lg" />
+            <Skeleton className="h-32 w-full rounded-2xl" />
+            <Skeleton className="h-48 w-full rounded-2xl" />
+          </section>
         }
-        getSearchText={(row) => `${row.patient} ${row.doctor} ${row.start} ${row.status} ${row.entryType}`}
-        getStatus={(row) => row.status}
-        getDate={(row) => row.start.slice(0, 10)}
-        renderCard={(row) => (
+      >
+        <EntityCollectionView
+          title={t("nav.appointments")}
+          columns={columns}
+          data={data}
+          storageKey="appointment-view"
+          skipLocalFiltering
+          belowHeader={formBlock}
+          listLoading={isQueryScopeReady && appointmentsQuery.isLoading}
+          searchSlot={
+            <AppointmentSearchBar
+              value={appointmentFilterDraft}
+              onChange={setAppointmentFilterDraft}
+              onClear={() => setAppointmentFilterDraft(emptyAppointmentListQuery())}
+            />
+          }
+          statusOptions={[{ label: t("common.allStatuses"), value: "all" }]}
+          searchPlaceholder={`${t("common.search")} ${t("nav.appointments")}`}
+          addButton={
+            canManageAppointments ? (
+              <RippleButton
+                onClick={() => {
+                  resetForm();
+                  setFormExpanded((prev) => !prev);
+                }}
+              >
+                {formExpanded ? t("common.close") : `+ ${t("nav.appointments")}`}
+              </RippleButton>
+            ) : undefined
+          }
+          getSearchText={(row) => `${row.patient} ${row.doctor} ${row.start} ${row.status} ${row.entryType}`}
+          getStatus={(row) => row.status}
+          getDate={(row) => row.start.slice(0, 10)}
+          renderCard={(row) => (
           <div className="space-y-3 rounded-2xl border border-slate-200/80 border-l-4 border-l-orange-500 bg-gradient-to-br from-white to-orange-50/30 p-4 shadow-sm transition hover:shadow-md">
             <h3 className="text-base font-bold text-slate-900">{row.patient}</h3>
             <p className="text-sm font-medium text-slate-600">{row.doctor}</p>
@@ -925,7 +950,8 @@ export default function AppointmentsPage() {
             ) : null}
           </div>
         )}
-      />
+        />
+      </Suspense>
       <MedicalRecordModal
         open={Boolean(medicalFileAppointment)}
         mode="appointment"

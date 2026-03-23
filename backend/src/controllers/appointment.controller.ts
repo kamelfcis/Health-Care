@@ -15,6 +15,30 @@ const getRequiredClinicScope = (req: AuthenticatedRequest) => {
   return scoped;
 };
 
+const optionalTrimmed = (value: unknown): string | undefined => {
+  if (typeof value !== "string") return undefined;
+  const t = value.trim();
+  return t === "" ? undefined : t;
+};
+
+const optionalDateStartUtc = (value: unknown): Date | undefined => {
+  if (typeof value !== "string" || value.length < 8) return undefined;
+  const d = new Date(`${value.slice(0, 10)}T00:00:00.000Z`);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+};
+
+const optionalDateEndUtc = (value: unknown): Date | undefined => {
+  if (typeof value !== "string" || value.length < 8) return undefined;
+  const d = new Date(`${value.slice(0, 10)}T23:59:59.999Z`);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+};
+
+const optionalFileNumber = (value: unknown): number | undefined => {
+  if (typeof value !== "string" || value.trim() === "") return undefined;
+  const n = parseInt(value.trim(), 10);
+  return Number.isNaN(n) ? undefined : n;
+};
+
 export const appointmentController = {
   async list(req: AuthenticatedRequest, res: Response) {
     const { page, pageSize, search } = getPagination(req);
@@ -29,6 +53,15 @@ export const appointmentController = {
         ? (req.query.entryType as VisitEntryType)
         : undefined;
 
+    const patientFullName = optionalTrimmed(req.query.patientFullName);
+    const patientPhone = optionalTrimmed(req.query.patientPhone);
+    const patientFileNumber = optionalFileNumber(req.query.patientFileNumber);
+    const doctorName = optionalTrimmed(req.query.doctorName);
+    const specialtyCodeRaw = optionalTrimmed(req.query.specialtyCode);
+    const specialtyCode = specialtyCodeRaw ? specialtyCodeRaw.toUpperCase() : undefined;
+    const startsFrom = optionalDateStartUtc(req.query.startsFrom);
+    const startsTo = optionalDateEndUtc(req.query.startsTo);
+
     const data = await appointmentService.list({
       clinicId: getOptionalClinicScope(req),
       doctorUserId: req.user?.role === "Doctor" ? req.user?.sub : undefined,
@@ -36,7 +69,14 @@ export const appointmentController = {
       pageSize,
       search,
       status,
-      entryType
+      entryType,
+      patientFullName,
+      patientPhone,
+      patientFileNumber,
+      doctorName,
+      specialtyCode,
+      startsFrom,
+      startsTo
     });
 
     res.json(apiSuccess(data));
