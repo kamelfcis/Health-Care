@@ -14,6 +14,12 @@ This happens when the Vercel **project** has **Install Command** set to `cd ../.
 4. **Node.js Version:** `20.x`
 5. **Save**, then **Deployments** → **Redeploy** the latest.
 
+## Fix build: `npm error code ENOWORKSPACES` (SWC on Linux / Vercel)
+
+During `next build`, Next may try to run `npm install` to download **`@next/swc-linux-x64-gnu`** (or **`-musl`**). In an **npm workspaces** monorepo, that nested install can fail with **`ENOWORKSPACES`** (“This command does not support workspaces”), even if the build later recovers.
+
+**Fix:** [`apps/frontend/package.json`](../apps/frontend/package.json) lists those packages under **`optionalDependencies`** with the **same version as `next`** (e.g. `14.2.32`). They are installed during `npm ci` at the repo root, so Next does not need to spawn a failing `npm install`. Redeploy after pulling.
+
 **CLI (token):** [Create a token](https://vercel.com/account/tokens), then from the **repo root**:
 
 ```powershell
