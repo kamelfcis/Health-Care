@@ -31,6 +31,7 @@ export async function saveClinicImage(
   const safeOriginal = sanitizeFileName(file.originalname || "clinic-image");
   const fileName = `${Date.now()}-${randomUUID()}${getExtension(safeOriginal)}`;
   const hasBlobToken = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+  const isVercelRuntime = Boolean(process.env.VERCEL);
 
   if (hasBlobToken) {
     try {
@@ -44,6 +45,13 @@ export async function saveClinicImage(
     } catch (error) {
       throw new AppError(`Failed to upload clinic image to blob: ${(error as Error).message}`, 500);
     }
+  }
+
+  if (isVercelRuntime) {
+    throw new AppError(
+      "Clinic image upload requires BLOB_READ_WRITE_TOKEN in production. Please configure Vercel Blob env vars.",
+      500
+    );
   }
 
   const uploadDir = getClinicImagesUploadDir();
