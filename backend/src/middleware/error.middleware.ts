@@ -1,4 +1,5 @@
 import { NextFunction, Request, Response } from "express";
+import { MulterError } from "multer";
 import { ZodError } from "zod";
 import { AppError } from "../utils/app-error";
 import { apiError } from "../utils/api-response";
@@ -15,6 +16,13 @@ export const errorMiddleware = (
 
   if (error instanceof AppError) {
     return res.status(error.statusCode).json(apiError(error.message));
+  }
+
+  if (error instanceof MulterError) {
+    if (error.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json(apiError("Uploaded file is too large. Maximum size is 10MB."));
+    }
+    return res.status(400).json(apiError(error.message));
   }
 
   // Log for Vercel/serverless diagnostics (no stack to client)

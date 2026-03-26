@@ -12,7 +12,7 @@ const patientExamUploadDir = getPatientExamsUploadDir();
 export const uploadClinicImage = multer({
   // Keep file in memory so controller can upload to Vercel Blob.
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (!file.mimetype.startsWith("image/")) {
       cb(new AppError("Only image uploads are allowed", 400));
