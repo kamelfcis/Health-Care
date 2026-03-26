@@ -6,6 +6,15 @@ import { getClinicImagesUploadDir } from "../config/uploads";
 
 const CLINIC_BLOB_PREFIX = "clinic-images";
 
+function normalizeBlobToken(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  const dequoted = trimmed.replace(/^"(.*)"$/, "$1");
+  const tokenMatch = dequoted.match(/vercel_blob_rw_[A-Za-z0-9_\-]+/);
+  if (tokenMatch?.[0]) return tokenMatch[0];
+  return dequoted || null;
+}
+
 function sanitizeFileName(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
@@ -30,9 +39,9 @@ export async function saveClinicImage(
 ): Promise<{ imageUrl: string; storageKey: string | null }> {
   const safeOriginal = sanitizeFileName(file.originalname || "clinic-image");
   const fileName = `${Date.now()}-${randomUUID()}${getExtension(safeOriginal)}`;
-  const normalizedToken = process.env.BLOB_READ_WRITE_TOKEN?.trim().replace(/^"(.*)"$/, "$1");
+  const normalizedToken = normalizeBlobToken(process.env.BLOB_READ_WRITE_TOKEN);
   if (normalizedToken) {
-    // Normalize accidentally quoted values copied as KEY="value".
+    // Normalize accidentally pasted values like KEY="value".
     process.env.BLOB_READ_WRITE_TOKEN = normalizedToken;
   }
   const hasBlobToken = Boolean(normalizedToken);
@@ -43,6 +52,7 @@ export async function saveClinicImage(
       const { put } = await import("@vercel/blob");
       const blob = await put(`${CLINIC_BLOB_PREFIX}/${fileName}`, file.buffer, {
         access: "public",
+        token: normalizedToken as string,
         addRandomSuffix: false,
         contentType: file.mimetype || "application/octet-stream"
       });
