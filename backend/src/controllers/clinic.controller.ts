@@ -5,6 +5,7 @@ import { apiSuccess } from "../utils/api-response";
 import { buildCacheKey, getOrSetCache, invalidateCacheByPrefix } from "../utils/response-cache";
 import { AuthenticatedRequest } from "../types/auth";
 import { getScopedClinicId } from "../utils/tenant";
+import { removeClinicImage, saveClinicImage } from "../utils/clinic-image-storage";
 
 export const clinicController = {
   async me(req: AuthenticatedRequest, res: Response) {
@@ -17,11 +18,16 @@ export const clinicController = {
   async updateMe(req: AuthenticatedRequest, res: Response) {
     const clinicId = getScopedClinicId(req);
     const file = (req as Request & { file?: Express.Multer.File }).file;
-    const imageUrl = file ? `/uploads/clinic-images/${file.filename}` : undefined;
+    const existingClinic = await clinicService.getById(clinicId);
+    const imageUrl = file ? (await saveClinicImage(file)).imageUrl : undefined;
+    const shouldRemoveExisting = req.body.imageUrl === "";
     const data = await clinicService.update(clinicId, {
       ...req.body,
       ...(imageUrl ? { imageUrl } : {})
     });
+    if (file || shouldRemoveExisting) {
+      await removeClinicImage(existingClinic.imageUrl);
+    }
     invalidateCacheByPrefix(buildCacheKey("clinics"));
     res.json(apiSuccess(data, "Clinic settings updated"));
   },
@@ -37,7 +43,7 @@ export const clinicController = {
 
   async create(req: Request, res: Response) {
     const file = (req as Request & { file?: Express.Multer.File }).file;
-    const imageUrl = file ? `/uploads/clinic-images/${file.filename}` : undefined;
+    const imageUrl = file ? (await saveClinicImage(file)).imageUrl : undefined;
     const data = await clinicService.create({
       ...req.body,
       ...(imageUrl ? { imageUrl } : {})
@@ -48,11 +54,17 @@ export const clinicController = {
 
   async update(req: Request, res: Response) {
     const file = (req as Request & { file?: Express.Multer.File }).file;
-    const imageUrl = file ? `/uploads/clinic-images/${file.filename}` : undefined;
+    const clinicId = String(req.params.id);
+    const existingClinic = await clinicService.getById(clinicId);
+    const imageUrl = file ? (await saveClinicImage(file)).imageUrl : undefined;
+    const shouldRemoveExisting = req.body.imageUrl === "";
     const data = await clinicService.update(String(req.params.id), {
       ...req.body,
       ...(imageUrl ? { imageUrl } : {})
     });
+    if (file || shouldRemoveExisting) {
+      await removeClinicImage(existingClinic.imageUrl);
+    }
     invalidateCacheByPrefix(buildCacheKey("clinics"));
     res.json(apiSuccess(data, "Clinic updated"));
   },

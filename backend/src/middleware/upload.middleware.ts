@@ -7,19 +7,11 @@ import {
 } from "../config/uploads";
 
 ensureUploadDirs();
-const uploadBaseDir = getClinicImagesUploadDir();
 const patientExamUploadDir = getPatientExamsUploadDir();
 
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadBaseDir),
-  filename: (_req, file, cb) => {
-    const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
-    cb(null, `${Date.now()}-${safeName}`);
-  }
-});
-
 export const uploadClinicImage = multer({
-  storage,
+  // Keep file in memory so controller can upload to Vercel Blob.
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (!file.mimetype.startsWith("image/")) {

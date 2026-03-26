@@ -2,11 +2,12 @@ import { Request, Response } from "express";
 import { authService } from "../services/auth.service";
 import { apiSuccess } from "../utils/api-response";
 import { AuthenticatedRequest } from "../types/auth";
+import { saveClinicImage } from "../utils/clinic-image-storage";
 
 export const authController = {
   async register(req: Request, res: Response) {
     const file = (req as Request & { file?: Express.Multer.File }).file;
-    const imageUrl = file ? `/uploads/clinic-images/${file.filename}` : undefined;
+    const imageUrl = file ? (await saveClinicImage(file)).imageUrl : undefined;
     const result = await authService.register({ ...req.body, imageUrl });
     res.status(201).json(apiSuccess(result, "User registered"));
   },
