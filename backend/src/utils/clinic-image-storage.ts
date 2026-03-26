@@ -30,7 +30,12 @@ export async function saveClinicImage(
 ): Promise<{ imageUrl: string; storageKey: string | null }> {
   const safeOriginal = sanitizeFileName(file.originalname || "clinic-image");
   const fileName = `${Date.now()}-${randomUUID()}${getExtension(safeOriginal)}`;
-  const hasBlobToken = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+  const normalizedToken = process.env.BLOB_READ_WRITE_TOKEN?.trim().replace(/^"(.*)"$/, "$1");
+  if (normalizedToken) {
+    // Normalize accidentally quoted values copied as KEY="value".
+    process.env.BLOB_READ_WRITE_TOKEN = normalizedToken;
+  }
+  const hasBlobToken = Boolean(normalizedToken);
   const isVercelRuntime = Boolean(process.env.VERCEL);
 
   if (hasBlobToken) {
