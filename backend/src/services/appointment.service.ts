@@ -317,20 +317,16 @@ export const appointmentService = {
     if (!clinicSpecialty) {
       throw new AppError("Appointment specialty is not enabled for this clinic", 403);
     }
-    if (!clinicSpecialty.templateId) {
-      throw new AppError("No template assigned for appointment specialty", 404);
-    }
 
-    const template = await prisma.specialtyTemplate.findFirst({
-      where: { id: clinicSpecialty.templateId },
-      include: {
-        fields: { orderBy: { displayOrder: "asc" }, include: { options: { orderBy: { displayOrder: "asc" } } } },
-        rules: { orderBy: { displayOrder: "asc" } }
-      }
-    });
-    if (!template) {
-      throw new AppError("Assigned appointment specialty template was not found", 404);
-    }
+    const template = clinicSpecialty.templateId
+      ? await prisma.specialtyTemplate.findFirst({
+          where: { id: clinicSpecialty.templateId },
+          include: {
+            fields: { orderBy: { displayOrder: "asc" }, include: { options: { orderBy: { displayOrder: "asc" } } } },
+            rules: { orderBy: { displayOrder: "asc" } }
+          }
+        })
+      : null;
 
     const existingAssessment = await prisma.patientSpecialtyAssessment.findFirst({
       where: { appointmentId: appointment.id, specialtyId: appointment.specialtyId },

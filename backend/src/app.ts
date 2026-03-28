@@ -34,7 +34,7 @@ app.use(
   "/api",
   rateLimit({
     windowMs: 15 * 60 * 1000,
-    limit: 300,
+    limit: env.NODE_ENV === "production" ? 300 : 5000,
     standardHeaders: true
   })
 );

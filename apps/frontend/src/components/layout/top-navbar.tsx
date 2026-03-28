@@ -34,16 +34,16 @@ export function TopNavbar() {
   }, []);
 
   const clinicsQuery = useQuery({
-    queryKey: ["top-navbar", "clinics", user?.role ?? "none"],
+    queryKey: ["top-navbar", "clinics", user?.role ?? "none", user?.clinicId ?? "none"],
     queryFn: async () => {
-      if (user?.role === "ClinicAdmin") {
-        const clinic = await clinicService.getMyClinic();
-        return [clinic];
-      }
       if (user?.role === "SuperAdmin") {
         return [];
       }
-      return clinicService.list();
+      if (!user?.clinicId) {
+        return [];
+      }
+      const clinic = await clinicService.getMyClinic();
+      return [clinic];
     },
     enabled: mounted && !!user
   });

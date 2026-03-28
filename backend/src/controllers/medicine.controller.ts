@@ -11,7 +11,7 @@ const MEDICINES_CACHE_PREFIX = buildCacheKey("medicines");
 export const medicineController = {
   async list(req: AuthenticatedRequest, res: Response) {
     const page = Math.max(1, Number(req.query.page ?? 1));
-    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 20)));
+    const pageSize = Math.min(500, Math.max(1, Number(req.query.pageSize ?? 20)));
     const sortByRaw = String(req.query.sortBy ?? "arabicName");
     const sortOrderRaw = String(req.query.sortOrder ?? "asc").toLowerCase();
     const sortBy = ["arabicName", "englishName", "createdAt"].includes(sortByRaw)

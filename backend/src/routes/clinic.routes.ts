@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { clinicController } from "../controllers/clinic.controller";
 import { requireAuth } from "../middleware/auth.middleware";
-import { allowRoles } from "../middleware/rbac.middleware";
+import { allowRoles, requireClinicMembership } from "../middleware/rbac.middleware";
 import { uploadClinicImage } from "../middleware/upload.middleware";
 import { validate } from "../middleware/validate.middleware";
 import { asyncHandler } from "../utils/async-handler";
@@ -102,7 +102,7 @@ const updateMeSchema = z.object({
   })
 });
 
-router.get("/me", requireAuth, allowRoles("ClinicAdmin"), asyncHandler(clinicController.me));
+router.get("/me", requireAuth, requireClinicMembership(), asyncHandler(clinicController.me));
 router.patch(
   "/me",
   requireAuth,

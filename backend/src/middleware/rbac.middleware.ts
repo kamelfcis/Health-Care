@@ -16,6 +16,18 @@ export const allowRoles =
     next();
   };
 
+/** Read-only clinic context: any authenticated user assigned to a clinic (not SuperAdmin without clinic). */
+export const requireClinicMembership =
+  () => (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {
+    if (!req.user) {
+      throw new AppError("Unauthorized", 401);
+    }
+    if (!req.user.clinicId?.trim()) {
+      throw new AppError("Forbidden", 403);
+    }
+    next();
+  };
+
 export const requirePermissions =
   (...permissions: string[]) =>
   (req: AuthenticatedRequest, _res: Response, next: NextFunction) => {

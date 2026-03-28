@@ -678,7 +678,7 @@ export function MedicalRecordModal({
   const allMedicinesQuery = useQuery({
     queryKey: ["medical-record", "medicine-catalog-global"],
     queryFn: async () => {
-      const pageSize = 100;
+      const pageSize = 500;
       let page = 1;
       let totalPages = 1;
       const merged: MedicineItem[] = [];
