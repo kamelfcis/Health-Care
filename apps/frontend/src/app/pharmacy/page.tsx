@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ColumnDef } from "@tanstack/react-table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import axios from "axios";
@@ -18,6 +18,7 @@ import { useDebounce } from "@/hooks/use-debounce";
 import { hasPermission } from "@/lib/permissions";
 import { storage } from "@/lib/storage";
 import { medicineService, MedicineItem, UpsertMedicinePayload } from "@/lib/medicine-service";
+import { specialtyService, SpecialtyCatalogItem } from "@/lib/specialty-service";
 
 type MedicineFormState = UpsertMedicinePayload;
 
@@ -43,7 +44,7 @@ const getErrorMessage = (error: unknown, fallback: string) => {
 };
 
 export default function PharmacyPage() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const queryClient = useQueryClient();
   const [currentUser, setCurrentUser] = useState<ReturnType<typeof storage.getUser>>(null);
   const [searchInput, setSearchInput] = useState("");
@@ -71,6 +72,48 @@ export default function PharmacyPage() {
   const canEdit = hasPermission(currentUser, "pharmacy.edit");
   const canDelete = hasPermission(currentUser, "pharmacy.delete");
   const canImport = hasPermission(currentUser, "pharmacy.import");
+  const canViewPharmacy = hasPermission(currentUser, "pharmacy.view");
+
+  const specialtiesCatalogQuery = useQuery({
+    queryKey: ["specialties", "catalog", "pharmacy"],
+    queryFn: () => specialtyService.listCatalog(),
+    enabled: Boolean(currentUser) && canViewPharmacy
+  });
+
+  const sortedSpecialtyCatalog = useMemo(() => {
+    const data = specialtiesCatalogQuery.data ?? [];
+    const copy = [...data];
+    copy.sort((a, b) => {
+      const aLabel = locale === "ar" ? (a.nameAr || a.name) : (a.name || a.nameAr);
+      const bLabel = locale === "ar" ? (b.nameAr || b.name) : (b.name || b.nameAr);
+      return aLabel.localeCompare(bLabel, locale === "ar" ? "ar" : "en", { sensitivity: "base" });
+    });
+    return copy;
+  }, [specialtiesCatalogQuery.data, locale]);
+
+  const catalogCodes = useMemo(
+    () => new Set(sortedSpecialtyCatalog.map((item) => item.code)),
+    [sortedSpecialtyCatalog]
+  );
+
+  const specialtyByCode = useMemo(() => {
+    const map = new Map<string, SpecialtyCatalogItem>();
+    sortedSpecialtyCatalog.forEach((item) => map.set(item.code, item));
+    return map;
+  }, [sortedSpecialtyCatalog]);
+
+  const formatMedicineSpecialtyLabel = useCallback(
+    (raw: string | null | undefined) => {
+      const value = raw?.trim();
+      if (!value) return "";
+      const item = specialtyByCode.get(value);
+      if (item) {
+        return locale === "ar" ? (item.nameAr || item.name) : (item.name || item.nameAr);
+      }
+      return value;
+    },
+    [locale, specialtyByCode]
+  );
 
   const medicinesQuery = useQuery({
     queryKey: ["medicines", { page, pageSize, search: debouncedSearch, sortBy, sortOrder }],
@@ -191,7 +234,14 @@ export default function PharmacyPage() {
       { header: t("pharmacy.table.arabicName"), accessorKey: "arabicName" },
       { header: t("pharmacy.table.englishName"), accessorKey: "englishName" },
       { header: t("pharmacy.table.activeIngredient"), accessorKey: "activeIngredient" },
-      { header: t("pharmacy.table.specialty"), accessorKey: "specialty" },
+      {
+        header: t("pharmacy.table.specialty"),
+        id: "specialty",
+        cell: ({ row }) => {
+          const label = formatMedicineSpecialtyLabel(row.original.specialty);
+          return label || "-";
+        }
+      },
       { header: t("pharmacy.table.dosageForm"), accessorKey: "dosageForm" },
       { header: t("pharmacy.table.concentration"), accessorKey: "concentration" },
       { header: t("pharmacy.table.company"), accessorKey: "company" }
@@ -251,7 +301,7 @@ export default function PharmacyPage() {
         )
       }
     ];
-  }, [canDelete, canEdit, page, pageSize, t]);
+  }, [canDelete, canEdit, formatMedicineSpecialtyLabel, page, pageSize, t]);
 
   return (
     <RoleGate
@@ -391,21 +441,50 @@ export default function PharmacyPage() {
           maxWidthClass="max-w-4xl"
         >
           <div className="grid gap-3 md:grid-cols-2">
-            {[
-              ["arabicName", "pharmacy.form.arabicName"],
-              ["englishName", "pharmacy.form.englishName"],
-              ["activeIngredient", "pharmacy.form.activeIngredient"],
-              ["usageMethod", "pharmacy.form.usageMethod"],
-              ["specialty", "pharmacy.form.specialty"],
-              ["dosageForm", "pharmacy.form.dosageForm"],
-              ["concentration", "pharmacy.form.concentration"],
-              ["company", "pharmacy.form.company"]
-            ].map(([key, labelKey]) => (
+            {(
+              [
+                ["arabicName", "pharmacy.form.arabicName"],
+                ["englishName", "pharmacy.form.englishName"],
+                ["activeIngredient", "pharmacy.form.activeIngredient"],
+                ["usageMethod", "pharmacy.form.usageMethod"]
+              ] as const
+            ).map(([key, labelKey]) => (
               <input
                 key={key}
                 className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
                 placeholder={t(labelKey)}
-                value={form[key as keyof MedicineFormState]}
+                value={form[key]}
+                onChange={(event) => setForm((prev) => ({ ...prev, [key]: event.target.value }))}
+              />
+            ))}
+            <select
+              className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+              aria-label={t("pharmacy.form.specialty")}
+              value={form.specialty ?? ""}
+              onChange={(event) => setForm((prev) => ({ ...prev, specialty: event.target.value }))}
+            >
+              <option value="">{t("pharmacy.form.specialtyNone")}</option>
+              {sortedSpecialtyCatalog.map((item) => (
+                <option key={item.code} value={item.code}>
+                  {locale === "ar" ? (item.nameAr || item.name) : (item.name || item.nameAr)}
+                </option>
+              ))}
+              {(form.specialty ?? "").trim() && !catalogCodes.has(form.specialty ?? "") ? (
+                <option value={form.specialty ?? ""}>{form.specialty}</option>
+              ) : null}
+            </select>
+            {(
+              [
+                ["dosageForm", "pharmacy.form.dosageForm"],
+                ["concentration", "pharmacy.form.concentration"],
+                ["company", "pharmacy.form.company"]
+              ] as const
+            ).map(([key, labelKey]) => (
+              <input
+                key={key}
+                className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+                placeholder={t(labelKey)}
+                value={form[key]}
                 onChange={(event) => setForm((prev) => ({ ...prev, [key]: event.target.value }))}
               />
             ))}
@@ -460,18 +539,23 @@ export default function PharmacyPage() {
         <Modal open={Boolean(viewTarget)} title={t("pharmacy.viewMedicine")} onClose={() => setViewTarget(null)} maxWidthClass="max-w-3xl">
           <div className="grid gap-3 md:grid-cols-2">
             {viewTarget
-              ? [
-                  [t("pharmacy.form.arabicName"), viewTarget.arabicName],
-                  [t("pharmacy.form.englishName"), viewTarget.englishName],
-                  [t("pharmacy.form.activeIngredient"), viewTarget.activeIngredient],
-                  [t("pharmacy.form.usageMethod"), viewTarget.usageMethod],
-                  [t("pharmacy.form.specialty"), viewTarget.specialty],
-                  [t("pharmacy.form.dosageForm"), viewTarget.dosageForm],
-                  [t("pharmacy.form.concentration"), viewTarget.concentration],
-                  [t("pharmacy.form.company"), viewTarget.company],
-                  [t("pharmacy.form.warnings"), viewTarget.warnings],
-                  [t("pharmacy.form.drugInteractions"), viewTarget.drugInteractions]
-                ].map(([label, value]) => (
+              ? (
+                  [
+                    [t("pharmacy.form.arabicName"), viewTarget.arabicName],
+                    [t("pharmacy.form.englishName"), viewTarget.englishName],
+                    [t("pharmacy.form.activeIngredient"), viewTarget.activeIngredient],
+                    [t("pharmacy.form.usageMethod"), viewTarget.usageMethod],
+                    [
+                      t("pharmacy.form.specialty"),
+                      formatMedicineSpecialtyLabel(viewTarget.specialty) || "-"
+                    ],
+                    [t("pharmacy.form.dosageForm"), viewTarget.dosageForm],
+                    [t("pharmacy.form.concentration"), viewTarget.concentration],
+                    [t("pharmacy.form.company"), viewTarget.company],
+                    [t("pharmacy.form.warnings"), viewTarget.warnings],
+                    [t("pharmacy.form.drugInteractions"), viewTarget.drugInteractions]
+                  ] as const
+                ).map(([label, value]) => (
                   <div key={String(label)} className="rounded-xl border border-slate-200/80 bg-white/80 p-3 md:col-span-1">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
                     <p className="mt-1 text-sm text-slate-800">{String(value || "-")}</p>
