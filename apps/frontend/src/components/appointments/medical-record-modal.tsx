@@ -2,8 +2,24 @@
 
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, CheckCircle2, ChevronDown, ClipboardList, Eye, FileText, Pill, Plus, Printer, Stethoscope, Trash2, Upload, UserRound } from "lucide-react";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  Eye,
+  FileText,
+  Pill,
+  Plus,
+  Printer,
+  Stethoscope,
+  Trash2,
+  Upload,
+  UserRound
+} from "lucide-react";
 import Image from "next/image";
 import { toast } from "sonner";
 import { useI18n } from "@/components/providers/i18n-provider";
@@ -17,6 +33,8 @@ import { useDebounce } from "@/hooks/use-debounce";
 
 export interface AppointmentMedicalRecordContext {
   id: string;
+  /** When Super Admin uses all-clinics filter, pass the appointment clinic for API ?clinicId */
+  clinicId?: string;
 }
 
 export interface PatientMedicalRecordContext {
@@ -152,6 +170,13 @@ const escapeHtml = (value: string) =>
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+
+const catalogTableCell = (value: string | null | undefined) => {
+  const v = value?.trim();
+  return v && v.length > 0 ? v : "—";
+};
+
+const MEDICINE_CATALOG_PAGE_SIZE = 15;
 
 const printSizeStorageKeyForDoctor = (doctorStorageKey?: string) =>
   `appointments:prescription:paper-size:${doctorStorageKey?.trim() || "default"}`;
@@ -650,6 +675,7 @@ export function MedicalRecordModal({
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
   const [activePatientTab, setActivePatientTab] = useState<"history" | "exams">("history");
   const [medicineSearchInput, setMedicineSearchInput] = useState("");
+  const [medicineCatalogPage, setMedicineCatalogPage] = useState(1);
   const [medicineDropdownOpen, setMedicineDropdownOpen] = useState(false);
   const [manualMedicineName, setManualMedicineName] = useState("");
   const [appointmentPrescriptionItems, setAppointmentPrescriptionItems] = useState<PrescriptionItem[]>([]);
@@ -662,6 +688,8 @@ export function MedicalRecordModal({
   const [loadedStoredPrintLayout, setLoadedStoredPrintLayout] = useState(false);
   const debouncedMedicineSearch = useDebounce(medicineSearchInput, 350);
 
+  const appointmentModeClinicScope = clinicScope ?? appointmentContext?.clinicId;
+
   useEffect(() => {
     if (!open) return;
     if (mode === "patient") {
@@ -669,36 +697,42 @@ export function MedicalRecordModal({
     }
   }, [open, mode]);
 
+  useEffect(() => {
+    if (open && mode === "appointment") {
+      setMedicineCatalogPage(1);
+    }
+  }, [open, mode]);
+
+  useEffect(() => {
+    setMedicineCatalogPage(1);
+  }, [debouncedMedicineSearch]);
+
   const appointmentAssessmentQuery = useQuery({
-    queryKey: ["medical-record", "appointment", appointmentContext?.id, clinicScope ?? "mine"],
-    queryFn: () => appointmentService.getAssessment(String(appointmentContext?.id), clinicScope),
+    queryKey: ["medical-record", "appointment", appointmentContext?.id, appointmentModeClinicScope ?? "mine"],
+    queryFn: () => appointmentService.getAssessment(String(appointmentContext?.id), appointmentModeClinicScope),
     enabled: open && mode === "appointment" && Boolean(appointmentContext?.id)
   });
 
-  const allMedicinesQuery = useQuery({
-    queryKey: ["medical-record", "medicine-catalog-global"],
-    queryFn: async () => {
-      const pageSize = 500;
-      let page = 1;
-      let totalPages = 1;
-      const merged: MedicineItem[] = [];
-      do {
-        const response = await medicineService.list({
-          page,
-          pageSize,
-          sortBy: "arabicName",
-          sortOrder: "asc"
-        });
-        merged.push(...response.data);
-        totalPages = Math.max(1, response.totalPages ?? 1);
-        page += 1;
-      } while (page <= totalPages);
-
-      const byId = new Map<string, MedicineItem>();
-      merged.forEach((item) => byId.set(item.id, item));
-      return Array.from(byId.values());
-    },
-    enabled: open && mode === "appointment"
+  const medicinesCatalogQuery = useQuery({
+    queryKey: [
+      "medical-record",
+      "medicine-catalog",
+      {
+        q: debouncedMedicineSearch.trim(),
+        page: medicineCatalogPage,
+        pageSize: MEDICINE_CATALOG_PAGE_SIZE
+      }
+    ],
+    queryFn: () =>
+      medicineService.list({
+        page: medicineCatalogPage,
+        pageSize: MEDICINE_CATALOG_PAGE_SIZE,
+        search: debouncedMedicineSearch.trim() || undefined,
+        sortBy: "arabicName",
+        sortOrder: "asc"
+      }),
+    enabled: open && mode === "appointment",
+    placeholderData: keepPreviousData
   });
 
   const patientAssessmentsQuery = useQuery({
@@ -718,13 +752,13 @@ export function MedicalRecordModal({
         payload.specialty.code,
         values,
         payload.appointment.entryType,
-        clinicScope,
+        appointmentModeClinicScope,
         payload.appointment.id
       );
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({
-        queryKey: ["medical-record", "appointment", appointmentContext?.id, clinicScope ?? "mine"]
+        queryKey: ["medical-record", "appointment", appointmentContext?.id, appointmentModeClinicScope ?? "mine"]
       });
       await queryClient.invalidateQueries({ queryKey: ["patients"] });
       toast.success(t("patients.assessment.saved"));
@@ -803,31 +837,12 @@ export function MedicalRecordModal({
     setManualMedicineName("");
   };
 
-  const filteredMedicines = useMemo(() => {
-    const all = allMedicinesQuery.data ?? [];
-    const tokens = debouncedMedicineSearch
-      .trim()
-      .toLowerCase()
-      .split(/\s+/)
-      .filter(Boolean);
-    if (!tokens.length) return all;
-
-    return all.filter((medicine) => {
-      const haystack = [
-        medicine.arabicName,
-        medicine.englishName,
-        medicine.activeIngredient,
-        medicine.company,
-        medicine.specialty,
-        medicine.dosageForm,
-        medicine.concentration
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return tokens.every((token) => haystack.includes(token));
-    });
-  }, [allMedicinesQuery.data, debouncedMedicineSearch]);
+  const catalogPayload = medicinesCatalogQuery.data;
+  const catalogRows = catalogPayload?.data ?? [];
+  const catalogTotal = catalogPayload?.total ?? 0;
+  const catalogTotalPages = Math.max(1, catalogPayload?.totalPages ?? 1);
+  const catalogPageNum = catalogPayload?.page ?? medicineCatalogPage;
+  const catalogSearchTrimmed = debouncedMedicineSearch.trim();
 
   const printAppointmentPrescription = (params: {
     patientName: string;
@@ -861,17 +876,50 @@ export function MedicalRecordModal({
       return;
     }
 
-    const medicinesHtml = list
-      .map(
-        (item, index) => `
-          <article class="rxItem">
-            <div class="rxLine rxTitle"><span class="rxNum">${index + 1}.</span> ${escapeHtml(item.name)}</div>
-            <div class="rxLine rxMeta">${escapeHtml(item.dosage || "—")} · ${escapeHtml(item.frequency || "—")} · ${escapeHtml(item.duration || "—")}</div>
-            ${item.instructions?.trim() ? `<div class="rxLine rxInstr">${escapeHtml(item.instructions)}</div>` : ""}
-          </article>
-        `
-      )
-      .join("");
+    const printDash = "—";
+    const formatPrintCell = (value: string | undefined) => {
+      const v = value?.trim();
+      if (!v) return printDash;
+      return escapeHtml(v).replace(/\n/g, "<br>");
+    };
+
+    const thDrug = t("appointments.prescription.name");
+    const thDose = t("appointments.prescription.dosage");
+    const thDur = t("appointments.prescription.duration");
+    const thInstr = t("appointments.prescription.instructions");
+    const thFreq = t("appointments.prescription.frequency");
+
+    const medicinesHtml = `
+      <div class="rxTableWrap">
+        <table class="rxTable">
+          <thead>
+            <tr>
+              <th class="rxTh rxThNum" scope="col">#</th>
+              <th class="rxTh rxThDrug" scope="col">${thDrug}</th>
+              <th class="rxTh rxThDose" scope="col">${thDose}</th>
+              <th class="rxTh rxThDur" scope="col">${thDur}</th>
+              <th class="rxTh rxThInstr" scope="col">${thInstr}</th>
+              <th class="rxTh rxThFreq" scope="col">${thFreq}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${list
+              .map(
+                (item, index) => `
+            <tr class="rxTr">
+              <td class="rxTd rxTdNum">${index + 1}</td>
+              <td class="rxTd rxTdDrug">${escapeHtml(item.name)}</td>
+              <td class="rxTd rxTdDose">${formatPrintCell(item.dosage)}</td>
+              <td class="rxTd rxTdDur">${formatPrintCell(item.duration)}</td>
+              <td class="rxTd rxTdInstr">${formatPrintCell(item.instructions)}</td>
+              <td class="rxTd rxTdFreq">${formatPrintCell(item.frequency)}</td>
+            </tr>`
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
     const diagnosesText = escapeHtml(params.diagnoses.length ? params.diagnoses.join(" - ") : "-");
     const printTitle = t("appointments.prescription.printTitle");
     const isArabic = locale === "ar";
@@ -1102,33 +1150,93 @@ export function MedicalRecordModal({
           }
           .sectionBody { font-size: calc(11px * var(--font-scale) * var(--fit-scale)); color: var(--ink-soft); line-height: calc(1.5 * var(--line-scale)); text-align: center; }
           .rxHeading {
-            margin: calc(6px * var(--space-scale) * var(--fit-scale)) 0
-              calc(6px * var(--space-scale) * var(--fit-scale));
-            font-size: calc(12px * var(--font-scale) * var(--fit-scale));
+            margin: calc(10px * var(--space-scale) * var(--fit-scale)) auto
+              calc(10px * var(--space-scale) * var(--fit-scale));
+            padding-bottom: calc(6px * var(--space-scale) * var(--fit-scale));
+            font-size: calc(13px * var(--font-scale) * var(--fit-scale));
             font-weight: 800;
             color: #0b2b4a;
             text-align: center;
+            max-width: min(92%, var(--content-max));
+          }
+          .rxHeading::after {
+            content: "";
+            display: block;
+            height: 2px;
+            margin-top: calc(6px * var(--space-scale) * var(--fit-scale));
+            margin-left: auto;
+            margin-right: auto;
+            max-width: 220px;
+            border-radius: 1px;
+            background: linear-gradient(90deg, transparent, var(--brand-primary), var(--brand-secondary), transparent);
           }
           .rxList {
             margin: 0 0 calc(6px * var(--space-scale) * var(--fit-scale));
             page-break-inside: avoid;
+            width: 100%;
           }
-          .rxItem {
-            margin: 0 auto calc(10px * var(--space-scale) * var(--fit-scale));
-            padding: 0 calc(3px * var(--space-scale) * var(--fit-scale))
+          .rxTableWrap {
+            width: 100%;
+            max-width: min(100%, 720px);
+            margin: 0 auto calc(8px * var(--space-scale) * var(--fit-scale));
+            text-align: start;
+            border-radius: calc(14px * var(--fit-scale));
+            overflow: hidden;
+            box-shadow:
+              0 1px 0 rgba(15, 23, 42, 0.06),
+              0 12px 28px rgba(14, 165, 183, 0.08),
+              inset 0 1px 0 rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(14, 165, 183, 0.18);
+            background: linear-gradient(180deg, #ffffff 0%, #f9fcff 100%);
+          }
+          body.compact .rxTableWrap { max-width: 100%; }
+          .rxTable {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            font-size: calc(11px * var(--font-scale) * var(--fit-scale));
+          }
+          .rxTh {
+            padding: calc(10px * var(--space-scale) * var(--fit-scale))
               calc(8px * var(--space-scale) * var(--fit-scale));
-            border: 0;
-            max-width: 520px;
-            border-radius: calc(12px * var(--fit-scale));
-            background: linear-gradient(180deg, rgba(14, 165, 183, 0.05), rgba(37, 99, 235, 0.03));
+            text-align: start;
+            font-weight: 700;
+            font-size: calc(10px * var(--font-scale) * var(--fit-scale));
+            letter-spacing: 0.01em;
+            text-transform: none;
+            color: #111827;
+            background: linear-gradient(180deg, #f9fafb 0%, #f3f4f6 100%);
+            border-bottom: 1px solid #d1d5db;
+            vertical-align: bottom;
           }
-          .rxItem:last-child { margin-bottom: 0; padding-bottom: 0; }
-          body.compact .rxItem { max-width: 100%; }
-          .rxLine { font-size: calc(11px * var(--font-scale) * var(--fit-scale)); color: var(--ink-soft); line-height: calc(1.46 * var(--line-scale)); text-align: center; }
-          .rxTitle { font-size: calc(12px * var(--font-scale) * var(--fit-scale)); font-weight: 800; color: #0b2b4a; margin-bottom: calc(3px * var(--space-scale) * var(--fit-scale)); }
-          .rxNum { font-weight: 800; margin-inline-end: 4px; }
-          .rxMeta { color: #3f5f7d; }
-          .rxInstr { margin-top: calc(3px * var(--space-scale) * var(--fit-scale)); color: #315470; font-style: italic; }
+          .rxThNum { width: 2.25rem; text-align: center; }
+          .rxThDrug { width: 24%; }
+          .rxThDose { width: 12%; }
+          .rxThDur { width: 11%; }
+          .rxThInstr { width: 28%; }
+          .rxThFreq { width: 15%; }
+          .rxTr:nth-child(even) .rxTd { background: rgba(14, 165, 183, 0.04); }
+          .rxTd {
+            padding: calc(9px * var(--space-scale) * var(--fit-scale))
+              calc(8px * var(--space-scale) * var(--fit-scale));
+            vertical-align: top;
+            text-align: start;
+            color: var(--ink-strong);
+            border-top: 1px solid rgba(15, 23, 42, 0.07);
+            line-height: calc(1.45 * var(--line-scale));
+            word-break: break-word;
+          }
+          .rxTdNum {
+            text-align: center;
+            font-weight: 800;
+            color: #0b2b4a;
+            background: rgba(14, 165, 183, 0.06);
+          }
+          .rxTdDrug { font-weight: 700; color: #0b2b4a; }
+          .rxTdDose,
+          .rxTdDur,
+          .rxTdInstr,
+          .rxTdFreq { color: #1e3a4f; font-weight: 600; }
           .footer {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1371,6 +1479,7 @@ export function MedicalRecordModal({
     const doctorNotes = appointmentDoctorNotes.trim();
     const template = payload.template as SpecialtyTemplate | null;
     const appointmentSpecialtyLabel = locale === "ar" ? payload.specialty?.nameAr ?? "-" : payload.specialty?.name ?? "-";
+    const rxMetaTextareaClass = `min-h-[4.25rem] resize-y rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm leading-relaxed outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100 whitespace-pre-wrap [field-sizing:content]${locale === "ar" ? " [word-spacing:0.2em]" : ""}`;
 
     return (
       <div className="space-y-4">
@@ -1509,32 +1618,112 @@ export function MedicalRecordModal({
                       className="h-9 w-full rounded-md border border-slate-300 bg-white px-2.5 text-sm outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
                     />
                     <p className="mt-1 text-[11px] text-slate-500">
-                      {t("appointments.prescription.catalogCount", { count: String(allMedicinesQuery.data?.length ?? 0) })}
+                      {t("appointments.prescription.catalogCount", { count: String(catalogTotal) })}
+                      {catalogTotal > 0 ? (
+                        <span className="ms-2 text-slate-400">
+                          {t("appointments.prescription.catalogPageInfo", {
+                            page: String(catalogPageNum),
+                            totalPages: String(catalogTotalPages)
+                          })}
+                        </span>
+                      ) : null}
                     </p>
                   </div>
-                  <div className="max-h-56 overflow-auto">
-                    {allMedicinesQuery.isLoading ? (
+                  <div className="max-h-72 overflow-y-auto overflow-x-auto">
+                    {medicinesCatalogQuery.isLoading && !catalogPayload ? (
                       <p className="px-3 py-2 text-xs text-slate-500">{t("appointments.prescription.loadingCatalog")}</p>
-                    ) : !(allMedicinesQuery.data?.length ?? 0) ? (
+                    ) : catalogTotal === 0 && !catalogSearchTrimmed ? (
                       <p className="px-3 py-2 text-xs text-slate-500">{t("appointments.prescription.noCatalogData")}</p>
-                    ) : filteredMedicines.length ? (
-                      filteredMedicines.map((medicine) => (
-                        <button
-                          key={medicine.id}
-                          type="button"
-                          className="flex w-full items-center justify-between border-b border-slate-100 px-3 py-2 text-left text-sm transition last:border-b-0 hover:bg-orange-50"
-                          onClick={() => addCatalogMedicine(medicine)}
-                        >
-                          <span className="font-medium text-slate-800">
-                            {locale === "ar" ? medicine.arabicName : medicine.englishName}
-                          </span>
-                          <span className="text-xs text-slate-500">{medicine.activeIngredient}</span>
-                        </button>
-                      ))
-                    ) : (
+                    ) : catalogTotal === 0 && catalogSearchTrimmed ? (
                       <p className="px-3 py-2 text-xs text-slate-500">{t("appointments.prescription.noCatalogResultsForSearch")}</p>
+                    ) : (
+                      <table className="min-w-max w-full border-collapse text-start text-xs text-slate-800">
+                        <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50">
+                          <tr>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold text-slate-600">
+                              {t("pharmacy.table.arabicName")}
+                            </th>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold text-slate-600">
+                              {t("pharmacy.table.englishName")}
+                            </th>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold text-slate-600">
+                              {t("pharmacy.table.activeIngredient")}
+                            </th>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold text-slate-600">
+                              {t("appointments.prescription.catalogCol.usageMethod")}
+                            </th>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold text-slate-600">
+                              {t("pharmacy.table.specialty")}
+                            </th>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold text-slate-600">
+                              {t("pharmacy.table.dosageForm")}
+                            </th>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold text-slate-600">
+                              {t("pharmacy.table.concentration")}
+                            </th>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold text-slate-600">
+                              {t("pharmacy.table.company")}
+                            </th>
+                            <th className="whitespace-nowrap px-2 py-2 font-semibold text-slate-600">
+                              {t("appointments.prescription.catalogCol.actions")}
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {catalogRows.map((medicine) => (
+                            <tr key={medicine.id} className="border-b border-slate-100 last:border-b-0 hover:bg-orange-50/60">
+                              <td className="max-w-[10rem] px-2 py-1.5 align-middle">{medicine.arabicName}</td>
+                              <td className="max-w-[10rem] px-2 py-1.5 align-middle">{medicine.englishName}</td>
+                              <td className="max-w-[9rem] px-2 py-1.5 align-middle">{catalogTableCell(medicine.activeIngredient)}</td>
+                              <td className="max-w-[8rem] px-2 py-1.5 align-middle">{catalogTableCell(medicine.usageMethod)}</td>
+                              <td className="max-w-[8rem] px-2 py-1.5 align-middle">{catalogTableCell(medicine.specialty)}</td>
+                              <td className="max-w-[7rem] px-2 py-1.5 align-middle">{catalogTableCell(medicine.dosageForm)}</td>
+                              <td className="max-w-[7rem] px-2 py-1.5 align-middle">{catalogTableCell(medicine.concentration)}</td>
+                              <td className="max-w-[8rem] px-2 py-1.5 align-middle">{catalogTableCell(medicine.company)}</td>
+                              <td className="whitespace-nowrap px-2 py-1.5 align-middle">
+                                <button
+                                  type="button"
+                                  className="inline-flex h-8 items-center gap-1 rounded-lg bg-orange-600 px-2.5 text-[11px] font-semibold text-white transition hover:bg-orange-700"
+                                  onClick={() => addCatalogMedicine(medicine)}
+                                >
+                                  <Plus size={12} />
+                                  {t("common.add")}
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     )}
                   </div>
+                  {catalogTotal > 0 ? (
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-2 py-2">
+                      <button
+                        type="button"
+                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={catalogPageNum <= 1 || medicinesCatalogQuery.isFetching}
+                        onClick={() => setMedicineCatalogPage((p) => Math.max(1, p - 1))}
+                      >
+                        <ChevronLeft size={14} />
+                        {t("appointments.prescription.catalogPrev")}
+                      </button>
+                      <span className="text-[11px] text-slate-500">
+                        {t("appointments.prescription.catalogPageInfo", {
+                          page: String(catalogPageNum),
+                          totalPages: String(catalogTotalPages)
+                        })}
+                      </span>
+                      <button
+                        type="button"
+                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={catalogPageNum >= catalogTotalPages || medicinesCatalogQuery.isFetching}
+                        onClick={() => setMedicineCatalogPage((p) => p + 1)}
+                      >
+                        {t("appointments.prescription.catalogNext")}
+                        <ChevronRight size={14} />
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -1580,28 +1769,36 @@ export function MedicalRecordModal({
                       </button>
                     </div>
                     <div className="grid gap-2 md:grid-cols-2">
-                      <input
+                      <textarea
+                        rows={2}
                         value={item.dosage ?? ""}
                         onChange={(event) => updateMedicineItem(index, { dosage: event.target.value })}
-                        className="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                        onBlur={(event) => updateMedicineItem(index, { dosage: event.target.value.trim() })}
+                        className={rxMetaTextareaClass}
                         placeholder={t("appointments.prescription.dosage")}
                       />
-                      <input
+                      <textarea
+                        rows={2}
                         value={item.frequency ?? ""}
                         onChange={(event) => updateMedicineItem(index, { frequency: event.target.value })}
-                        className="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                        onBlur={(event) => updateMedicineItem(index, { frequency: event.target.value.trim() })}
+                        className={rxMetaTextareaClass}
                         placeholder={t("appointments.prescription.frequency")}
                       />
-                      <input
+                      <textarea
+                        rows={2}
                         value={item.duration ?? ""}
                         onChange={(event) => updateMedicineItem(index, { duration: event.target.value })}
-                        className="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                        onBlur={(event) => updateMedicineItem(index, { duration: event.target.value.trim() })}
+                        className={rxMetaTextareaClass}
                         placeholder={t("appointments.prescription.duration")}
                       />
-                      <input
+                      <textarea
+                        rows={2}
                         value={item.instructions ?? ""}
                         onChange={(event) => updateMedicineItem(index, { instructions: event.target.value })}
-                        className="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
+                        onBlur={(event) => updateMedicineItem(index, { instructions: event.target.value.trim() })}
+                        className={rxMetaTextareaClass}
                         placeholder={t("appointments.prescription.instructions")}
                       />
                     </div>

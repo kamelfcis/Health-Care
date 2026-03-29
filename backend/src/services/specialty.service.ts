@@ -988,5 +988,130 @@ export const specialtyService = {
       where: { templateId },
       orderBy: { displayOrder: "asc" }
     });
+  },
+
+  async bulkUpsertGridFields(
+    templateId: string,
+    payload: {
+      deletedFieldIds: string[];
+      cells: Array<{
+        fieldId?: string;
+        key: string;
+        label: string;
+        labelAr: string;
+        sectionId: string;
+        section: string;
+        sectionAr: string;
+        fieldType: "TEXT" | "TEXT_AREA" | "NUMBER" | "YES_NO" | "DATE" | "DROPDOWN" | "MULTI_SELECT" | "AUTO" | "GRID";
+        displayOrder: number;
+        metadata?: Record<string, unknown> | null;
+        options?: Array<{
+          id?: string;
+          value: string;
+          label: string;
+          labelAr: string;
+          displayOrder: number;
+        }>;
+      }>;
+    }
+  ) {
+    const template = await prisma.specialtyTemplate.findUnique({
+      where: { id: templateId },
+      select: { id: true }
+    });
+    if (!template) throw new AppError("Template not found", 404);
+
+    return prisma.$transaction(async (tx) => {
+      if (payload.deletedFieldIds.length > 0) {
+        await tx.specialtyTemplateOption.deleteMany({
+          where: { field: { id: { in: payload.deletedFieldIds }, templateId } }
+        });
+        await tx.specialtyTemplateField.deleteMany({
+          where: { id: { in: payload.deletedFieldIds }, templateId }
+        });
+      }
+
+      const resultIds: string[] = [];
+
+      for (const cell of payload.cells) {
+        let fieldId: string;
+
+        if (cell.fieldId) {
+          await tx.specialtyTemplateField.update({
+            where: { id: cell.fieldId },
+            data: {
+              label: cell.label,
+              labelAr: cell.labelAr,
+              fieldType: cell.fieldType,
+              displayOrder: cell.displayOrder,
+              metadata: cell.metadata === null
+                ? Prisma.JsonNull
+                : cell.metadata as Prisma.InputJsonValue ?? undefined
+            }
+          });
+          fieldId = cell.fieldId;
+        } else {
+          const created = await tx.specialtyTemplateField.create({
+            data: {
+              templateId,
+              sectionId: cell.sectionId,
+              key: cell.key,
+              label: cell.label,
+              labelAr: cell.labelAr,
+              section: cell.section,
+              sectionAr: cell.sectionAr,
+              fieldType: cell.fieldType,
+              displayOrder: cell.displayOrder,
+              metadata: cell.metadata as Prisma.InputJsonValue ?? undefined
+            }
+          });
+          fieldId = created.id;
+        }
+
+        resultIds.push(fieldId);
+
+        const nextOptions = cell.options ?? [];
+        const nextOptionIds = new Set(
+          nextOptions.map((o) => o.id).filter((id): id is string => Boolean(id))
+        );
+
+        await tx.specialtyTemplateOption.deleteMany({
+          where: {
+            fieldId,
+            ...(nextOptionIds.size > 0 ? { id: { notIn: [...nextOptionIds] } } : {})
+          }
+        });
+
+        for (const opt of nextOptions) {
+          if (opt.id) {
+            await tx.specialtyTemplateOption.update({
+              where: { id: opt.id },
+              data: {
+                value: opt.value,
+                label: opt.label,
+                labelAr: opt.labelAr,
+                displayOrder: opt.displayOrder
+              }
+            });
+          } else {
+            await tx.specialtyTemplateOption.create({
+              data: {
+                fieldId,
+                value: opt.value,
+                label: opt.label,
+                labelAr: opt.labelAr,
+                displayOrder: opt.displayOrder
+              }
+            });
+          }
+        }
+      }
+
+      return tx.specialtyTemplateField.findMany({
+        where: { id: { in: resultIds } },
+        include: { options: { orderBy: { displayOrder: "asc" } } },
+        orderBy: { displayOrder: "asc" }
+      });
+    }, { maxWait: 10000, timeout: 30000 });
   }
 };

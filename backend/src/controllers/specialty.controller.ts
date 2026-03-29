@@ -338,5 +338,44 @@ export const specialtyController = {
   async adminRemoveRule(req: Request, res: Response) {
     const data = await specialtyService.removeTemplateRule(String(req.params.ruleId));
     res.json(apiSuccess(data, "Rule deleted"));
+  },
+
+  async adminBulkUpsertGridFields(req: Request, res: Response) {
+    const parsed = z
+      .object({
+        deletedFieldIds: z.array(z.string().min(1)).default([]),
+        cells: z.array(
+          z.object({
+            fieldId: z.string().min(1).optional(),
+            key: z.string().min(1),
+            label: z.string().min(1),
+            labelAr: z.string().min(1),
+            sectionId: z.string().min(1),
+            section: z.string().min(1),
+            sectionAr: z.string().min(1),
+            fieldType: fieldTypeSchema,
+            displayOrder: z.number().int().positive(),
+            metadata: z.union([z.record(z.string(), z.unknown()), z.null()]).optional(),
+            options: z
+              .array(
+                z.object({
+                  id: z.string().min(1).optional(),
+                  value: z.string().min(1),
+                  label: z.string().min(1),
+                  labelAr: z.string().min(1),
+                  displayOrder: z.number().int().positive()
+                })
+              )
+              .optional()
+          })
+        )
+      })
+      .parse(req.body);
+
+    const data = await specialtyService.bulkUpsertGridFields(
+      String(req.params.templateId),
+      parsed
+    );
+    res.json(apiSuccess(data, "Grid fields saved"));
   }
 };

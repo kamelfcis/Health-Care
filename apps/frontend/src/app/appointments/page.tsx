@@ -26,6 +26,7 @@ import { AppointmentMedicalRecordContext, MedicalRecordModal } from "@/component
 
 type AppointmentRow = {
   id: string;
+  clinicId: string;
   patientId: string;
   doctorId: string;
   specialtyCode: string;
@@ -223,6 +224,7 @@ export default function AppointmentsPage() {
     () =>
       appointmentsQuery.data?.map((item) => ({
         id: item.id,
+        clinicId: item.clinicId,
         patientId: item.patient?.id ?? "",
         doctorId: item.doctor?.id ?? "",
         specialtyCode: item.specialty?.code ?? "",
@@ -528,13 +530,13 @@ export default function AppointmentsPage() {
         toast.error(t("appointments.medicalFile.patientMissing"));
         return;
       }
-      if (isSuperAdmin && selectedClinicId === "all") {
-        toast.error(t("patients.assessment.selectClinicScope"));
+      if (!row.clinicId) {
+        toast.error(t("appointments.medicalFile.clinicMissing"));
         return;
       }
-      setMedicalFileAppointment({ id: row.id });
+      setMedicalFileAppointment({ id: row.id, clinicId: row.clinicId });
     },
-    [isSuperAdmin, selectedClinicId, t]
+    [t]
   );
 
   const createMutation = useMutation({
@@ -956,7 +958,7 @@ export default function AppointmentsPage() {
         open={Boolean(medicalFileAppointment)}
         mode="appointment"
         appointmentContext={medicalFileAppointment}
-        clinicScope={appointmentClinicScope}
+        clinicScope={appointmentClinicScope ?? medicalFileAppointment?.clinicId}
         onClose={() => setMedicalFileAppointment(null)}
       />
       <ConfirmDeleteModal

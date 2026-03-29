@@ -149,8 +149,10 @@ export default function PatientsPage() {
   const { locale, t } = useI18n();
   const queryClient = useQueryClient();
   const [currentUser, setCurrentUser] = useState<ReturnType<typeof storage.getUser>>(null);
+  const [userHydrated, setUserHydrated] = useState(false);
   useEffect(() => {
     setCurrentUser(storage.getUser());
+    setUserHydrated(true);
   }, []);
   const isSuperAdmin = currentUser?.role === "SuperAdmin";
   const [selectedClinicId, setSelectedClinicId] = useState<string>("all");
@@ -250,10 +252,13 @@ export default function PatientsPage() {
   });
 
   const assessmentScopeReady = !isSuperAdmin || selectedClinicId !== "all";
+  /** Avoid firing /specialties/clinic/me before storage user is read: first paint has currentUser=null so isSuperAdmin is false while JWT is SuperAdmin → 400 without clinicId. */
+  const clinicSpecialtiesQueryEnabled =
+    userHydrated && assessmentScopeReady && (!isSuperAdmin || Boolean(specialtyClinicScope));
   const clinicSpecialtiesQuery = useQuery({
     queryKey: ["specialties", "clinic", "assessment", specialtyClinicScope ?? selectedClinicId],
     queryFn: () => specialtyService.listMyClinicSpecialties(specialtyClinicScope),
-    enabled: assessmentScopeReady
+    enabled: clinicSpecialtiesQueryEnabled
   });
   const assessmentSpecialties = useMemo(
     () => (clinicSpecialtiesQuery.data ?? []).map((item) => item.specialty),
@@ -881,6 +886,7 @@ export default function PatientsPage() {
         <PatientForm
           key={editing?.id ?? "new-patient"}
           clinicScope={specialtyClinicScope}
+          clinicSpecialtiesEnabled={clinicSpecialtiesQueryEnabled}
           enableAppointmentSection={!isSuperAdmin || selectedClinicId !== "all"}
           initialValues={
             editing

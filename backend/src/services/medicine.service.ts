@@ -57,12 +57,13 @@ const buildListWhere = (search: string | undefined) => {
   return {
     deletedAt: null,
     ...(tokens.length
-      ? {
+          ? {
           AND: tokens.map((token) => ({
             OR: [
               { arabicName: { contains: token } },
               { englishName: { contains: token } },
               { activeIngredient: { contains: token } },
+              { usageMethod: { contains: token } },
               { specialty: { contains: token } },
               { company: { contains: token } },
               { dosageForm: { contains: token } },

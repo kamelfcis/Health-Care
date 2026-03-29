@@ -166,10 +166,19 @@ interface PatientFormProps {
   initialValues?: Partial<PatientFormValues>;
   submitLabel?: string;
   clinicScope?: string;
+  /** When false (e.g. SuperAdmin + all clinics), skip /specialties/clinic/me until a clinic is scoped. Default true. */
+  clinicSpecialtiesEnabled?: boolean;
   enableAppointmentSection?: boolean;
 }
 
-export function PatientForm({ onSubmit, initialValues, submitLabel, clinicScope, enableAppointmentSection = true }: PatientFormProps) {
+export function PatientForm({
+  onSubmit,
+  initialValues,
+  submitLabel,
+  clinicScope,
+  clinicSpecialtiesEnabled = true,
+  enableAppointmentSection = true
+}: PatientFormProps) {
   const { t } = useI18n();
 
   const {
@@ -241,7 +250,7 @@ export function PatientForm({ onSubmit, initialValues, submitLabel, clinicScope,
   const clinicSpecialtiesQuery = useQuery({
     queryKey: ["patients", "form", "clinic-specialties", clinicScope ?? "mine"],
     queryFn: () => specialtyService.listMyClinicSpecialties(clinicScope),
-    enabled: true
+    enabled: clinicSpecialtiesEnabled
   });
   const selectedAppointmentSpecialtyName = useMemo(
     () =>

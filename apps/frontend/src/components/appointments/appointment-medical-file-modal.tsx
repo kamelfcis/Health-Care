@@ -8,6 +8,7 @@ import { useI18n } from "@/components/providers/i18n-provider";
 import { SpecialtyAssessmentForm } from "@/components/forms/specialty-assessment-form";
 import { Modal } from "@/components/ui/modal";
 import { specialtyService, VisitEntryType } from "@/lib/specialty-service";
+import { storage } from "@/lib/storage";
 
 export interface AppointmentMedicalFilePatient {
   id: string;
@@ -48,6 +49,8 @@ export function AppointmentMedicalFileModal({ open, appointment, clinicScope, on
   const [selectedSpecialtyCode, setSelectedSpecialtyCode] = useState("");
   const [selectedEntryType, setSelectedEntryType] = useState<VisitEntryType>("EXAM");
   const canLoad = open && Boolean(appointment);
+  const isSuperAdmin = storage.getUser()?.role === "SuperAdmin";
+  const clinicSpecialtiesQueryReady = !isSuperAdmin || Boolean(clinicScope);
 
   useEffect(() => {
     if (!appointment) return;
@@ -57,7 +60,7 @@ export function AppointmentMedicalFileModal({ open, appointment, clinicScope, on
   const clinicSpecialtiesQuery = useQuery({
     queryKey: ["appointments", "medical-file", "specialties", clinicScope ?? "mine"],
     queryFn: () => specialtyService.listMyClinicSpecialties(clinicScope),
-    enabled: canLoad
+    enabled: canLoad && clinicSpecialtiesQueryReady
   });
 
   const enabledSpecialties = useMemo(

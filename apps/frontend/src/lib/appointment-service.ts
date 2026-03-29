@@ -59,6 +59,7 @@ export interface AppointmentAssessmentResponse {
 
 export interface AppointmentListItem {
   id: string;
+  clinicId: string;
   startsAt: string;
   endsAt: string;
   entryType: VisitEntryType;

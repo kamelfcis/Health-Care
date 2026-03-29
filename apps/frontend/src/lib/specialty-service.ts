@@ -349,6 +349,38 @@ export const specialtyService = {
     return res.data.data;
   },
 
+  async adminBulkUpsertGrid(
+    templateId: string,
+    payload: {
+      deletedFieldIds: string[];
+      cells: Array<{
+        fieldId?: string;
+        key: string;
+        label: string;
+        labelAr: string;
+        sectionId: string;
+        section: string;
+        sectionAr: string;
+        fieldType: SpecialtyTemplateField["fieldType"];
+        displayOrder: number;
+        metadata?: Record<string, unknown> | null;
+        options?: Array<{
+          id?: string;
+          value: string;
+          label: string;
+          labelAr: string;
+          displayOrder: number;
+        }>;
+      }>;
+    }
+  ) {
+    const res = await api.post<{ data: SpecialtyTemplateField[] }>(
+      `/specialties/admin/templates/${templateId}/grid-bulk`,
+      payload
+    );
+    return res.data.data;
+  },
+
   async adminListRules(templateId: string, fieldId?: string) {
     const res = await api.get<{ data: SpecialtyTemplateRule[] }>(`/specialties/admin/templates/${templateId}/rules`, {
       params: fieldId ? { fieldId } : undefined

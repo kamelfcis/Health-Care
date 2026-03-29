@@ -933,48 +933,8 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
       if (!gridEditTarget) throw new Error("Grid is required");
       if (!gridEditColumns.length || !gridEditRows.length) throw new Error("Grid must have at least one row and one column");
 
-      // Avoid API burst (429) when many cells/options are edited at once.
-      const runInBatches = async <T,>(
-        items: T[],
-        worker: (item: T) => Promise<void>,
-        batchSize = 1
-      ) => {
-        for (let index = 0; index < items.length; index += batchSize) {
-          const slice = items.slice(index, index + batchSize);
-          await Promise.all(slice.map((item) => worker(item)));
-        }
-      };
-
-      const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-      const with429Retry = async <T,>(fn: () => Promise<T>, maxRetries = 4): Promise<T> => {
-        let attempt = 0;
-        while (true) {
-          try {
-            return await fn();
-          } catch (error: unknown) {
-            const status =
-              typeof error === "object" &&
-              error !== null &&
-              "response" in error &&
-              typeof (error as { response?: { status?: unknown } }).response?.status === "number"
-                ? ((error as { response?: { status?: number } }).response?.status ?? 0)
-                : 0;
-
-            if (status !== 429 || attempt >= maxRetries) {
-              throw error;
-            }
-
-            const delayMs = 400 * Math.pow(2, attempt);
-            attempt += 1;
-            await sleep(delayMs);
-          }
-        }
-      };
-
-      const previousColumns = gridEditTarget.columns;
-      const previousRows = gridEditTarget.rows;
-      const previousColumnKeys = new Set(previousColumns.map((item) => item.key));
-      const previousRowKeys = new Set(previousRows.map((item) => item.key));
+      const previousColumnKeys = new Set(gridEditTarget.columns.map((item) => item.key));
+      const previousRowKeys = new Set(gridEditTarget.rows.map((item) => item.key));
 
       const usedColumnKeys = new Set<string>();
       const normalizedColumns = gridEditColumns.map((column, index) => ({
@@ -999,8 +959,8 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
 
       const nextColumnKeys = new Set(normalizedColumns.map((item) => item.key));
       const nextRowKeys = new Set(normalizedRows.map((item) => item.key));
-      const removedRowKeys = new Set(previousRows.map((item) => item.key).filter((key) => !nextRowKeys.has(key)));
-      const removedColumnKeys = new Set(previousColumns.map((item) => item.key).filter((key) => !nextColumnKeys.has(key)));
+      const removedRowKeys = new Set(gridEditTarget.rows.map((item) => item.key).filter((key) => !nextRowKeys.has(key)));
+      const removedColumnKeys = new Set(gridEditTarget.columns.map((item) => item.key).filter((key) => !nextColumnKeys.has(key)));
 
       const existingCellMap = new Map<string, SpecialtyTemplateField>();
       gridEditTarget.fields.forEach((field) => {
@@ -1009,13 +969,14 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
         existingCellMap.set(getGridCellKey(rowKey, columnKey), field);
       });
 
-      const fieldsToDelete = gridEditTarget.fields.filter((field) => {
-        const { rowKey, columnKey } = readGridMeta(field);
-        return removedRowKeys.has(rowKey) || removedColumnKeys.has(columnKey);
-      });
-      await runInBatches(fieldsToDelete, async (field) => {
-        await with429Retry(() => specialtyService.adminDeleteField(field.id));
-      });
+      const deletedFieldIds = gridEditTarget.fields
+        .filter((field) => {
+          const { rowKey, columnKey } = readGridMeta(field);
+          return removedRowKeys.has(rowKey) || removedColumnKeys.has(columnKey);
+        })
+        .map((field) => field.id);
+
+      const deletedFieldIdSet = new Set(deletedFieldIds);
 
       const gridColumnsMetadata = normalizedColumns.map((column) => ({
         key: column.key,
@@ -1025,60 +986,30 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
       }));
 
       const usedFieldKeys = new Set((selectedTemplate?.fields ?? []).map((field) => field.key));
-      fieldsToDelete.forEach((field) => usedFieldKeys.delete(field.key));
+      deletedFieldIds.forEach((id) => {
+        const field = gridEditTarget.fields.find((f) => f.id === id);
+        if (field) usedFieldKeys.delete(field.key);
+      });
 
-      const upsertTasks: Array<() => Promise<void>> = [];
+      const section = selectedTemplateSections.find((s) => s.id === gridEditTarget.sectionId);
+      const sectionName = section?.name ?? "Section";
+      const sectionNameAr = section?.nameAr ?? "قسم";
 
-      const syncFieldOptions = async (
-        fieldId: string,
-        existingOptions: SpecialtyTemplateField["options"],
-        nextOptions: GridCellOptionDraft[],
-        enabled: boolean
-      ) => {
-        if (!enabled) {
-          await runInBatches(existingOptions, async (option) => {
-            await with429Retry(() => specialtyService.adminDeleteOption(option.id));
-          });
-          return;
-        }
-        const normalized = nextOptions
-          .map((option, index) => ({
-            id: option.id,
-            value: option.value.trim() || `option_${index + 1}`,
-            label: option.label.trim() || option.value.trim() || `Option ${index + 1}`,
-            labelAr: option.labelAr.trim() || option.label.trim() || `خيار ${index + 1}`,
-            displayOrder: index + 1
-          }))
-          .filter((option) => option.value);
+      const cells: Array<{
+        fieldId?: string;
+        key: string;
+        label: string;
+        labelAr: string;
+        sectionId: string;
+        section: string;
+        sectionAr: string;
+        fieldType: SpecialtyTemplateField["fieldType"];
+        displayOrder: number;
+        metadata: Record<string, unknown>;
+        options?: Array<{ id?: string; value: string; label: string; labelAr: string; displayOrder: number }>;
+      }> = [];
 
-        const nextIds = new Set(normalized.map((option) => option.id).filter(Boolean));
-        const toDelete = existingOptions.filter((option) => !nextIds.has(option.id));
-        await runInBatches(toDelete, async (option) => {
-          await with429Retry(() => specialtyService.adminDeleteOption(option.id));
-        });
-        await runInBatches(normalized, async (option) => {
-          if (option.id) {
-            await with429Retry(() =>
-              specialtyService.adminUpdateOption(option.id!, {
-                value: option.value,
-                label: option.label,
-                labelAr: option.labelAr,
-                displayOrder: option.displayOrder
-              })
-            );
-            return;
-          }
-          await with429Retry(() =>
-            specialtyService.adminCreateOption(fieldId, {
-              value: option.value,
-              label: option.label,
-              labelAr: option.labelAr,
-              displayOrder: option.displayOrder
-            })
-          );
-        });
-      };
-
+      let displayOrder = 1;
       normalizedRows.forEach((row) => {
         normalizedColumns.forEach((column) => {
           const cellKey = getGridCellKey(row.key, column.key);
@@ -1096,7 +1027,7 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
           const rawLabelAr = cellConfig.labelAr.trim();
           const label = rawLabel || `${row.label} - ${column.label}`;
           const labelAr = rawLabelAr || `${row.labelAr} - ${column.labelAr}`;
-          const metadata = {
+          const metadata: Record<string, unknown> = {
             row: row.key,
             columnKey: column.key,
             cellType: selectedType,
@@ -1108,40 +1039,43 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
               columns: gridColumnsMetadata
             }
           };
-          upsertTasks.push(async () => {
-            if (existingField && !removedRowKeys.has(row.key) && !removedColumnKeys.has(column.key)) {
-              await with429Retry(() =>
-                specialtyService.adminUpdateField(existingField.id, {
-                  label,
-                  labelAr,
-                  fieldType: persistedType,
-                  metadata
-                })
-              );
-              await syncFieldOptions(existingField.id, existingField.options, cellConfig.options, wantsOptions);
-              return;
-            }
-            const createdField = await with429Retry(() =>
-              specialtyService.adminCreateField(selectedTemplateId, {
-                key: ensureUniqueKey(
+
+          const isExistingUpdate = existingField && !deletedFieldIdSet.has(existingField.id);
+
+          const normalizedOptions = wantsOptions
+            ? cellConfig.options
+                .map((option, index) => ({
+                  id: option.id,
+                  value: option.value.trim() || `option_${index + 1}`,
+                  label: option.label.trim() || option.value.trim() || `Option ${index + 1}`,
+                  labelAr: option.labelAr.trim() || option.label.trim() || `خيار ${index + 1}`,
+                  displayOrder: index + 1
+                }))
+                .filter((option) => option.value)
+            : [];
+
+          cells.push({
+            fieldId: isExistingUpdate ? existingField.id : undefined,
+            key: isExistingUpdate
+              ? existingField.key
+              : ensureUniqueKey(
                   `${sanitizeKeyBase(gridEditTarget.id, "grid")}_${row.key}_${column.key}`,
                   usedFieldKeys
                 ),
-                label,
-                labelAr,
-                sectionId: gridEditTarget.sectionId,
-                fieldType: persistedType,
-                metadata
-              })
-            );
-            await syncFieldOptions(createdField.id, createdField.options ?? [], cellConfig.options, wantsOptions);
+            label,
+            labelAr,
+            sectionId: gridEditTarget.sectionId,
+            section: sectionName,
+            sectionAr: sectionNameAr,
+            fieldType: persistedType,
+            displayOrder: displayOrder++,
+            metadata,
+            options: normalizedOptions
           });
         });
       });
 
-      await runInBatches(upsertTasks, async (task) => {
-        await task();
-      });
+      await specialtyService.adminBulkUpsertGrid(selectedTemplateId, { deletedFieldIds, cells });
     },
     onSuccess: async () => {
       toast.success("تم تحديث الـ Grid");
@@ -3132,6 +3066,11 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                   );
                 })()
               ) : null}
+              {saveGridEditMutation.isPending && (
+                <div className="mt-3 overflow-hidden rounded-full bg-orange-100">
+                  <div className="h-1.5 w-1/3 animate-[indeterminate_1.4s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-orange-400 via-amber-500 to-orange-400" />
+                </div>
+              )}
               <div className="mt-4 flex flex-wrap items-center justify-end gap-2 rounded-2xl border border-orange-200/70 bg-white/95 px-3 py-3 shadow-sm">
                 <button
                   type="button"

@@ -162,6 +162,12 @@ router.delete(
   allowRoles("SuperAdmin"),
   asyncHandler(specialtyController.adminRemoveOption)
 );
+router.post(
+  "/admin/templates/:templateId/grid-bulk",
+  requireAuth,
+  allowRoles("SuperAdmin"),
+  asyncHandler(specialtyController.adminBulkUpsertGridFields)
+);
 router.get(
   "/admin/templates/:templateId/rules",
   requireAuth,
