@@ -2730,7 +2730,7 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                 </div>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto pe-1">
-                <div className="grid gap-4 2xl:grid-cols-[380px_minmax(0,1fr)]">
+                <div className="grid gap-4 lg:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]">
                 <motion.div className="space-y-4" variants={modalPanelVariants} initial="hidden" animate="show">
                 <motion.div className="rounded-2xl border border-orange-200/60 bg-white p-3 shadow-[0_10px_28px_rgba(15,23,42,0.08)]" variants={modalPanelItemVariants}>
                   <div className="mb-2 flex items-center justify-between">
@@ -2750,30 +2750,33 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                   </div>
                   <div className="space-y-2">
                     {gridEditColumns.map((column, index) => (
-                      <div key={`edit-column-${column.key}`} className="grid gap-2 rounded-xl border border-transparent p-1 transition duration-150 hover:-translate-y-0.5 hover:scale-[1.01] hover:border-orange-200 hover:bg-orange-50/40 hover:shadow-md md:grid-cols-[1fr_1fr_auto]">
-                        <input
-                          value={column.label}
-                          onChange={(event) =>
-                            setGridEditColumns((prev) =>
-                              prev.map((item, itemIndex) => (itemIndex === index ? { ...item, label: event.target.value } : item))
-                            )
-                          }
-                          className={`${dsInputCompactClass} h-10 text-base`}
-                          placeholder="الاسم (English)"
-                        />
-                        <input
-                          value={column.labelAr}
-                          onChange={(event) =>
-                            setGridEditColumns((prev) =>
-                              prev.map((item, itemIndex) => (itemIndex === index ? { ...item, labelAr: event.target.value } : item))
-                            )
-                          }
-                          className={`${dsInputCompactClass} h-10 text-base`}
-                          placeholder="الاسم العربي"
-                        />
+                      <div key={`edit-column-${column.key}`} className="flex items-start gap-2 rounded-xl border border-transparent p-1.5 transition duration-150 hover:border-orange-200 hover:bg-orange-50/40 hover:shadow-md">
+                        <span className="flex h-10 w-7 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-xs font-bold text-orange-700">{index + 1}</span>
+                        <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row">
+                          <input
+                            value={column.label}
+                            onChange={(event) =>
+                              setGridEditColumns((prev) =>
+                                prev.map((item, itemIndex) => (itemIndex === index ? { ...item, label: event.target.value } : item))
+                              )
+                            }
+                            className={`${dsInputCompactClass} h-10 min-w-0 flex-1 text-base`}
+                            placeholder="الاسم (English)"
+                          />
+                          <input
+                            value={column.labelAr}
+                            onChange={(event) =>
+                              setGridEditColumns((prev) =>
+                                prev.map((item, itemIndex) => (itemIndex === index ? { ...item, labelAr: event.target.value } : item))
+                              )
+                            }
+                            className={`${dsInputCompactClass} h-10 min-w-0 flex-1 text-base`}
+                            placeholder="الاسم العربي"
+                          />
+                        </div>
                         <button
                           type="button"
-                          className="h-9 rounded-lg border border-rose-200 bg-rose-50 px-2 text-xs text-rose-700"
+                          className="h-10 shrink-0 rounded-lg border border-rose-200 bg-rose-50 px-2.5 text-xs text-rose-700"
                           disabled={gridEditColumns.length <= 1}
                           onClick={() =>
                             setGridEditColumns((prev) => prev.filter((_, itemIndex) => itemIndex !== index))
@@ -2803,30 +2806,33 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                   </div>
                   <div className="space-y-2">
                     {gridEditRows.map((row, index) => (
-                      <div key={`edit-row-${row.key}`} className="grid gap-2 rounded-xl border border-transparent p-1 transition duration-150 hover:-translate-y-0.5 hover:scale-[1.01] hover:border-orange-200 hover:bg-orange-50/40 hover:shadow-md md:grid-cols-[1fr_1fr_auto]">
-                        <input
-                          value={row.label}
-                          onChange={(event) =>
-                            setGridEditRows((prev) =>
-                              prev.map((item, itemIndex) => (itemIndex === index ? { ...item, label: event.target.value } : item))
-                            )
-                          }
-                          className={`${dsInputCompactClass} h-10 text-base`}
-                          placeholder="الاسم (English)"
-                        />
-                        <input
-                          value={row.labelAr}
-                          onChange={(event) =>
-                            setGridEditRows((prev) =>
-                              prev.map((item, itemIndex) => (itemIndex === index ? { ...item, labelAr: event.target.value } : item))
-                            )
-                          }
-                          className={`${dsInputCompactClass} h-10 text-base`}
-                          placeholder="الاسم العربي"
-                        />
+                      <div key={`edit-row-${row.key}`} className="flex items-start gap-2 rounded-xl border border-transparent p-1.5 transition duration-150 hover:border-orange-200 hover:bg-orange-50/40 hover:shadow-md">
+                        <span className="flex h-10 w-7 shrink-0 items-center justify-center rounded-lg bg-orange-100 text-xs font-bold text-orange-700">{index + 1}</span>
+                        <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row">
+                          <input
+                            value={row.label}
+                            onChange={(event) =>
+                              setGridEditRows((prev) =>
+                                prev.map((item, itemIndex) => (itemIndex === index ? { ...item, label: event.target.value } : item))
+                              )
+                            }
+                            className={`${dsInputCompactClass} h-10 min-w-0 flex-1 text-base`}
+                            placeholder="الاسم (English)"
+                          />
+                          <input
+                            value={row.labelAr}
+                            onChange={(event) =>
+                              setGridEditRows((prev) =>
+                                prev.map((item, itemIndex) => (itemIndex === index ? { ...item, labelAr: event.target.value } : item))
+                              )
+                            }
+                            className={`${dsInputCompactClass} h-10 min-w-0 flex-1 text-base`}
+                            placeholder="الاسم العربي"
+                          />
+                        </div>
                         <button
                           type="button"
-                          className="h-9 rounded-lg border border-rose-200 bg-rose-50 px-2 text-xs text-rose-700"
+                          className="h-10 shrink-0 rounded-lg border border-rose-200 bg-rose-50 px-2.5 text-xs text-rose-700"
                           disabled={gridEditRows.length <= 1}
                           onClick={() =>
                             setGridEditRows((prev) => prev.filter((_, itemIndex) => itemIndex !== index))
