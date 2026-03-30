@@ -1022,23 +1022,30 @@ export const specialtyService = {
     if (!template) throw new AppError("Template not found", 404);
 
     return prisma.$transaction(async (tx) => {
-      if (payload.deletedFieldIds.length > 0) {
+      const existingFieldIds = payload.cells
+        .map((c) => c.fieldId)
+        .filter((id): id is string => Boolean(id));
+      const allTouchedFieldIds = [...payload.deletedFieldIds, ...existingFieldIds];
+
+      if (allTouchedFieldIds.length > 0) {
         await tx.specialtyTemplateOption.deleteMany({
-          where: { field: { id: { in: payload.deletedFieldIds }, templateId } }
+          where: { fieldId: { in: allTouchedFieldIds } }
         });
+      }
+
+      if (payload.deletedFieldIds.length > 0) {
         await tx.specialtyTemplateField.deleteMany({
           where: { id: { in: payload.deletedFieldIds }, templateId }
         });
       }
 
-      const resultIds: string[] = [];
+      const toUpdate = payload.cells.filter((c) => c.fieldId);
+      const toCreate = payload.cells.filter((c) => !c.fieldId);
 
-      for (const cell of payload.cells) {
-        let fieldId: string;
-
-        if (cell.fieldId) {
-          await tx.specialtyTemplateField.update({
-            where: { id: cell.fieldId },
+      await Promise.all(
+        toUpdate.map((cell) =>
+          tx.specialtyTemplateField.update({
+            where: { id: cell.fieldId! },
             data: {
               label: cell.label,
               labelAr: cell.labelAr,
@@ -1048,9 +1055,13 @@ export const specialtyService = {
                 ? Prisma.JsonNull
                 : cell.metadata as Prisma.InputJsonValue ?? undefined
             }
-          });
-          fieldId = cell.fieldId;
-        } else {
+          })
+        )
+      );
+
+      const createdFields: Array<{ cellIndex: number; id: string }> = [];
+      if (toCreate.length > 0) {
+        for (const cell of toCreate) {
           const created = await tx.specialtyTemplateField.create({
             data: {
               templateId,
@@ -1065,53 +1076,50 @@ export const specialtyService = {
               metadata: cell.metadata as Prisma.InputJsonValue ?? undefined
             }
           });
-          fieldId = created.id;
-        }
-
-        resultIds.push(fieldId);
-
-        const nextOptions = cell.options ?? [];
-        const nextOptionIds = new Set(
-          nextOptions.map((o) => o.id).filter((id): id is string => Boolean(id))
-        );
-
-        await tx.specialtyTemplateOption.deleteMany({
-          where: {
-            fieldId,
-            ...(nextOptionIds.size > 0 ? { id: { notIn: [...nextOptionIds] } } : {})
-          }
-        });
-
-        for (const opt of nextOptions) {
-          if (opt.id) {
-            await tx.specialtyTemplateOption.update({
-              where: { id: opt.id },
-              data: {
-                value: opt.value,
-                label: opt.label,
-                labelAr: opt.labelAr,
-                displayOrder: opt.displayOrder
-              }
-            });
-          } else {
-            await tx.specialtyTemplateOption.create({
-              data: {
-                fieldId,
-                value: opt.value,
-                label: opt.label,
-                labelAr: opt.labelAr,
-                displayOrder: opt.displayOrder
-              }
-            });
-          }
+          createdFields.push({ cellIndex: payload.cells.indexOf(cell), id: created.id });
         }
       }
+
+      const fieldIdMap = new Map<number, string>();
+      payload.cells.forEach((cell, index) => {
+        if (cell.fieldId) fieldIdMap.set(index, cell.fieldId);
+      });
+      createdFields.forEach(({ cellIndex, id }) => fieldIdMap.set(cellIndex, id));
+
+      const allOptionsToCreate: Array<{
+        fieldId: string;
+        value: string;
+        label: string;
+        labelAr: string;
+        displayOrder: number;
+      }> = [];
+
+      payload.cells.forEach((cell, index) => {
+        const fieldId = fieldIdMap.get(index);
+        if (!fieldId) return;
+        const options = cell.options ?? [];
+        for (const opt of options) {
+          allOptionsToCreate.push({
+            fieldId,
+            value: opt.value,
+            label: opt.label,
+            labelAr: opt.labelAr,
+            displayOrder: opt.displayOrder
+          });
+        }
+      });
+
+      if (allOptionsToCreate.length > 0) {
+        await tx.specialtyTemplateOption.createMany({ data: allOptionsToCreate });
+      }
+
+      const resultIds = payload.cells.map((_, i) => fieldIdMap.get(i)!).filter(Boolean);
 
       return tx.specialtyTemplateField.findMany({
         where: { id: { in: resultIds } },
         include: { options: { orderBy: { displayOrder: "asc" } } },
         orderBy: { displayOrder: "asc" }
       });
-    }, { maxWait: 10000, timeout: 30000 });
+    }, { maxWait: 10000, timeout: 60000 });
   }
 };

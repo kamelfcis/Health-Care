@@ -1082,7 +1082,12 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
       closeGridEditDialog();
       await refreshData();
     },
-    onError: () => toast.error("تعذر تحديث الـ Grid")
+    onError: (error: unknown) => {
+      const msg =
+        (error as { response?: { data?: { message?: string } } })?.response?.data?.message
+        ?? (error instanceof Error ? error.message : "");
+      toast.error(msg ? `تعذر تحديث الـ Grid: ${msg}` : "تعذر تحديث الـ Grid");
+    }
   });
   const deleteGridMutation = useMutation({
     mutationFn: async () => {
