@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2 } from "lucide-react";
+import { Eye, EyeOff, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/app-shell";
 import { RoleGate } from "@/components/auth/role-gate";
@@ -53,6 +53,10 @@ export default function UsersPage() {
   const [formResetKey, setFormResetKey] = useState(0);
   const [selectedRoleId, setSelectedRoleId] = useState<string>("");
   const [deleteTarget, setDeleteTarget] = useState<ClinicUserRow | null>(null);
+  const [editTarget, setEditTarget] = useState<ClinicUserRow | null>(null);
+  const [editEmail, setEditEmail] = useState("");
+  const [editPassword, setEditPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const rolesQuery = useQuery({
     queryKey: ["users-page", "roles"],
@@ -150,6 +154,25 @@ export default function UsersPage() {
     }
   });
 
+  const updateUserMutation = useMutation({
+    mutationFn: ({ userId, payload }: { userId: string; payload: { email?: string; newPassword?: string } }) =>
+      adminService.updateUser(userId, payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["users-page", "users"] });
+      void queryClient.invalidateQueries({ queryKey: ["doctors"] });
+      setEditTarget(null);
+      setEditPassword("");
+      setShowPassword(false);
+      toast.success(t("users.updateSuccess"));
+    },
+    onError: (error: unknown) => {
+      const msg =
+        (error as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+        (error instanceof Error ? error.message : "");
+      toast.error(msg || t("users.updateFailed"));
+    }
+  });
+
   const roles = useMemo(() => (rolesQuery.data ?? []) as RoleDefinition[], [rolesQuery.data]);
   const users = useMemo(() => (usersQuery.data ?? []) as ClinicUserRow[], [usersQuery.data]);
   const permissions = useMemo(() => permissionsQuery.data ?? [], [permissionsQuery.data]);
@@ -166,6 +189,36 @@ export default function UsersPage() {
       setSelectedRoleId(roles[0].id);
     }
   }, [form.roleId, selectedRoleId, roles]);
+
+  const openEditModal = (user: ClinicUserRow) => {
+    setEditTarget(user);
+    setEditEmail(user.email);
+    setEditPassword("");
+    setShowPassword(false);
+  };
+
+  const passwordStrength = useMemo(() => {
+    if (!editPassword) return null;
+    let score = 0;
+    if (editPassword.length >= 8) score += 1;
+    if (editPassword.length >= 12) score += 1;
+    if (/[A-Z]/.test(editPassword)) score += 1;
+    if (/[0-9]/.test(editPassword)) score += 1;
+    if (/[^A-Za-z0-9]/.test(editPassword)) score += 1;
+    if (score <= 2) return { level: "weak" as const, percent: 33, color: "bg-red-500" };
+    if (score <= 3) return { level: "medium" as const, percent: 66, color: "bg-amber-500" };
+    return { level: "strong" as const, percent: 100, color: "bg-emerald-500" };
+  }, [editPassword]);
+
+  const handleEditSubmit = () => {
+    if (!editTarget) return;
+    const payload: { email?: string; newPassword?: string } = {};
+    const trimmedEmail = editEmail.trim().toLowerCase();
+    if (trimmedEmail && trimmedEmail !== editTarget.email) payload.email = trimmedEmail;
+    if (editPassword) payload.newPassword = editPassword;
+    if (!payload.email && !payload.newPassword) return;
+    updateUserMutation.mutate({ userId: editTarget.id, payload });
+  };
 
   const selectedPermissions = useMemo(
     () => roles.find((role) => role.id === form.roleId)?.permissions ?? [],
@@ -432,15 +485,26 @@ export default function UsersPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-                        onClick={() => setDeleteTarget(user)}
-                        aria-label={t("users.delete")}
-                        disabled={user.role === "ClinicAdmin" || user.role === "SuperAdmin"}
-                      >
-                        <Trash2 size={13} />
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-orange-200 bg-orange-50 text-orange-700 transition hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          onClick={() => openEditModal(user)}
+                          aria-label={t("users.edit")}
+                          disabled={user.role === "ClinicAdmin" || user.role === "SuperAdmin"}
+                        >
+                          <Pencil size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          onClick={() => setDeleteTarget(user)}
+                          aria-label={t("users.delete")}
+                          disabled={user.role === "ClinicAdmin" || user.role === "SuperAdmin"}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -468,6 +532,106 @@ export default function UsersPage() {
             deleteUserMutation.mutate(deleteTarget.id);
           }}
         />
+        {editTarget ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4">
+            <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl">
+              <div className="border-b border-slate-100 px-6 pt-6 pb-4">
+                <h3 className="text-lg font-semibold text-slate-900">{t("users.editTitle")}</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  {editTarget.firstName} {editTarget.lastName} &middot; {editTarget.role}
+                </p>
+                <p className="mt-0.5 text-xs text-slate-400">{t("users.editDesc")}</p>
+              </div>
+
+              <form
+                className="space-y-5 px-6 py-5"
+                autoComplete="off"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleEditSubmit();
+                }}
+              >
+                <FloatingInput
+                  id="edit-user-email"
+                  type="email"
+                  label={t("table.email")}
+                  autoComplete="off"
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                />
+
+                <div className="space-y-2">
+                  <FloatingInput
+                    id="edit-user-password"
+                    type={showPassword ? "text" : "password"}
+                    label={t("users.newPassword")}
+                    autoComplete="new-password"
+                    value={editPassword}
+                    onChange={(e) => setEditPassword(e.target.value)}
+                    endAdornment={
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        className="p-1 text-slate-400 transition hover:text-slate-600"
+                        onClick={() => setShowPassword((v) => !v)}
+                      >
+                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    }
+                  />
+                  <p className="text-xs text-slate-400">{t("users.newPasswordHint")}</p>
+
+                  {passwordStrength ? (
+                    <div className="space-y-1">
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${passwordStrength.color}`}
+                          style={{ width: `${passwordStrength.percent}%` }}
+                        />
+                      </div>
+                      <p
+                        className={`text-xs font-medium ${
+                          passwordStrength.level === "weak"
+                            ? "text-red-600"
+                            : passwordStrength.level === "medium"
+                              ? "text-amber-600"
+                              : "text-emerald-600"
+                        }`}
+                      >
+                        {t(`users.passwordStrength.${passwordStrength.level}`)}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    className="inline-flex h-10 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                    onClick={() => {
+                      setEditTarget(null);
+                      setEditPassword("");
+                      setShowPassword(false);
+                    }}
+                    disabled={updateUserMutation.isPending}
+                  >
+                    {t("common.cancel")}
+                  </button>
+                  <RippleButton
+                    type="submit"
+                    className="h-10 text-sm"
+                    disabled={
+                      updateUserMutation.isPending ||
+                      (!editPassword && editEmail.trim().toLowerCase() === editTarget.email)
+                    }
+                  >
+                    {updateUserMutation.isPending ? t("users.updating") : t("users.save")}
+                  </RippleButton>
+                </div>
+              </form>
+            </div>
+          </div>
+        ) : null}
       </RoleGate>
     </AppShell>
   );

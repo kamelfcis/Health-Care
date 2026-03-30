@@ -46,6 +46,15 @@ export const adminController = {
     res.status(200).json(apiSuccess(null, "Role deleted"));
   },
 
+  async updateUser(req: AuthenticatedRequest, res: Response) {
+    const userId = String(req.params.id);
+    const clinicId = getScopedClinicId(req);
+    const data = await adminService.updateUser(clinicId, userId, req.body);
+    invalidateCacheByPrefix(buildCacheKey("doctors", clinicId));
+    invalidateCacheByPrefix(buildCacheKey("dashboard", clinicId));
+    res.status(200).json(apiSuccess(data, "User updated"));
+  },
+
   async updateUserRole(req: AuthenticatedRequest, res: Response) {
     const userId = String(req.params.id);
     const clinicId = getScopedClinicId(req);

@@ -12,6 +12,11 @@ interface CreateClinicUserInput {
   roleId: string;
 }
 
+interface UpdateUserInput {
+  email?: string;
+  newPassword?: string;
+}
+
 interface CreateRoleInput {
   name: string;
   permissionKeys: string[];
@@ -168,6 +173,66 @@ export const adminService = {
       roleId: user.role.id,
       role: user.role.name,
       permissions
+    };
+  },
+
+  async updateUser(clinicId: string, userId: string, input: UpdateUserInput) {
+    const user = await prisma.user.findFirst({
+      where: { id: userId, clinicId, deletedAt: null },
+      include: { role: true }
+    });
+
+    if (!user) {
+      throw new AppError("User not found", 404);
+    }
+
+    if (user.role.name === "SuperAdmin" || user.role.name === "ClinicAdmin") {
+      throw new AppError("This account cannot be edited", 403);
+    }
+
+    const data: { email?: string; passwordHash?: string } = {};
+
+    if (input.email) {
+      const normalizedEmail = input.email.toLowerCase();
+      if (normalizedEmail !== user.email) {
+        const duplicate = await prisma.user.findFirst({
+          where: { clinicId, email: normalizedEmail, deletedAt: null, id: { not: userId } }
+        });
+        if (duplicate) {
+          throw new AppError("Email already in use by another user in this clinic", 409);
+        }
+        data.email = normalizedEmail;
+      }
+    }
+
+    if (input.newPassword) {
+      data.passwordHash = await bcrypt.hash(input.newPassword, 12);
+    }
+
+    if (Object.keys(data).length === 0) {
+      return {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        roleId: user.role.id,
+        role: user.role.name
+      };
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data,
+      include: { role: true }
+    });
+
+    return {
+      id: updated.id,
+      firstName: updated.firstName,
+      lastName: updated.lastName,
+      email: updated.email,
+      roleId: updated.role.id,
+      role: updated.role.name
     };
   },
 

@@ -71,6 +71,11 @@ export const adminService = {
     return res.data.data;
   },
 
+  async updateUser(userId: string, payload: { email?: string; newPassword?: string }) {
+    const res = await api.patch<{ data: ClinicUser }>(`/admin/users/${userId}`, payload);
+    return res.data.data;
+  },
+
   async updateUserRole(userId: string, roleId: string) {
     const res = await api.patch<{ data: ClinicUser }>(`/admin/users/${userId}/role`, { roleId });
     return res.data.data;

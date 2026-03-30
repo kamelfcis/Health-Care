@@ -37,6 +37,17 @@ const updateUserRoleSchema = z.object({
   })
 });
 
+const updateUserSchema = z.object({
+  body: z
+    .object({
+      email: z.string().email().optional(),
+      newPassword: z.string().min(8).optional()
+    })
+    .refine((d) => d.email || d.newPassword, {
+      message: "At least one field (email or newPassword) must be provided"
+    })
+});
+
 router.get("/permissions", requireAuth, requirePermissions("roles.read"), asyncHandler(adminController.listPermissions));
 router.get("/roles", requireAuth, requirePermissions("roles.read"), asyncHandler(adminController.listRoles));
 router.post(
@@ -61,6 +72,13 @@ router.post(
   requirePermissions("users.manage"),
   validate(createUserSchema),
   asyncHandler(adminController.createUser)
+);
+router.patch(
+  "/users/:id",
+  requireAuth,
+  requirePermissions("users.manage"),
+  validate(updateUserSchema),
+  asyncHandler(adminController.updateUser)
 );
 router.patch(
   "/users/:id/role",
