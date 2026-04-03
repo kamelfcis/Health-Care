@@ -272,10 +272,18 @@ const buildExpression = (rule: RuleFormState) => {
 function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" | "rules" } = {}) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
-  const [selectedClinicId, setSelectedClinicId] = useState("");
-  const [specialtyCode, setSpecialtyCode] = useState("");
-  const [clinicAssignmentTemplateId, setClinicAssignmentTemplateId] = useState("");
-  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const savedFilters = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = localStorage.getItem("specialties-filters");
+      return raw ? (JSON.parse(raw) as Record<string, string>) : null;
+    } catch { return null; }
+  }, []);
+
+  const [selectedClinicId, setSelectedClinicId] = useState(savedFilters?.selectedClinicId ?? "");
+  const [specialtyCode, setSpecialtyCode] = useState(savedFilters?.specialtyCode ?? "");
+  const [clinicAssignmentTemplateId, setClinicAssignmentTemplateId] = useState(savedFilters?.clinicAssignmentTemplateId ?? "");
+  const [selectedTemplateId, setSelectedTemplateId] = useState(savedFilters?.selectedTemplateId ?? "");
   const [newTemplate, setNewTemplate] = useState({ title: "", titleAr: "", isActive: false });
   const [clonePayload, setClonePayload] = useState({ title: "", titleAr: "", isActive: false });
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
@@ -320,6 +328,14 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
   const [dragItem, setDragItem] = useState<{ sectionId: string; itemType: SectionRenderItem["itemType"]; itemId: string } | null>(null);
   const [dragOption, setDragOption] = useState<{ fieldId: string; optionId: string } | null>(null);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem("specialties-filters", JSON.stringify({
+        specialtyCode, selectedClinicId, clinicAssignmentTemplateId, selectedTemplateId
+      }));
+    } catch { /* quota exceeded */ }
+  }, [specialtyCode, selectedClinicId, clinicAssignmentTemplateId, selectedTemplateId]);
+
   const catalogQuery = useQuery({
     queryKey: ["specialties", "catalog", "admin"],
     queryFn: specialtyService.listCatalog
@@ -330,7 +346,8 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
   });
 
   useEffect(() => {
-    if (!specialtyCode && catalogQuery.data?.length) {
+    if (!catalogQuery.data?.length) return;
+    if (!specialtyCode || !catalogQuery.data.some((item) => item.code === specialtyCode)) {
       setSpecialtyCode(catalogQuery.data[0].code);
     }
   }, [specialtyCode, catalogQuery.data]);
@@ -1405,31 +1422,41 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
             <div className="grid gap-3 md:grid-cols-[260px_260px_1fr]">
               <div>
                 <label className="mb-1 block text-base font-medium text-slate-700">التخصص</label>
-                <select value={specialtyCode} onChange={(event) => setSpecialtyCode(event.target.value)} className={`w-full ${dsInputLgClass}`}>
-                  {(catalogQuery.data ?? []).map((item) => (
-                    <option key={item.id} value={item.code}>
-                      {item.nameAr}
-                    </option>
-                  ))}
-                </select>
+                {catalogQuery.isLoading ? (
+                  <div className={`h-12 w-full animate-pulse rounded-2xl bg-slate-200`} />
+                ) : (
+                  <select value={specialtyCode} onChange={(event) => setSpecialtyCode(event.target.value)} className={`w-full ${dsInputLgClass}`}>
+                    {(catalogQuery.data ?? []).map((item) => (
+                      <option key={item.id} value={item.code}>
+                        {item.nameAr}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div>
                 <label className="mb-1 block text-base font-medium text-slate-700">العيادة</label>
-                <select
-                  value={selectedClinicId}
-                  onChange={(event) => setSelectedClinicId(event.target.value)}
-                  className={`w-full ${dsInputLgClass}`}
-                  disabled={isFilteringClinicsBySpecialty || !filteredClinics.length}
-                >
-                  {filteredClinics.map((clinic) => (
-                    <option key={clinic.id} value={clinic.id}>
-                      {clinic.name}
-                    </option>
-                  ))}
-                </select>
-                {!isFilteringClinicsBySpecialty && !filteredClinics.length ? (
-                  <p className="mt-1 text-sm text-amber-700">لا توجد عيادات مفعّل بها هذا التخصص.</p>
-                ) : null}
+                {clinicsQuery.isLoading || isFilteringClinicsBySpecialty ? (
+                  <div className={`h-12 w-full animate-pulse rounded-2xl bg-slate-200`} />
+                ) : (
+                  <>
+                    <select
+                      value={selectedClinicId}
+                      onChange={(event) => setSelectedClinicId(event.target.value)}
+                      className={`w-full ${dsInputLgClass}`}
+                      disabled={!filteredClinics.length}
+                    >
+                      {filteredClinics.map((clinic) => (
+                        <option key={clinic.id} value={clinic.id}>
+                          {clinic.name}
+                        </option>
+                      ))}
+                    </select>
+                    {!filteredClinics.length ? (
+                      <p className="mt-1 text-sm text-amber-700">لا توجد عيادات مفعّل بها هذا التخصص.</p>
+                    ) : null}
+                  </>
+                )}
               </div>
               <div className={dsPanelClass}>
                 <p className="mb-2 text-base font-semibold text-slate-700">إنشاء قالب</p>
@@ -1492,6 +1519,23 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
           <div className="grid gap-4 xl:grid-cols-[320px_1fr]">
             <section className="card p-5">
               <h2 className="mb-3 text-lg font-semibold text-slate-800">القوالب</h2>
+              {templatesQuery.isLoading ? (
+                <div className="space-y-2">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="animate-pulse rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                      <div className="h-4 w-3/4 rounded bg-slate-200" />
+                      <div className="mt-2 h-3 w-1/2 rounded bg-slate-200" />
+                      <div className="mt-3 flex items-center justify-between">
+                        <div className="h-5 w-16 rounded-full bg-slate-200" />
+                        <div className="flex gap-2">
+                          <div className="h-7 w-7 rounded-lg bg-slate-200" />
+                          <div className="h-7 w-7 rounded-lg bg-slate-200" />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
               <div className="space-y-2">
                 {templates.map((template) => (
                   <div key={template.id} className={`${dsCardClass} ${selectedTemplateId === template.id ? "border-orange-300 bg-orange-50/50" : ""}`}>
@@ -1613,6 +1657,7 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                 ))}
                 {!templates.length ? <p className="text-base text-slate-500">لا توجد قوالب بعد</p> : null}
               </div>
+              )}
               {selectedTemplate ? (
                 <div className={`mt-3 ${dsPanelClass}`}>
                   <p className="mb-2 text-sm font-medium text-slate-700">نسخ القالب إلى إصدار جديد</p>
@@ -1635,7 +1680,26 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
               <div className="flex items-center justify-between gap-2">
               <h2 className="text-lg font-semibold text-slate-800">حقول القالب</h2>
               </div>
-              {selectedTemplate ? (
+              {templatesQuery.isLoading ? (
+                <div className="space-y-4">
+                  {[1, 2, 3, 4].map((i) => (
+                    <div key={i} className="animate-pulse rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                      <div className="mb-3 flex items-center justify-between">
+                        <div className="h-5 w-40 rounded bg-slate-200" />
+                        <div className="flex gap-2">
+                          <div className="h-7 w-7 rounded-lg bg-slate-200" />
+                          <div className="h-7 w-7 rounded-lg bg-slate-200" />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="h-4 w-full rounded bg-slate-200" />
+                        <div className="h-4 w-5/6 rounded bg-slate-200" />
+                        <div className="h-4 w-2/3 rounded bg-slate-200" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : selectedTemplate ? (
                 <>
                   {mode === "templates" ? (
                   <TooltipProvider delayDuration={120}>
