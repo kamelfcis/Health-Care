@@ -265,11 +265,11 @@ export const specialtyService = {
   ) {
     const section = await prisma.specialtyTemplateSection.findUnique({
       where: { id: sectionId },
-      select: { id: true }
+      select: { id: true, templateId: true, name: true, nameAr: true }
     });
     if (!section) throw new AppError("Section not found", 404);
 
-    return prisma.specialtyTemplateSection.update({
+    const updated = await prisma.specialtyTemplateSection.update({
       where: { id: sectionId },
       data: {
         ...(input.key !== undefined ? { key: input.key.trim().toLowerCase() } : {}),
@@ -278,6 +278,31 @@ export const specialtyService = {
         ...(input.displayOrder !== undefined ? { displayOrder: input.displayOrder } : {})
       }
     });
+
+    const nameChanged = input.name !== undefined || input.nameAr !== undefined;
+    if (nameChanged) {
+      const fieldData: { section?: string; sectionAr?: string } = {};
+      if (input.name !== undefined) fieldData.section = input.name.trim();
+      if (input.nameAr !== undefined) fieldData.sectionAr = input.nameAr.trim();
+
+      await prisma.specialtyTemplateField.updateMany({
+        where: { sectionId },
+        data: fieldData
+      });
+
+      const legacyWhere: Record<string, unknown> = {
+        templateId: section.templateId,
+        sectionId: null
+      };
+      if (input.name !== undefined) legacyWhere.section = section.name;
+      if (input.nameAr !== undefined && !input.name) legacyWhere.sectionAr = section.nameAr;
+      await prisma.specialtyTemplateField.updateMany({
+        where: legacyWhere as { templateId: string; sectionId: null; section?: string; sectionAr?: string },
+        data: fieldData
+      });
+    }
+
+    return updated;
   },
 
   async reorderTemplateSections(templateId: string, sectionIds: string[]) {

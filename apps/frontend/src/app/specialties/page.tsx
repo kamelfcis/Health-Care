@@ -2101,7 +2101,7 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                                   ) : (
                                     <>
                                       <p className="text-base font-semibold text-slate-800">{field.labelAr}</p>
-                                      <p className="text-sm text-slate-500">{field.key} - {fieldTypeLabels[field.fieldType]} - {field.sectionAr}</p>
+                                      <p className="text-sm text-slate-500">{field.key} - {fieldTypeLabels[field.fieldType]} - {selectedTemplateSections.find((s) => s.id === field.sectionId)?.nameAr ?? field.sectionAr}</p>
                                     </>
                                   )}
                                 </div>

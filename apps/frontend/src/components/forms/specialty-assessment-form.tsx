@@ -121,6 +121,7 @@ export function SpecialtyAssessmentForm({
 
   const values = watch();
   const groupedSections = useMemo(() => {
+    const sectionMap = new Map(template.sections.map((s) => [s.id, s]));
     const map = new Map<
       string,
       {
@@ -131,8 +132,11 @@ export function SpecialtyAssessmentForm({
     >();
 
     for (const field of template.fields) {
-      const id = field.section;
-      const title = locale === "ar" ? field.sectionAr : field.section;
+      const id = field.sectionId ?? field.section;
+      const sec = field.sectionId ? sectionMap.get(field.sectionId) : undefined;
+      const title = locale === "ar"
+        ? (sec?.nameAr ?? field.sectionAr)
+        : (sec?.name ?? field.section);
       const existing = map.get(id);
       if (!existing) {
         map.set(id, { id, title, fields: [field] });
@@ -142,7 +146,7 @@ export function SpecialtyAssessmentForm({
     }
 
     return Array.from(map.values());
-  }, [template.fields, locale]);
+  }, [template.fields, template.sections, locale]);
   const [activeSectionId, setActiveSectionId] = useState<string>("");
 
   useEffect(() => {
