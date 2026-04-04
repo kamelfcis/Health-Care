@@ -12,6 +12,7 @@ import {
   ClipboardList,
   Eye,
   FileText,
+  Loader2,
   Pill,
   Plus,
   Printer,
@@ -1550,7 +1551,14 @@ export function MedicalRecordModal({
                 }}
                 disabled={saveAppointmentAssessmentMutation.isPending}
               >
-                {saveAppointmentAssessmentMutation.isPending ? t("common.saving") : t("appointments.medicalRecord.saveDoctorNotes")}
+                {saveAppointmentAssessmentMutation.isPending ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden />
+                    {t("common.saving")}
+                  </span>
+                ) : (
+                  t("appointments.medicalRecord.saveDoctorNotes")
+                )}
               </button>
             </div>
           </div>

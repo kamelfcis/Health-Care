@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { RippleButton } from "@/components/ui/ripple-button";
 import { useI18n } from "@/components/providers/i18n-provider";
 import type { SpecialtyTemplate } from "@/lib/specialty-service";
@@ -517,8 +517,19 @@ export function SpecialtyAssessmentForm({
             </button>
           </div>
           {!hideSaveAction ? (
-            <RippleButton type="submit" disabled={Boolean(isSubmitting) || Boolean(readOnly)}>
-              {isSubmitting ? t("patients.assessment.saving") : submitLabel ?? t("patients.assessment.save")}
+            <RippleButton
+              type="submit"
+              className="inline-flex items-center gap-2"
+              disabled={Boolean(isSubmitting) || Boolean(readOnly)}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden />
+                  {t("patients.assessment.saving")}
+                </>
+              ) : (
+                (submitLabel ?? t("patients.assessment.save"))
+              )}
             </RippleButton>
           ) : null}
         </div>
