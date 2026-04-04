@@ -101,11 +101,11 @@ interface PrintPrescriptionParams {
 
 const normalizePrescriptionItem = (item: PrescriptionItem): PrescriptionItem => ({
   medicineId: item.medicineId,
-  name: item.name.trim(),
-  dosage: item.dosage?.trim() || "",
-  frequency: item.frequency?.trim() || "",
-  duration: item.duration?.trim() || "",
-  instructions: item.instructions?.trim() || ""
+  name: item.name ?? "",
+  dosage: item.dosage ?? "",
+  frequency: item.frequency ?? "",
+  duration: item.duration ?? "",
+  instructions: item.instructions ?? ""
 });
 
 const dedupeStrings = (items: string[]) => Array.from(new Set(items.map((item) => item.trim()).filter(Boolean)));
@@ -139,7 +139,7 @@ const parsePrescriptionItems = (values: Record<string, unknown>) => {
 const extractMedicationNames = (values: Record<string, unknown>) => dedupeStrings(parsePrescriptionItems(values).map((item) => item.name));
 
 const mergePrescriptionIntoValues = (values: Record<string, unknown>, items: PrescriptionItem[]) => {
-  const cleanItems = items.map(normalizePrescriptionItem).filter((item) => item.name);
+  const cleanItems = items.map(normalizePrescriptionItem).filter((item) => item.name.trim());
   const names = dedupeStrings(cleanItems.map((item) => item.name));
   return {
     ...values,
@@ -806,7 +806,7 @@ export function MedicalRecordModal({
 
   const addMedicineItem = (item: PrescriptionItem) => {
     const normalized = normalizePrescriptionItem(item);
-    if (!normalized.name) return;
+    if (!normalized.name.trim()) return;
     setAppointmentPrescriptionItems((prev) => [...prev, normalized]);
   };
 
@@ -1773,7 +1773,6 @@ export function MedicalRecordModal({
                         rows={2}
                         value={item.dosage ?? ""}
                         onChange={(event) => updateMedicineItem(index, { dosage: event.target.value })}
-                        onBlur={(event) => updateMedicineItem(index, { dosage: event.target.value.trim() })}
                         className={rxMetaTextareaClass}
                         placeholder={t("appointments.prescription.dosage")}
                       />
@@ -1781,7 +1780,6 @@ export function MedicalRecordModal({
                         rows={2}
                         value={item.frequency ?? ""}
                         onChange={(event) => updateMedicineItem(index, { frequency: event.target.value })}
-                        onBlur={(event) => updateMedicineItem(index, { frequency: event.target.value.trim() })}
                         className={rxMetaTextareaClass}
                         placeholder={t("appointments.prescription.frequency")}
                       />
@@ -1789,7 +1787,6 @@ export function MedicalRecordModal({
                         rows={2}
                         value={item.duration ?? ""}
                         onChange={(event) => updateMedicineItem(index, { duration: event.target.value })}
-                        onBlur={(event) => updateMedicineItem(index, { duration: event.target.value.trim() })}
                         className={rxMetaTextareaClass}
                         placeholder={t("appointments.prescription.duration")}
                       />
@@ -1797,7 +1794,6 @@ export function MedicalRecordModal({
                         rows={2}
                         value={item.instructions ?? ""}
                         onChange={(event) => updateMedicineItem(index, { instructions: event.target.value })}
-                        onBlur={(event) => updateMedicineItem(index, { instructions: event.target.value.trim() })}
                         className={rxMetaTextareaClass}
                         placeholder={t("appointments.prescription.instructions")}
                       />

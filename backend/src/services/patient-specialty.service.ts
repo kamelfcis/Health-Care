@@ -199,6 +199,9 @@ export const patientSpecialtyService = {
     const template = await prisma.specialtyTemplate.findFirst({
       where: { id: clinicSpecialty.templateId, specialtyId: specialty.id },
       include: {
+        sections: {
+          orderBy: { displayOrder: "asc" }
+        },
         fields: {
           orderBy: { displayOrder: "asc" },
           include: {
