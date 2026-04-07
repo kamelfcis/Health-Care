@@ -125,7 +125,15 @@ type PatientRow = {
   clinicId?: string;
   clinicName?: string;
   lastVisit: string;
+  createdAt: string;
 };
+
+function patientTelHref(phone: string | undefined | null): string | undefined {
+  if (!phone?.trim()) return undefined;
+  const sanitized = phone.replace(/[^\d+]/g, "");
+  if (!sanitized) return undefined;
+  return `tel:${sanitized}`;
+}
 
 type SpeechRecognitionAlternativeLike = { transcript?: string };
 type SpeechRecognitionResultLike = { isFinal: boolean; 0?: SpeechRecognitionAlternativeLike };
@@ -376,6 +384,7 @@ export default function PatientsPage() {
         clinicId: clinic?.id,
         clinicName: clinic?.name,
         lastVisit: item.lastVisitAt ? String(item.lastVisitAt).slice(0, 10) : "-",
+        createdAt: item.createdAt ? String(item.createdAt).slice(0, 10) : "-",
       };
     }) ?? [];
 
@@ -1215,21 +1224,59 @@ export default function PatientsPage() {
                           <div className="min-w-0">
                             <p className="text-lg font-bold leading-6 text-slate-900 break-words">{row.name}</p>
                             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                              <span className="inline-flex items-center gap-1 rounded-full bg-cyan-100 px-2 py-0.5 font-semibold text-cyan-700">
-                                <ClipboardList size={12} />
-                                {t("patients.card.fileNumber")}: {row.fileNumber}
+                              <span
+                                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-cyan-100 font-semibold text-cyan-700"
+                                title={`${t("patients.card.fileNumber")}: ${row.fileNumber}`}
+                                aria-label={`${t("patients.card.fileNumber")}: ${row.fileNumber}`}
+                              >
+                                <ClipboardList size={12} aria-hidden />
                               </span>
-                              <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 font-semibold text-blue-700">
-                                {t("field.nationalId")}: {row.nationalId || t("patients.card.notSet")}
-                              </span>
+                              {patientTelHref(row.phone) ? (
+                                <a
+                                  href={patientTelHref(row.phone)}
+                                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-700 shadow-sm transition hover:bg-sky-200 hover:text-sky-800"
+                                  aria-label={`${t("patients.card.phone")}: ${row.phone}`}
+                                >
+                                  <PhoneOutgoing size={12} aria-hidden />
+                                </a>
+                              ) : (
+                                <span
+                                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-400"
+                                  aria-label={t("patients.card.notSet")}
+                                >
+                                  <PhoneOutgoing size={12} aria-hidden />
+                                </span>
+                              )}
                               <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 font-semibold text-orange-700">
-                                <MapPin size={12} />
+                                <MapPin size={12} aria-hidden />
                                 {row.clinicName ?? t("patients.card.notSet")}
                               </span>
                             </div>
                           </div>
-                          <div className="rounded-xl bg-blue-500 p-2 text-white shadow-soft">
-                            <User size={14} />
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <div className="rounded-xl bg-blue-500 p-2 text-white shadow-soft">
+                              <User size={14} aria-hidden />
+                            </div>
+                            <button
+                              type="button"
+                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-200 bg-gradient-to-b from-white to-cyan-50 text-cyan-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow"
+                              onClick={() => {
+                                setEditing(row);
+                                setFormExpanded(true);
+                                setTimeout(scrollToFormTop, 0);
+                              }}
+                              aria-label={t("patients.actions.edit")}
+                            >
+                              <SquarePen size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-rose-200 bg-gradient-to-b from-white to-rose-50 text-rose-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-rose-300 hover:shadow"
+                              onClick={() => setDeleteTarget(row)}
+                              aria-label={t("patients.actions.delete")}
+                            >
+                              <Trash2 size={13} />
+                            </button>
                           </div>
                         </div>
 
@@ -1250,26 +1297,6 @@ export default function PatientsPage() {
                           </button>
                           <button
                             type="button"
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-200 bg-gradient-to-b from-white to-cyan-50 text-cyan-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow"
-                            onClick={() => {
-                              setEditing(row);
-                              setFormExpanded(true);
-                              setTimeout(scrollToFormTop, 0);
-                            }}
-                            aria-label={t("patients.actions.edit")}
-                          >
-                            <SquarePen size={13} />
-                          </button>
-                          <button
-                            type="button"
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-rose-200 bg-gradient-to-b from-white to-rose-50 text-rose-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-rose-300 hover:shadow"
-                            onClick={() => setDeleteTarget(row)}
-                            aria-label={t("patients.actions.delete")}
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                          <button
-                            type="button"
                             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-gradient-to-b from-white to-emerald-50 text-emerald-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow disabled:cursor-not-allowed disabled:opacity-50"
                             onClick={() => openWhatsappPopup(row)}
                             disabled={!row.whatsapp || row.whatsapp === "-"}
@@ -1278,6 +1305,12 @@ export default function PatientsPage() {
                             <FaWhatsapp size={15} />
                           </button>
                         </div>
+
+                        <p className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
+                          <Calendar size={12} className="shrink-0 text-orange-600" aria-hidden />
+                          <span className="font-medium text-slate-700">{t("patients.card.registrationDate")}:</span>
+                          <span className="font-semibold text-slate-800">{row.createdAt}</span>
+                        </p>
 
                         <div className="flex items-center justify-between">
                           <p className="text-sm font-medium text-orange-700">{t("patients.lastVisit")}: {row.lastVisit}</p>
@@ -1288,11 +1321,12 @@ export default function PatientsPage() {
 
                         <button
                           type="button"
-                          className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white/85 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white/85 text-slate-700 transition hover:bg-white dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                          aria-expanded={isExpanded}
+                          aria-label={isExpanded ? t("patients.card.hideDetails") : t("patients.card.viewDetails")}
                           onClick={() => setExpandedCardId((prev) => (prev === row.id ? null : row.id))}
                         >
-                          <ChevronDown size={14} className={cn("transition-transform", isExpanded && "rotate-180")} />
-                          {isExpanded ? t("patients.card.hideDetails") : t("patients.card.viewDetails")}
+                          <ChevronDown size={18} className={cn("transition-transform", isExpanded && "rotate-180")} aria-hidden />
                         </button>
 
                         <div
@@ -1304,20 +1338,19 @@ export default function PatientsPage() {
                           <div className={cn("space-y-3", isExpanded && "pt-2")}>
                             <div className="grid grid-cols-2 gap-2 text-sm">
                               <div className="rounded-xl bg-white/90 p-2">
-                                <p className="text-xs text-slate-500">{t("patients.card.phone")}</p>
-                                <p className="mt-0.5 inline-flex items-center gap-1 font-semibold text-slate-800">
-                                  <PhoneOutgoing size={13} className="text-cyan-600" />
-                                  {row.phone || t("patients.card.notSet")}
+                                <p className="text-xs text-slate-500">{t("field.nationalId")}</p>
+                                <p className="mt-0.5 font-semibold text-slate-800 break-words">
+                                  {row.nationalId || t("patients.card.notSet")}
                                 </p>
                               </div>
                               <div className="rounded-xl bg-white/90 p-2">
                                 <p className="text-xs text-slate-500">{t("patients.card.age")}</p>
                                 <p className="mt-0.5 font-semibold text-slate-800">{row.age ?? t("patients.card.notSet")}</p>
                               </div>
-                              <div className="rounded-xl bg-white/90 p-2">
+                              <div className="col-span-2 rounded-xl bg-white/90 p-2">
                                 <p className="text-xs text-slate-500">{t("patients.card.birthDate")}</p>
                                 <p className="mt-0.5 inline-flex items-center gap-1 font-semibold text-slate-800">
-                                  <Calendar size={13} className="text-orange-600" />
+                                  <Calendar size={13} className="text-orange-600" aria-hidden />
                                   {row.dateOfBirth ? String(row.dateOfBirth).slice(0, 10) : t("patients.card.notSet")}
                                 </p>
                               </div>
