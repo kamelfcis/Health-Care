@@ -27,6 +27,7 @@ import { useI18n } from "@/components/providers/i18n-provider";
 import { Modal } from "@/components/ui/modal";
 import { SpecialtyAssessmentForm } from "@/components/forms/specialty-assessment-form";
 import { appointmentService } from "@/lib/appointment-service";
+import { clinicService } from "@/lib/clinic-service";
 import { medicineService, MedicineItem } from "@/lib/medicine-service";
 import { patientService, PatientAssessmentHistoryItem, PatientExamAttachmentItem, PatientExamItem } from "@/lib/patient-service";
 import { specialtyService, SpecialtyTemplate } from "@/lib/specialty-service";
@@ -94,10 +95,15 @@ interface PrintPrescriptionParams {
   doctorName: string;
   doctorStorageKey?: string;
   specialtyLabel: string;
+  specialtyNameEn?: string;
+  specialtyNameAr?: string;
   entryType: "EXAM" | "CONSULTATION";
   date: string;
   diagnoses: string[];
   notes: string;
+  clinicName?: string;
+  clinicAddress?: string;
+  clinicPhone?: string;
 }
 
 const normalizePrescriptionItem = (item: PrescriptionItem): PrescriptionItem => ({
@@ -736,6 +742,21 @@ export function MedicalRecordModal({
     placeholderData: keepPreviousData
   });
 
+  const clinicsListForPrintQuery = useQuery({
+    queryKey: ["clinics", "list-for-prescription-print"],
+    queryFn: () => clinicService.list(),
+    enabled: open && mode === "appointment" && Boolean(appointmentModeClinicScope),
+    staleTime: 5 * 60 * 1000
+  });
+
+  const resolvedClinicForPrint = useMemo(
+    () =>
+      appointmentModeClinicScope && clinicsListForPrintQuery.data
+        ? clinicsListForPrintQuery.data.find((c) => c.id === appointmentModeClinicScope) ?? null
+        : null,
+    [appointmentModeClinicScope, clinicsListForPrintQuery.data]
+  );
+
   const patientAssessmentsQuery = useQuery({
     queryKey: ["medical-record", "patient", patientContext?.id, clinicScope ?? "mine"],
     queryFn: () => patientService.listAssessments(String(patientContext?.id), clinicScope),
@@ -845,15 +866,7 @@ export function MedicalRecordModal({
   const catalogPageNum = catalogPayload?.page ?? medicineCatalogPage;
   const catalogSearchTrimmed = debouncedMedicineSearch.trim();
 
-  const printAppointmentPrescription = (params: {
-    patientName: string;
-    doctorName: string;
-    specialtyLabel: string;
-    entryType: "EXAM" | "CONSULTATION";
-    date: string;
-    diagnoses: string[];
-    notes: string;
-  }, paperSize: PrintPaperSize, layoutMode: PrintLayoutMode) => {
+  const printAppointmentPrescription = (params: PrintPrescriptionParams, paperSize: PrintPaperSize, layoutMode: PrintLayoutMode) => {
     const list = appointmentPrescriptionItems.filter((item) => item.name.trim());
     if (!list.length) {
       toast.warning(t("appointments.prescription.printNeedsItems"));
@@ -863,7 +876,6 @@ export function MedicalRecordModal({
     const isContentOnly = layoutMode === "contentOnly";
     const pageMargin = isContentOnly ? (paperSize === "A5" ? "5mm" : "6mm") : paperSize === "A5" ? "8mm" : "10mm";
     const compactClass = paperSize === "A5" ? "compact" : "";
-    const layoutBodyClass = isContentOnly ? "print-mode-content-only" : "print-mode-branded";
 
     const fullWidth = Math.max(window.screen.availWidth, 1200);
     const fullHeight = Math.max(window.screen.availHeight, 800);
@@ -884,75 +896,118 @@ export function MedicalRecordModal({
       return escapeHtml(v).replace(/\n/g, "<br>");
     };
 
-    const thDrug = t("appointments.prescription.name");
-    const thDose = t("appointments.prescription.dosage");
-    const thDur = t("appointments.prescription.duration");
-    const thInstr = t("appointments.prescription.instructions");
-    const thFreq = t("appointments.prescription.frequency");
+    const specEn = params.specialtyNameEn?.trim() || params.specialtyLabel || "—";
+    const specAr = params.specialtyNameAr?.trim() || params.specialtyLabel || "—";
+    const classicDrugLine = (item: PrescriptionItem) => {
+      const n = item.name?.trim() || "";
+      const d = item.dosage?.trim();
+      return d ? `${n} ${d}` : n;
+    };
+    const classicInstrLine = (item: PrescriptionItem) => {
+      const ins = item.instructions?.trim();
+      if (ins) return ins;
+      const parts = [item.frequency, item.duration].map((s) => s?.trim()).filter(Boolean) as string[];
+      return parts.length ? parts.join(" · ") : "";
+    };
 
-    const medicinesHtml = `
-      <div class="rxTableWrap">
-        <table class="rxTable">
-          <thead>
-            <tr>
-              <th class="rxTh rxThNum" scope="col">#</th>
-              <th class="rxTh rxThDrug" scope="col">${thDrug}</th>
-              <th class="rxTh rxThDose" scope="col">${thDose}</th>
-              <th class="rxTh rxThDur" scope="col">${thDur}</th>
-              <th class="rxTh rxThInstr" scope="col">${thInstr}</th>
-              <th class="rxTh rxThFreq" scope="col">${thFreq}</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${list
-              .map(
-                (item, index) => `
-            <tr class="rxTr">
-              <td class="rxTd rxTdNum">${index + 1}</td>
-              <td class="rxTd rxTdDrug">${escapeHtml(item.name)}</td>
-              <td class="rxTd rxTdDose">${formatPrintCell(item.dosage)}</td>
-              <td class="rxTd rxTdDur">${formatPrintCell(item.duration)}</td>
-              <td class="rxTd rxTdInstr">${formatPrintCell(item.instructions)}</td>
-              <td class="rxTd rxTdFreq">${formatPrintCell(item.frequency)}</td>
-            </tr>`
-              )
-              .join("")}
-          </tbody>
-        </table>
-      </div>
-    `;
-    const diagnosesText = escapeHtml(params.diagnoses.length ? params.diagnoses.join(" - ") : "-");
+    const diagnosesText = escapeHtml(params.diagnoses.length ? params.diagnoses.join(" — ") : "-");
     const printTitle = t("appointments.prescription.printTitle");
     const isArabic = locale === "ar";
-    const direction = isArabic ? "rtl" : "ltr";
-    const issueDateLabel = t("appointments.prescription.issueDate");
-    const subtitle = t("appointments.prescription.printSubtitle");
-    const headerHtml = isContentOnly
-      ? ""
-      : `
-          <div class="topBar"></div>
-          <header class="header">
-            <div class="logoWrap">
-              <img src="/healthcare.jpeg" alt="Healthcare CRM" />
+    const direction = isContentOnly ? (isArabic ? "rtl" : "ltr") : "ltr";
+    const layoutBodyClass = isContentOnly ? "print-mode-content-only" : "print-mode-classic-rx";
+    const drLabel = t("appointments.prescription.print.drLabel");
+    /** Bilingual pad: Arabic column label stays Arabic (matches typical EG prescription). */
+    const doctorCenterArTitle = "مركز الدكتور";
+
+    const clinicAddrLine = [params.clinicAddress?.trim(), params.clinicName?.trim()].filter(Boolean).join(" — ");
+    const clinicPhone = params.clinicPhone?.trim() || "";
+
+    const patientBlockHtml = `
+          <div class="pcPatientBlock">
+            <div class="pcPLine">
+              <span class="pcPLabel">${t("appointments.prescription.print.patientLine")}</span>
+              <span class="pcPDots" aria-hidden="true"></span>
+              <span class="pcPVal">${escapeHtml(params.patientName || "-")}</span>
             </div>
-            <div>
-              <h1 class="clinicTitle">${printTitle}</h1>
-              <p class="clinicSub">${subtitle}</p>
+            <div class="pcPLine">
+              <span class="pcPLabel">${t("appointments.prescription.print.dateLine")}</span>
+              <span class="pcPDots" aria-hidden="true"></span>
+              <span class="pcPVal">${escapeHtml(params.date || "-")}</span>
             </div>
-            <div class="issueBlock">
-              <div class="issueLabel">${issueDateLabel}</div>
-              <div class="issueValue">${escapeHtml(params.date || "-")}</div>
+          </div>`;
+
+    const diagNotesHtml =
+      params.diagnoses.length || params.notes.trim()
+        ? `
+          <div class="pcDiagNotes" dir="rtl">
+            ${
+              params.diagnoses.length
+                ? `<p class="pcDiagLine"><span class="pcDiagLbl">${t("patients.assessment.diagnoses")}:</span> ${diagnosesText}</p>`
+                : ""
+            }
+            ${
+              params.notes.trim()
+                ? `<p class="pcDiagLine"><span class="pcDiagLbl">${t("appointments.medicalRecord.doctorNotes")}:</span> ${escapeHtml(params.notes)}</p>`
+                : ""
+            }
+          </div>`
+        : "";
+
+    const rxRowsHtml = `
+          <div class="pcRxList">
+            ${list
+              .map(
+                (item) => `
+            <div class="pcRxRow">
+              <span class="pcRxMark" aria-hidden="true">R/</span>
+              <div class="pcRxDrug">${escapeHtml(classicDrugLine(item))}</div>
+              <div class="pcRxInstr" dir="rtl">${formatPrintCell(classicInstrLine(item))}</div>
+            </div>`
+              )
+              .join("")}
+          </div>`;
+
+    const classicHeaderHtml = `
+          <header class="pcHead" dir="ltr">
+            <div class="pcHeadEn">
+              <div class="pcDrLbl">${drLabel}</div>
+              <div class="pcNameEn">${escapeHtml(params.doctorName || "-")}</div>
+              <div class="pcSpecEn">${escapeHtml(specEn)}</div>
             </div>
-          </header>
-        `;
-    const footerHtml = isContentOnly
-      ? ""
-      : `
-            <section class="footer">
-              <div class="signBox">${t("appointments.prescription.signatureDoctor")}</div>
-              <div class="signBox">${t("appointments.prescription.signaturePatient")}</div>
-            </section>
-        `;
+            <div class="pcHeadAr" dir="rtl">
+              <div class="pcArLbl">${doctorCenterArTitle}</div>
+              <div class="pcNameAr">${escapeHtml(params.doctorName || "-")}</div>
+              <div class="pcSpecAr">${escapeHtml(specAr)}</div>
+            </div>
+          </header>`;
+
+    const classicFooterHtml = `
+          <footer class="pcFoot">
+            <div class="pcFootAddr">
+              <span class="pcFootPrefix">${t("appointments.prescription.print.footerClinicPrefix")}</span>
+              ${escapeHtml(clinicAddrLine || "—")}
+            </div>
+            <div class="pcFootPhones">
+              <span>☎ ${t("appointments.prescription.print.footerPhoneClinic")} ${escapeHtml(clinicPhone || "—")}</span>
+              <span>${t("appointments.prescription.print.footerMedicalCenterPrefix")} ${escapeHtml(clinicPhone || "—")}</span>
+            </div>
+          </footer>`;
+
+    const classicMainHtml = `
+          <div class="contentInner contentInner--classic">
+            ${classicHeaderHtml}
+            ${patientBlockHtml}
+            ${diagNotesHtml}
+            ${rxRowsHtml}
+            ${classicFooterHtml}
+          </div>`;
+
+    const contentOnlyMainHtml = `
+          <div class="contentInner contentInner--classic contentInner--classicCo">
+            ${patientBlockHtml}
+            ${diagNotesHtml}
+            ${rxRowsHtml}
+          </div>`;
 
     printWindow.document.write(`
       <html>
@@ -968,20 +1023,16 @@ export function MedicalRecordModal({
             --font-scale: 1;
             --space-scale: 1;
             --line-scale: 1;
-            --content-max: 640px;
-            --brand-primary: #0ea5b7;
-            --brand-secondary: #2563eb;
-            --ink-strong: #0f172a;
-            --ink-soft: #475569;
-            --surface-soft: #f8fbff;
-            font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+            --content-max: 720px;
+            --rx-maroon: #800000;
+            font-family: "Segoe UI", Tahoma, "Arial Unicode MS", Arial, sans-serif;
             margin: 0;
             height: 100vh;
-            color: var(--ink-strong);
+            color: #111;
             direction: ${direction};
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
-            background: #eef6ff;
+            background: #f0f0f0;
           }
           body.print-mode-content-only {
             --reserve-top: 72mm;
@@ -991,13 +1042,13 @@ export function MedicalRecordModal({
             --line-scale: 0.96;
             --content-max: 580px;
           }
-          body.print-mode-branded {
+          body.print-mode-classic-rx {
             --reserve-top: 10mm;
-            --reserve-bottom: 14mm;
+            --reserve-bottom: 12mm;
             --font-scale: 1;
-            --space-scale: 0.96;
+            --space-scale: 0.95;
             --line-scale: 1;
-            --content-max: 640px;
+            --content-max: 720px;
           }
           body.compact.print-mode-content-only {
             --reserve-top: 58mm;
@@ -1007,13 +1058,13 @@ export function MedicalRecordModal({
             --line-scale: 0.9;
             --content-max: 410px;
           }
-          body.compact.print-mode-branded {
+          body.compact.print-mode-classic-rx {
             --reserve-top: 8mm;
             --reserve-bottom: 10mm;
             --font-scale: 0.9;
             --space-scale: 0.78;
             --line-scale: 0.92;
-            --content-max: 430px;
+            --content-max: 460px;
           }
           .sheet {
             width: 100%;
@@ -1025,10 +1076,7 @@ export function MedicalRecordModal({
             overflow: hidden;
             background: #ffffff;
           }
-          .reserveZone {
-            flex-shrink: 0;
-            width: 100%;
-          }
+          .reserveZone { flex-shrink: 0; width: 100%; }
           .reserveZone--top { min-height: var(--reserve-top); }
           .reserveZone--bottom { min-height: var(--reserve-bottom); }
           .printMain {
@@ -1038,241 +1086,159 @@ export function MedicalRecordModal({
             flex-direction: column;
             align-items: center;
           }
-          .contentInner {
+          .contentInner--classic {
             width: 100%;
-            max-width: min(92%, var(--content-max));
+            max-width: min(96%, var(--content-max));
             margin: 0 auto;
-            padding: calc(10px * var(--space-scale) * var(--fit-scale))
-              calc(12px * var(--space-scale) * var(--fit-scale))
-              calc(14px * var(--space-scale) * var(--fit-scale));
-            text-align: center;
-          }
-          body.compact .contentInner {
-            max-width: min(94%, var(--content-max));
-          }
-          .topBar {
-            height: calc(5px * var(--fit-scale));
-            background: linear-gradient(90deg, var(--brand-primary), var(--brand-secondary));
-          }
-          .header {
-            display: grid;
-            grid-template-columns: 76px 1fr auto;
-            gap: calc(10px * var(--space-scale) * var(--fit-scale));
-            align-items: center;
-            padding: calc(11px * var(--space-scale) * var(--fit-scale))
+            padding: calc(8px * var(--space-scale) * var(--fit-scale))
+              calc(10px * var(--space-scale) * var(--fit-scale))
               calc(12px * var(--space-scale) * var(--fit-scale));
-            border-bottom: 0;
-            page-break-inside: avoid;
-            width: 100%;
-            max-width: min(96%, 720px);
-            margin: 0 auto;
-            position: relative;
+            text-align: start;
           }
-          .header::after {
-            content: "";
-            position: absolute;
-            inset-inline: 14px;
-            bottom: 0;
-            height: 1px;
-            background: linear-gradient(90deg, rgba(14, 165, 183, 0), rgba(14, 165, 183, 0.35), rgba(37, 99, 235, 0));
-          }
-          body.compact .header {
-            max-width: min(98%, 480px);
-          }
-          .logoWrap {
-            width: 64px;
-            height: 64px;
-            border-radius: 12px;
-            border: 0;
-            overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: #fff;
-            box-shadow: 0 4px 14px rgba(14, 165, 183, 0.12);
-          }
-          .logoWrap img { width: 100%; height: 100%; object-fit: cover; }
-          .clinicTitle { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: 0.25px; text-align: center; color: #0b2b4a; }
-          .clinicSub { margin: calc(3px * var(--space-scale) * var(--fit-scale)) 0 0; font-size: calc(12px * var(--font-scale) * var(--fit-scale)); color: #4b6b88; text-align: center; }
-          .clinicTitle { font-size: calc(22px * var(--font-scale) * var(--fit-scale)); }
-          body.compact .clinicTitle { font-size: calc(19px * var(--font-scale) * var(--fit-scale)); }
-          body.compact .clinicSub { font-size: calc(11px * var(--font-scale) * var(--fit-scale)); }
-          .issueBlock {
-            text-align: center;
-            padding: calc(6px * var(--space-scale) * var(--fit-scale))
-              calc(8px * var(--space-scale) * var(--fit-scale));
-            border: 0;
-            border-radius: calc(10px * var(--fit-scale));
-            background: linear-gradient(180deg, #f3fbff, #eef5ff);
-            min-width: 120px;
-          }
-          .issueLabel { font-size: calc(10px * var(--font-scale) * var(--fit-scale)); color: #0f5d8e; font-weight: 700; text-transform: uppercase; }
-          .issueValue { margin-top: calc(3px * var(--space-scale) * var(--fit-scale)); font-size: calc(12px * var(--font-scale) * var(--fit-scale)); font-weight: 700; color: #0b2b4a; }
-          .metaGrid {
+          .pcHead {
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: calc(6px * var(--space-scale) * var(--fit-scale))
-              calc(10px * var(--space-scale) * var(--fit-scale));
+            grid-template-columns: 1fr 1fr;
+            gap: calc(12px * var(--space-scale) * var(--fit-scale));
+            padding-bottom: calc(10px * var(--space-scale) * var(--fit-scale));
+            margin-bottom: calc(10px * var(--space-scale) * var(--fit-scale));
+            border-bottom: 1px solid #c4c4c4;
+            page-break-inside: avoid;
+          }
+          .pcHeadEn {
+            text-align: left;
+            font-family: Georgia, "Times New Roman", Times, serif;
+          }
+          .pcDrLbl {
+            color: var(--rx-maroon);
+            font-size: calc(12px * var(--font-scale) * var(--fit-scale));
+            font-weight: 700;
+            margin-bottom: 2px;
+          }
+          .pcNameEn {
+            color: var(--rx-maroon);
+            font-size: calc(20px * var(--font-scale) * var(--fit-scale));
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            line-height: 1.15;
+          }
+          .pcSpecEn {
+            margin-top: calc(4px * var(--space-scale) * var(--fit-scale));
+            font-size: calc(13px * var(--font-scale) * var(--fit-scale));
+            color: #111;
+            font-weight: 600;
+          }
+          .pcHeadAr {
+            text-align: right;
+          }
+          .pcArLbl {
+            color: var(--rx-maroon);
+            font-size: calc(12px * var(--font-scale) * var(--fit-scale));
+            font-weight: 700;
+            margin-bottom: 2px;
+          }
+          .pcNameAr {
+            color: var(--rx-maroon);
+            font-size: calc(19px * var(--font-scale) * var(--fit-scale));
+            font-weight: 700;
+            line-height: 1.25;
+          }
+          .pcSpecAr {
+            margin-top: calc(4px * var(--space-scale) * var(--fit-scale));
+            font-size: calc(13px * var(--font-scale) * var(--fit-scale));
+            color: #111;
+            font-weight: 600;
+          }
+          .pcPatientBlock {
             margin-bottom: calc(10px * var(--space-scale) * var(--fit-scale));
             page-break-inside: avoid;
-            justify-items: center;
-            text-align: center;
           }
-          body.compact .metaGrid { margin-bottom: calc(8px * var(--space-scale) * var(--fit-scale)); }
-          .metaCard {
-            border: 0;
-            border-radius: calc(10px * var(--fit-scale));
-            padding: calc(4px * var(--space-scale) * var(--fit-scale))
-              calc(3px * var(--space-scale) * var(--fit-scale));
-            background: linear-gradient(180deg, #f9fcff, #f2f8ff);
-            width: 100%;
-            max-width: 280px;
-            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
-          }
-          .metaLabel { font-size: calc(10px * var(--font-scale) * var(--fit-scale)); color: #4b6b88; margin-bottom: calc(2px * var(--space-scale) * var(--fit-scale)); font-weight: 600; }
-          .metaValue { font-size: calc(12px * var(--font-scale) * var(--fit-scale)); font-weight: 700; color: #0b2b4a; }
-          body.compact .metaValue { font-size: calc(11px * var(--font-scale) * var(--fit-scale)); }
-          .section {
-            border: 0;
-            border-radius: calc(12px * var(--fit-scale));
-            padding: calc(6px * var(--space-scale) * var(--fit-scale)) 0
-              calc(8px * var(--space-scale) * var(--fit-scale));
-            margin-bottom: calc(2px * var(--space-scale) * var(--fit-scale));
-            background: linear-gradient(180deg, rgba(14, 165, 183, 0.06), rgba(37, 99, 235, 0.04));
-            page-break-inside: avoid;
-            text-align: center;
-          }
-          .sectionTitle {
-            margin: 0 0 calc(4px * var(--space-scale) * var(--fit-scale));
-            font-size: calc(12px * var(--font-scale) * var(--fit-scale));
-            font-weight: 800;
-            color: #0b2b4a;
-            text-align: center;
-          }
-          .sectionBody { font-size: calc(11px * var(--font-scale) * var(--fit-scale)); color: var(--ink-soft); line-height: calc(1.5 * var(--line-scale)); text-align: center; }
-          .rxHeading {
-            margin: calc(10px * var(--space-scale) * var(--fit-scale)) auto
-              calc(10px * var(--space-scale) * var(--fit-scale));
-            padding-bottom: calc(6px * var(--space-scale) * var(--fit-scale));
+          .pcPLine {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+            margin-bottom: calc(6px * var(--space-scale) * var(--fit-scale));
             font-size: calc(13px * var(--font-scale) * var(--fit-scale));
-            font-weight: 800;
-            color: #0b2b4a;
-            text-align: center;
-            max-width: min(92%, var(--content-max));
           }
-          .rxHeading::after {
-            content: "";
-            display: block;
-            height: 2px;
-            margin-top: calc(6px * var(--space-scale) * var(--fit-scale));
-            margin-left: auto;
-            margin-right: auto;
-            max-width: 220px;
-            border-radius: 1px;
-            background: linear-gradient(90deg, transparent, var(--brand-primary), var(--brand-secondary), transparent);
+          .pcPLabel { flex-shrink: 0; color: #111; font-weight: 600; }
+          .pcPDots {
+            flex: 1;
+            min-width: 12px;
+            border-bottom: 1px dotted #333;
+            height: 1em;
+            opacity: 0.85;
           }
-          .rxList {
-            margin: 0 0 calc(6px * var(--space-scale) * var(--fit-scale));
-            page-break-inside: avoid;
-            width: 100%;
-          }
-          .rxTableWrap {
-            width: 100%;
-            max-width: min(100%, 720px);
-            margin: 0 auto calc(8px * var(--space-scale) * var(--fit-scale));
-            text-align: start;
-            border-radius: calc(14px * var(--fit-scale));
-            overflow: hidden;
-            box-shadow:
-              0 1px 0 rgba(15, 23, 42, 0.06),
-              0 12px 28px rgba(14, 165, 183, 0.08),
-              inset 0 1px 0 rgba(255, 255, 255, 0.9);
-            border: 1px solid rgba(14, 165, 183, 0.18);
-            background: linear-gradient(180deg, #ffffff 0%, #f9fcff 100%);
-          }
-          body.compact .rxTableWrap { max-width: 100%; }
-          .rxTable {
-            width: 100%;
-            border-collapse: collapse;
-            table-layout: fixed;
+          .pcPVal { flex-shrink: 0; max-width: 55%; text-align: end; font-weight: 600; color: #000; }
+          .pcDiagNotes {
+            margin-bottom: calc(8px * var(--space-scale) * var(--fit-scale));
             font-size: calc(11px * var(--font-scale) * var(--fit-scale));
-          }
-          .rxTh {
-            padding: calc(10px * var(--space-scale) * var(--fit-scale))
-              calc(8px * var(--space-scale) * var(--fit-scale));
-            text-align: start;
-            font-weight: 700;
-            font-size: calc(10px * var(--font-scale) * var(--fit-scale));
-            letter-spacing: 0.01em;
-            text-transform: none;
-            color: #111827;
-            background: linear-gradient(180deg, #f9fafb 0%, #f3f4f6 100%);
-            border-bottom: 1px solid #d1d5db;
-            vertical-align: bottom;
-          }
-          .rxThNum { width: 2.25rem; text-align: center; }
-          .rxThDrug { width: 24%; }
-          .rxThDose { width: 12%; }
-          .rxThDur { width: 11%; }
-          .rxThInstr { width: 28%; }
-          .rxThFreq { width: 15%; }
-          .rxTr:nth-child(even) .rxTd { background: rgba(14, 165, 183, 0.04); }
-          .rxTd {
-            padding: calc(9px * var(--space-scale) * var(--fit-scale))
-              calc(8px * var(--space-scale) * var(--fit-scale));
-            vertical-align: top;
-            text-align: start;
-            color: var(--ink-strong);
-            border-top: 1px solid rgba(15, 23, 42, 0.07);
             line-height: calc(1.45 * var(--line-scale));
+            color: #222;
+            page-break-inside: avoid;
+          }
+          .pcDiagLine { margin: 0 0 4px; }
+          .pcDiagLbl { font-weight: 700; color: #333; }
+          .pcRxList {
+            margin-top: calc(4px * var(--space-scale) * var(--fit-scale));
+            border-top: 1px solid #999;
+            padding-top: calc(8px * var(--space-scale) * var(--fit-scale));
+          }
+          .pcRxRow {
+            display: grid;
+            grid-template-columns: 2.25rem minmax(0, 1fr) minmax(0, 1.05fr);
+            gap: calc(6px * var(--space-scale) * var(--fit-scale));
+            align-items: baseline;
+            padding: calc(5px * var(--space-scale) * var(--fit-scale)) 0;
+            border-bottom: 1px dotted #bbb;
+            font-size: calc(12px * var(--font-scale) * var(--fit-scale));
+            page-break-inside: avoid;
+          }
+          .pcRxMark {
+            font-family: "Brush Script MT", "Segoe Script", cursive;
+            color: var(--rx-maroon);
+            font-size: calc(17px * var(--font-scale) * var(--fit-scale));
+            font-weight: 600;
+            line-height: 1;
+          }
+          .pcRxDrug {
+            font-family: Georgia, "Times New Roman", Times, serif;
+            color: var(--rx-maroon);
+            font-weight: 700;
+            text-align: start;
+            line-height: calc(1.35 * var(--line-scale));
             word-break: break-word;
           }
-          .rxTdNum {
-            text-align: center;
-            font-weight: 800;
-            color: #0b2b4a;
-            background: rgba(14, 165, 183, 0.06);
+          .pcRxInstr {
+            text-align: right;
+            color: #111;
+            font-weight: 500;
+            line-height: calc(1.4 * var(--line-scale));
+            word-break: break-word;
           }
-          .rxTdDrug { font-weight: 700; color: #0b2b4a; }
-          .rxTdDose,
-          .rxTdDur,
-          .rxTdInstr,
-          .rxTdFreq { color: #1e3a4f; font-weight: 600; }
-          .footer {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: calc(10px * var(--space-scale) * var(--fit-scale));
-            margin: calc(6px * var(--space-scale) * var(--fit-scale)) auto 0;
+          .pcFoot {
+            margin-top: calc(14px * var(--space-scale) * var(--fit-scale));
+            padding-top: calc(10px * var(--space-scale) * var(--fit-scale));
+            border-top: 1px solid #333;
             page-break-inside: avoid;
-            width: 100%;
-            max-width: min(92%, 640px);
-            padding: 0 calc(12px * var(--space-scale) * var(--fit-scale))
-              calc(3px * var(--space-scale) * var(--fit-scale));
-          }
-          body.compact .footer {
-            max-width: min(94%, 420px);
-          }
-          .signBox {
-            border: 0;
-            border-radius: calc(10px * var(--fit-scale));
-            padding: calc(8px * var(--space-scale) * var(--fit-scale))
-              calc(4px * var(--space-scale) * var(--fit-scale));
-            min-height: calc(44px * var(--fit-scale));
-            display: flex;
-            align-items: flex-end;
-            justify-content: center;
+            font-family: Georgia, "Times New Roman", Times, serif;
+            color: var(--rx-maroon);
             font-size: calc(11px * var(--font-scale) * var(--fit-scale));
-            color: #2f4f6a;
+            line-height: calc(1.45 * var(--line-scale));
+          }
+          .pcFootAddr { margin-bottom: 6px; font-weight: 600; }
+          .pcFootPrefix { font-weight: 700; margin-inline-end: 4px; }
+          .pcFootPhones {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            gap: 8px;
             font-weight: 600;
-            text-align: center;
-            background: linear-gradient(180deg, #f5fbff, #edf5ff);
           }
           @media screen {
-            body { background: #eef2ff; }
+            body { background: #e8e8e8; }
             .sheet {
               max-width: ${paperSize === "A5" ? "620px" : "980px"};
               margin: 16px auto;
-              box-shadow: 0 20px 50px rgba(2, 6, 23, 0.12);
+              box-shadow: 0 20px 50px rgba(0, 0, 0, 0.12);
             }
           }
           @media print {
@@ -1284,44 +1250,8 @@ export function MedicalRecordModal({
       <body dir="${direction}" class="${[compactClass, layoutBodyClass].filter(Boolean).join(" ")}">
         <section class="sheet" id="print-sheet">
           <div class="reserveZone reserveZone--top" aria-hidden="true"></div>
-          ${headerHtml}
           <div class="printMain">
-            <div class="contentInner">
-              <section class="metaGrid">
-                <article class="metaCard">
-                  <div class="metaLabel">${t("appointments.medicalFile.patient")}</div>
-                  <div class="metaValue">${escapeHtml(params.patientName || "-")}</div>
-                </article>
-                <article class="metaCard">
-                  <div class="metaLabel">${t("appointments.medicalFile.doctor")}</div>
-                  <div class="metaValue">${escapeHtml(params.doctorName || "-")}</div>
-                </article>
-                <article class="metaCard">
-                  <div class="metaLabel">${t("appointments.medicalRecord.specialty")}</div>
-                  <div class="metaValue">${escapeHtml(params.specialtyLabel || "-")}</div>
-                </article>
-                <article class="metaCard">
-                  <div class="metaLabel">${t("appointments.medicalFile.entryType")}</div>
-                  <div class="metaValue">${escapeHtml(entryTypeLabel(params.entryType))}</div>
-                </article>
-              </section>
-
-              <section class="section">
-                <h2 class="sectionTitle">${t("patients.assessment.diagnoses")}</h2>
-                <div class="sectionBody">${diagnosesText}</div>
-              </section>
-
-              <section class="section">
-                <h2 class="sectionTitle">${t("appointments.medicalRecord.doctorNotes")}</h2>
-                <div class="sectionBody">${escapeHtml(params.notes || "-")}</div>
-              </section>
-
-              <h2 class="rxHeading">${t("appointments.prescription.medicinesHeading")}</h2>
-              <section class="rxList">
-                ${medicinesHtml}
-              </section>
-            </div>
-            ${footerHtml}
+            ${isContentOnly ? contentOnlyMainHtml : classicMainHtml}
           </div>
           <div class="reserveZone reserveZone--bottom" aria-hidden="true"></div>
         </section>
@@ -1496,10 +1426,15 @@ export function MedicalRecordModal({
                   doctorName: doctorName || "-",
                   doctorStorageKey: payload.appointment.doctor?.id ?? (doctorName || "default"),
                   specialtyLabel: appointmentSpecialtyLabel,
+                  specialtyNameEn: payload.specialty?.name ?? "",
+                  specialtyNameAr: payload.specialty?.nameAr ?? "",
                   entryType: payload.appointment.entryType,
                   date: formatDate(payload.appointment.startsAt),
                   diagnoses,
-                  notes: doctorNotes
+                  notes: doctorNotes,
+                  clinicName: resolvedClinicForPrint?.name,
+                  clinicAddress: resolvedClinicForPrint?.address ?? undefined,
+                  clinicPhone: resolvedClinicForPrint?.phone ?? undefined
                 })
               }
             >

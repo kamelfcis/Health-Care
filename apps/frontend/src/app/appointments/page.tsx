@@ -69,13 +69,29 @@ type BrowserSpeechRecognition = {
 };
 type SpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
 
+/** `YYYY-MM-DD` in local time for `<input type="date">` and API date filters. */
+function toLocalDateInputValue(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export default function AppointmentsPage() {
   const { t, locale } = useI18n();
   const queryClient = useQueryClient();
   const [currentUser, setCurrentUser] = useState<ReturnType<typeof storage.getUser>>(null);
   const [hasHydrated, setHasHydrated] = useState(false);
   useEffect(() => {
-    setCurrentUser(storage.getUser());
+    const u = storage.getUser();
+    setCurrentUser(u);
+    if (u?.role === "Doctor") {
+      const y = toLocalDateInputValue(new Date());
+      setAppointmentFilterDraft((prev) => {
+        if (prev.startsFrom?.trim() || prev.startsTo?.trim()) return prev;
+        return { ...prev, startsFrom: y, startsTo: y };
+      });
+    }
     setHasHydrated(true);
   }, []);
   const isSuperAdmin = currentUser?.role === "SuperAdmin";
@@ -107,6 +123,15 @@ export default function AppointmentsPage() {
   const whatsappRafRef = useRef<number | null>(null);
   const [appointmentFilterDraft, setAppointmentFilterDraft] = useState(() => emptyAppointmentListQuery());
   const debouncedAppointmentFilters = useDebounce(appointmentFilterDraft, 400);
+  /** Date range applies immediately; other fields stay debounced so typing does not spam the API. */
+  const appointmentListFilters = useMemo(
+    () => ({
+      ...debouncedAppointmentFilters,
+      startsFrom: appointmentFilterDraft.startsFrom ?? "",
+      startsTo: appointmentFilterDraft.startsTo ?? ""
+    }),
+    [debouncedAppointmentFilters, appointmentFilterDraft.startsFrom, appointmentFilterDraft.startsTo]
+  );
   const [form, setForm] = useState({
     patientId: "",
     specialtyCode: "",
@@ -141,10 +166,10 @@ export default function AppointmentsPage() {
         clinicScope: queryScopeClinicId,
         viewerId: queryViewerId,
         viewerRole: queryViewerRole,
-        filters: debouncedAppointmentFilters
+        filters: appointmentListFilters
       }
     ],
-    queryFn: () => appointmentService.list(appointmentClinicScope, debouncedAppointmentFilters),
+    queryFn: () => appointmentService.list(appointmentClinicScope, appointmentListFilters),
     enabled: isQueryScopeReady,
     staleTime: 5_000,
     refetchOnMount: "always",
@@ -188,6 +213,15 @@ export default function AppointmentsPage() {
   });
 
   const mutationClinicScope = isSuperAdmin ? (selectedClinicId === "all" ? undefined : selectedClinicId) : undefined;
+
+  const clearAppointmentFilters = useCallback(() => {
+    if (currentUser?.role === "Doctor") {
+      const y = toLocalDateInputValue(new Date());
+      setAppointmentFilterDraft({ ...emptyAppointmentListQuery(), startsFrom: y, startsTo: y });
+    } else {
+      setAppointmentFilterDraft(emptyAppointmentListQuery());
+    }
+  }, [currentUser?.role]);
 
   const resetForm = useCallback(() => {
     setForm({
@@ -866,7 +900,7 @@ export default function AppointmentsPage() {
             <AppointmentSearchBar
               value={appointmentFilterDraft}
               onChange={setAppointmentFilterDraft}
-              onClear={() => setAppointmentFilterDraft(emptyAppointmentListQuery())}
+              onClear={clearAppointmentFilters}
             />
           }
           statusOptions={[{ label: t("common.allStatuses"), value: "all" }]}

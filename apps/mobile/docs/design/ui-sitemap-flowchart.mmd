@@ -1,0 +1,81 @@
+%% HealthCare CRM — UI sitemap (regenerate: README.md in this folder)
+%%{
+  init: {
+    "theme": "base",
+    "themeVariables": {
+      "fontFamily": "Segoe UI, system-ui, sans-serif",
+      "fontSize": "15px",
+      "primaryColor": "#FFF4ED",
+      "primaryTextColor": "#0B2A4A",
+      "primaryBorderColor": "#F27A1A",
+      "secondaryColor": "#E8F1FA",
+      "secondaryTextColor": "#0B2A4A",
+      "secondaryBorderColor": "#0B2A4A",
+      "tertiaryColor": "#FDE8D8",
+      "lineColor": "#0B2A4A",
+      "clusterBkg": "#FAFBFD",
+      "clusterBorder": "#C5D4E8",
+      "titleColor": "#0B2A4A",
+      "edgeLabelBackground": "#ffffff"
+    },
+    "flowchart": {
+      "curve": "basis",
+      "padding": 16,
+      "nodeSpacing": 48,
+      "rankSpacing": 58
+    }
+  }
+}%%
+flowchart TB
+  Title["HealthCare CRM — Mobile UI sitemap · 20 screens · matches web app routes"]
+  Foot["Design: RTL Arabic · Navy #0B2A4A · Orange #F27A1A · Full spec: apps/mobile/sitemap.md"]
+
+  subgraph public["Public"]
+    Home["/  Home / landing"]
+    Login["/login"]
+    Register["/register"]
+  end
+
+  subgraph app["Authenticated app"]
+    Profile["/profile"]
+    Settings["/settings  ClinicAdmin"]
+
+    subgraph dash["Dashboard & pipeline"]
+      Dashboard["/dashboard"]
+      Leads["/dashboard/leads"]
+      LeadDetail["/dashboard/leads/:id"]
+    end
+
+    subgraph org["Organization"]
+      Clinics["/clinics"]
+      Users["/users"]
+      Doctors["/doctors"]
+    end
+
+    subgraph clinical["Clinical & ops"]
+      Patients["/patients"]
+      Appointments["/appointments"]
+      Pharmacy["/pharmacy"]
+    end
+
+    subgraph specialties["Specialties SuperAdmin"]
+      SpecRoot["/specialties"]
+      SpecTpl["/specialties/templates"]
+      SpecRules["/specialties/rules"]
+      SpecLookup["/specialties/lookup"]
+    end
+
+    subgraph money["Billing & payments"]
+      Billing["/billing"]
+      Payments["/payments"]
+    end
+  end
+
+  Title --> Home
+  Home --> Login
+  Login --> Register
+  Login --> Dashboard
+  Payments --> Foot
+
+  style Title fill:#0B2A4A,stroke:#F27A1A,stroke-width:3px,color:#fff
+  style Foot fill:#F0F4FA,stroke:#94A8C4,color:#0B2A4A

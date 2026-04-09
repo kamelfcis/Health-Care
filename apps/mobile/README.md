@@ -33,3 +33,8 @@ From repository root:
 
 - Base API URL is loaded from env files and should point to backend `/api`.
 - The logo is configured from `assets/images/healthcare.jpeg`.
+
+## UI/UX (Flutter)
+
+- Full guide (tables, designer split, handoff): **[sitemap.md](./sitemap.md)**  
+- **PNG site map for designers:** [docs/design/ui-sitemap-flowchart.png](./docs/design/ui-sitemap-flowchart.png) (high resolution; source: `docs/design/ui-sitemap-flowchart.mmd`)

@@ -1220,70 +1220,71 @@ export default function PatientsPage() {
                     const isExpanded = expandedCardId === row.id;
                     return (
                       <>
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-lg font-bold leading-6 text-slate-900 break-words">{row.name}</p>
-                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                              <span
-                                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-cyan-100 font-semibold text-cyan-700"
-                                title={`${t("patients.card.fileNumber")}: ${row.fileNumber}`}
-                                aria-label={`${t("patients.card.fileNumber")}: ${row.fileNumber}`}
-                              >
-                                <ClipboardList size={12} aria-hidden />
-                              </span>
-                              {patientTelHref(row.phone) ? (
-                                <a
-                                  href={patientTelHref(row.phone)}
-                                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-700 shadow-sm transition hover:bg-sky-200 hover:text-sky-800"
-                                  aria-label={`${t("patients.card.phone")}: ${row.phone}`}
-                                >
-                                  <PhoneOutgoing size={12} aria-hidden />
-                                </a>
-                              ) : (
-                                <span
-                                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-400"
-                                  aria-label={t("patients.card.notSet")}
-                                >
-                                  <PhoneOutgoing size={12} aria-hidden />
-                                </span>
-                              )}
-                              <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 font-semibold text-orange-700">
-                                <MapPin size={12} aria-hidden />
-                                {row.clinicName ?? t("patients.card.notSet")}
-                              </span>
-                            </div>
+                        <div className="flex w-full items-center justify-end gap-1.5">
+                          <div className="rounded-xl bg-blue-500 p-2 text-white shadow-soft">
+                            <User size={14} aria-hidden />
                           </div>
-                          <div className="flex shrink-0 items-center gap-1.5">
-                            <div className="rounded-xl bg-blue-500 p-2 text-white shadow-soft">
-                              <User size={14} aria-hidden />
-                            </div>
-                            <button
-                              type="button"
-                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-200 bg-gradient-to-b from-white to-cyan-50 text-cyan-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow"
-                              onClick={() => {
-                                setEditing(row);
-                                setFormExpanded(true);
-                                setTimeout(scrollToFormTop, 0);
-                              }}
-                              aria-label={t("patients.actions.edit")}
+                          <button
+                            type="button"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-200 bg-gradient-to-b from-white to-cyan-50 text-cyan-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow"
+                            onClick={() => {
+                              setEditing(row);
+                              setFormExpanded(true);
+                              setTimeout(scrollToFormTop, 0);
+                            }}
+                            aria-label={t("patients.actions.edit")}
+                          >
+                            <SquarePen size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-rose-200 bg-gradient-to-b from-white to-rose-50 text-rose-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-rose-300 hover:shadow"
+                            onClick={() => setDeleteTarget(row)}
+                            aria-label={t("patients.actions.delete")}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+
+                        <p className="min-w-0 truncate text-lg font-bold leading-6 text-slate-900" title={row.name}>
+                          {row.name}
+                        </p>
+
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          <span
+                            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-cyan-100 font-semibold text-cyan-700"
+                            title={`${t("patients.card.fileNumber")}: ${row.fileNumber}`}
+                            aria-label={`${t("patients.card.fileNumber")}: ${row.fileNumber}`}
+                          >
+                            <ClipboardList size={12} aria-hidden />
+                          </span>
+                          {patientTelHref(row.phone) ? (
+                            <a
+                              href={patientTelHref(row.phone)}
+                              className="inline-flex min-h-7 min-w-0 max-w-full items-center gap-1.5 rounded-full bg-sky-100 px-2.5 py-1 text-sky-800 shadow-sm transition hover:bg-sky-200"
+                              aria-label={`${t("patients.card.phone")}: ${row.phone}`}
                             >
-                              <SquarePen size={13} />
-                            </button>
-                            <button
-                              type="button"
-                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-rose-200 bg-gradient-to-b from-white to-rose-50 text-rose-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-rose-300 hover:shadow"
-                              onClick={() => setDeleteTarget(row)}
-                              aria-label={t("patients.actions.delete")}
-                            >
-                              <Trash2 size={13} />
-                            </button>
-                          </div>
+                              <PhoneOutgoing size={12} className="shrink-0" aria-hidden />
+                              <span className="truncate font-semibold tabular-nums">{row.phone}</span>
+                            </a>
+                          ) : (
+                            <span className="inline-flex min-h-7 min-w-0 max-w-full items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-slate-500">
+                              <PhoneOutgoing size={12} className="shrink-0" aria-hidden />
+                              <span className="truncate">{t("patients.card.notSet")}</span>
+                            </span>
+                          )}
+                          <span className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 font-semibold text-orange-700">
+                            <MapPin size={12} className="shrink-0" aria-hidden />
+                            <span className="min-w-0 truncate">{row.clinicName ?? t("patients.card.notSet")}</span>
+                          </span>
                         </div>
 
                         <div className="flex items-center gap-2 overflow-x-auto pb-1">
                           <button
                             type="button"
-                            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-amber-200 bg-gradient-to-b from-white to-amber-50 px-3 text-xs font-semibold text-amber-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-amber-300 hover:shadow"
+                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-amber-200 bg-gradient-to-b from-white to-amber-50 text-amber-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-amber-300 hover:shadow"
+                            title={t("patients.assessment.open")}
+                            aria-label={t("patients.assessment.open")}
                             onClick={() => {
                               setMedicalRecordPatient({
                                 id: row.id,
@@ -1292,8 +1293,7 @@ export default function PatientsPage() {
                               });
                             }}
                           >
-                            <ClipboardList size={13} />
-                            {t("patients.assessment.open")}
+                            <ClipboardList size={13} aria-hidden />
                           </button>
                           <button
                             type="button"
