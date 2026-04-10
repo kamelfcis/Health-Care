@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Calendar,
   ChevronDown,
+  Clock,
   ClipboardList,
   Loader2,
   MapPin,
@@ -17,7 +18,6 @@ import {
   SquarePen,
   Trash2,
   TriangleAlert,
-  User,
   UserPlus,
   Users
 } from "lucide-react";
@@ -1220,30 +1220,55 @@ export default function PatientsPage() {
                     const isExpanded = expandedCardId === row.id;
                     return (
                       <>
-                        <div className="flex w-full items-center justify-end gap-1.5">
-                          <div className="rounded-xl bg-blue-500 p-2 text-white shadow-soft">
-                            <User size={14} aria-hidden />
+                        <div className="flex w-full min-w-0 items-center justify-between gap-2">
+                          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
+                            {patientTelHref(row.phone) ? (
+                              <a
+                                href={patientTelHref(row.phone)}
+                                className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold leading-tight text-sky-800 shadow-sm transition hover:bg-sky-200 sm:text-[11px]"
+                                aria-label={`${t("patients.card.phone")}: ${row.phone}`}
+                              >
+                                <PhoneOutgoing size={10} className="shrink-0" aria-hidden />
+                                <span className="whitespace-nowrap tabular-nums">{row.phone}</span>
+                              </a>
+                            ) : (
+                              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] leading-tight text-slate-500 sm:text-[11px]">
+                                <PhoneOutgoing size={10} className="shrink-0" aria-hidden />
+                                <span className="whitespace-nowrap">{t("patients.card.notSet")}</span>
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-gradient-to-b from-white to-emerald-50 text-emerald-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow disabled:cursor-not-allowed disabled:opacity-50"
+                              onClick={() => openWhatsappPopup(row)}
+                              disabled={!row.whatsapp || row.whatsapp === "-"}
+                              aria-label={t("patients.whatsappPopup.open")}
+                            >
+                              <FaWhatsapp size={13} />
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-200 bg-gradient-to-b from-white to-cyan-50 text-cyan-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow"
-                            onClick={() => {
-                              setEditing(row);
-                              setFormExpanded(true);
-                              setTimeout(scrollToFormTop, 0);
-                            }}
-                            aria-label={t("patients.actions.edit")}
-                          >
-                            <SquarePen size={13} />
-                          </button>
-                          <button
-                            type="button"
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-rose-200 bg-gradient-to-b from-white to-rose-50 text-rose-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-rose-300 hover:shadow"
-                            onClick={() => setDeleteTarget(row)}
-                            aria-label={t("patients.actions.delete")}
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                          <div className="flex shrink-0 items-center gap-1">
+                            <button
+                              type="button"
+                              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border border-cyan-200 bg-gradient-to-b from-white to-cyan-50 text-cyan-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow"
+                              onClick={() => {
+                                setEditing(row);
+                                setFormExpanded(true);
+                                setTimeout(scrollToFormTop, 0);
+                              }}
+                              aria-label={t("patients.actions.edit")}
+                            >
+                              <SquarePen size={11} />
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border border-rose-200 bg-gradient-to-b from-white to-rose-50 text-rose-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-rose-300 hover:shadow"
+                              onClick={() => setDeleteTarget(row)}
+                              aria-label={t("patients.actions.delete")}
+                            >
+                              <Trash2 size={11} />
+                            </button>
+                          </div>
                         </div>
 
                         <p className="min-w-0 truncate text-lg font-bold leading-6 text-slate-900" title={row.name}>
@@ -1252,27 +1277,16 @@ export default function PatientsPage() {
 
                         <div className="flex flex-wrap items-center gap-2 text-xs">
                           <span
-                            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-cyan-100 font-semibold text-cyan-700"
-                            title={`${t("patients.card.fileNumber")}: ${row.fileNumber}`}
-                            aria-label={`${t("patients.card.fileNumber")}: ${row.fileNumber}`}
+                            className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-slate-700"
+                            title={`${t("patients.card.registrationDate")}: ${row.createdAt}`}
+                            aria-label={`${t("patients.card.registrationDate")}: ${row.createdAt}`}
                           >
-                            <ClipboardList size={12} aria-hidden />
-                          </span>
-                          {patientTelHref(row.phone) ? (
-                            <a
-                              href={patientTelHref(row.phone)}
-                              className="inline-flex min-h-7 min-w-0 max-w-full items-center gap-1.5 rounded-full bg-sky-100 px-2.5 py-1 text-sky-800 shadow-sm transition hover:bg-sky-200"
-                              aria-label={`${t("patients.card.phone")}: ${row.phone}`}
-                            >
-                              <PhoneOutgoing size={12} className="shrink-0" aria-hidden />
-                              <span className="truncate font-semibold tabular-nums">{row.phone}</span>
-                            </a>
-                          ) : (
-                            <span className="inline-flex min-h-7 min-w-0 max-w-full items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-slate-500">
-                              <PhoneOutgoing size={12} className="shrink-0" aria-hidden />
-                              <span className="truncate">{t("patients.card.notSet")}</span>
+                            <Clock size={12} className="shrink-0 text-orange-600" aria-hidden />
+                            <span className="min-w-0 truncate">
+                              <span className="font-medium">{t("patients.card.registrationDate")}:</span>{" "}
+                              <span className="font-semibold text-slate-800">{row.createdAt}</span>
                             </span>
-                          )}
+                          </span>
                           <span className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-full bg-orange-100 px-2 py-0.5 font-semibold text-orange-700">
                             <MapPin size={12} className="shrink-0" aria-hidden />
                             <span className="min-w-0 truncate">{row.clinicName ?? t("patients.card.notSet")}</span>
@@ -1282,7 +1296,7 @@ export default function PatientsPage() {
                         <div className="flex items-center gap-2 overflow-x-auto pb-1">
                           <button
                             type="button"
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-amber-200 bg-gradient-to-b from-white to-amber-50 text-amber-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-amber-300 hover:shadow"
+                            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border border-amber-200 bg-gradient-to-b from-white to-amber-50 text-amber-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-amber-300 hover:shadow"
                             title={t("patients.assessment.open")}
                             aria-label={t("patients.assessment.open")}
                             onClick={() => {
@@ -1293,24 +1307,9 @@ export default function PatientsPage() {
                               });
                             }}
                           >
-                            <ClipboardList size={13} aria-hidden />
-                          </button>
-                          <button
-                            type="button"
-                            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-gradient-to-b from-white to-emerald-50 text-emerald-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow disabled:cursor-not-allowed disabled:opacity-50"
-                            onClick={() => openWhatsappPopup(row)}
-                            disabled={!row.whatsapp || row.whatsapp === "-"}
-                            aria-label={t("patients.whatsappPopup.open")}
-                          >
-                            <FaWhatsapp size={15} />
+                            <ClipboardList size={11} aria-hidden />
                           </button>
                         </div>
-
-                        <p className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
-                          <Calendar size={12} className="shrink-0 text-orange-600" aria-hidden />
-                          <span className="font-medium text-slate-700">{t("patients.card.registrationDate")}:</span>
-                          <span className="font-semibold text-slate-800">{row.createdAt}</span>
-                        </p>
 
                         <div className="flex items-center justify-between">
                           <p className="text-sm font-medium text-orange-700">{t("patients.lastVisit")}: {row.lastVisit}</p>
@@ -1337,6 +1336,12 @@ export default function PatientsPage() {
                         >
                           <div className={cn("space-y-3", isExpanded && "pt-2")}>
                             <div className="grid grid-cols-2 gap-2 text-sm">
+                              <div className="rounded-xl bg-white/90 p-2">
+                                <p className="text-xs text-slate-500">{t("patients.card.fileNumber")}</p>
+                                <p className="mt-0.5 font-semibold text-slate-800">
+                                  {row.fileNumber != null ? row.fileNumber : t("patients.card.notSet")}
+                                </p>
+                              </div>
                               <div className="rounded-xl bg-white/90 p-2">
                                 <p className="text-xs text-slate-500">{t("field.nationalId")}</p>
                                 <p className="mt-0.5 font-semibold text-slate-800 break-words">

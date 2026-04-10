@@ -252,13 +252,6 @@ export function PatientForm({
     queryFn: () => specialtyService.listMyClinicSpecialties(clinicScope),
     enabled: clinicSpecialtiesEnabled
   });
-  const selectedAppointmentSpecialtyName = useMemo(
-    () =>
-      (clinicSpecialtiesQuery.data ?? [])
-        .find((item) => item.specialty.code === appointmentSpecialtyCode)
-        ?.specialty.name ?? "",
-    [appointmentSpecialtyCode, clinicSpecialtiesQuery.data]
-  );
   const selectedSpecialtyName = useMemo(
     () =>
       (clinicSpecialtiesQuery.data ?? [])
@@ -271,9 +264,10 @@ export function PatientForm({
     queryFn: () => doctorService.list(clinicScope, selectedSpecialtyName || undefined),
     enabled: Boolean(specialtyCode)
   });
+  /** List all clinic doctors: backend filters doctors by exact `specialty` string, which often mismatches catalog `name`, yielding an empty dropdown. Appointment create only requires doctorId + specialtyCode. */
   const appointmentDoctorsQuery = useQuery({
-    queryKey: ["patients", "form", "appointment-doctors", clinicScope ?? "mine", selectedAppointmentSpecialtyName ?? "all"],
-    queryFn: () => doctorService.list(clinicScope, selectedAppointmentSpecialtyName || undefined),
+    queryKey: ["patients", "form", "appointment-doctors", clinicScope ?? "mine"],
+    queryFn: () => doctorService.list(clinicScope),
     enabled: enableAppointmentSection && createAppointmentNow && Boolean(appointmentSpecialtyCode)
   });
   const liveAge = (() => {
@@ -615,6 +609,9 @@ export function PatientForm({
                     </option>
                   ))}
                 </select>
+                {errors.appointmentSpecialtyCode ? (
+                  <p className="mt-1 text-xs text-red-500">{errors.appointmentSpecialtyCode.message}</p>
+                ) : null}
               </div>
               <div>
                 <label className="mb-1 block text-sm text-slate-600">{t("nav.doctors")}</label>
@@ -626,18 +623,26 @@ export function PatientForm({
                   <option value="">{appointmentSpecialtyCode ? t("appointments.chooseDoctor") : t("appointments.chooseSpecialty")}</option>
                   {(appointmentDoctorsQuery.data ?? []).map((doctor) => (
                     <option key={doctor.id} value={doctor.id}>
-                      {`${doctor.user?.firstName ?? ""} ${doctor.user?.lastName ?? ""}`.trim()}
+                      {`${doctor.user?.firstName ?? ""} ${doctor.user?.lastName ?? ""}`.trim() || doctor.specialty}
                     </option>
                   ))}
                 </select>
+                {errors.appointmentDoctorId ? (
+                  <p className="mt-1 text-xs text-red-500">{errors.appointmentDoctorId.message}</p>
+                ) : null}
+                {appointmentSpecialtyCode && !appointmentDoctorsQuery.isLoading && (appointmentDoctorsQuery.data?.length ?? 0) === 0 ? (
+                  <p className="mt-1 text-xs text-amber-700">{t("patients.appointment.noDoctorsInClinic")}</p>
+                ) : null}
               </div>
               <div>
                 <label className="mb-1 block text-sm text-slate-600">{t("appointments.medicalFile.date")}</label>
                 <input type="date" className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-orange-500 focus:outline-none" {...register("appointmentDate")} />
+                {errors.appointmentDate ? <p className="mt-1 text-xs text-red-500">{errors.appointmentDate.message}</p> : null}
               </div>
               <div>
                 <label className="mb-1 block text-sm text-slate-600">{t("appointments.medicalFile.time")}</label>
                 <input type="time" className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm focus:border-orange-500 focus:outline-none" {...register("appointmentTime")} />
+                {errors.appointmentTime ? <p className="mt-1 text-xs text-red-500">{errors.appointmentTime.message}</p> : null}
               </div>
               <div>
                 <label className="mb-1 block text-sm text-slate-600">{t("appointments.entryType")}</label>
