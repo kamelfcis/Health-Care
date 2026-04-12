@@ -172,10 +172,22 @@ export const leadService = {
       const lead = await tx.lead.findFirst({ where: { id: input.leadId, clinicId: input.clinicId } });
       if (!lead) throw new AppError("Lead not found", 404);
 
-      const counter = await tx.clinicCounter.upsert({
+      const maxAgg = await tx.patient.aggregate({
+        where: { clinicId: input.clinicId, deletedAt: null },
+        _max: { fileNumber: true }
+      });
+      const maxFromPatients = maxAgg._max.fileNumber ?? 0;
+      const counterRow = await tx.clinicCounter.findUnique({
         where: { clinicId: input.clinicId },
-        create: { clinicId: input.clinicId, lastPatientFileNumber: 1 },
-        update: { lastPatientFileNumber: { increment: 1 } }
+        select: { lastPatientFileNumber: true }
+      });
+      const counterVal = counterRow?.lastPatientFileNumber ?? 0;
+      const nextFileNumber = Math.max(maxFromPatients, counterVal) + 1;
+
+      await tx.clinicCounter.upsert({
+        where: { clinicId: input.clinicId },
+        create: { clinicId: input.clinicId, lastPatientFileNumber: nextFileNumber },
+        update: { lastPatientFileNumber: nextFileNumber }
       });
 
       const patient = await tx.patient.create({
@@ -189,7 +201,7 @@ export const leadService = {
           professionOther: input.profession === "OTHER" ? input.professionOther?.trim() ?? null : null,
           leadSource: lead.leadSource,
           address: input.address || null,
-          fileNumber: counter.lastPatientFileNumber
+          fileNumber: nextFileNumber
         }
       });
 

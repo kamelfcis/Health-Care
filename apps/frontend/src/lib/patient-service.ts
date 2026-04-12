@@ -38,6 +38,8 @@ export interface PatientListItem {
   referralTypeOther?: string | null;
   generalNotes?: string | null;
   address?: string | null;
+  /** Present on list payloads from Prisma patient row */
+  clinicId?: string;
   clinic?: {
     id?: string;
     name: string;
@@ -248,8 +250,10 @@ export const patientService = {
     await api.patch(`/patients/${id}`, payload);
   },
 
-  async remove(id: string) {
-    await api.delete(`/patients/${id}`);
+  async remove(id: string, clinicId?: string) {
+    await api.delete(`/patients/${id}`, {
+      params: clinicId ? { clinicId } : undefined
+    });
   },
 
   async listAssessments(id: string, clinicId?: string) {

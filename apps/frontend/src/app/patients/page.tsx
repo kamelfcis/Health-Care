@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import axios from "axios";
 import { ColumnDef } from "@tanstack/react-table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -81,6 +82,14 @@ function splitReferralForForm(
     return { referralType: referralType as PatientFormValues["referralType"], referralTypeOther: referralTypeOther ?? "" };
   }
   return { referralType: "OTHER", referralTypeOther: (referralTypeOther?.trim() || referralType).trim() };
+}
+
+function getApiErrorMessage(error: unknown): string | null {
+  if (axios.isAxiosError(error)) {
+    const message = error.response?.data?.message;
+    if (typeof message === "string" && message.trim()) return message.trim();
+  }
+  return null;
 }
 
 type PatientRow = {
@@ -381,7 +390,7 @@ export default function PatientsPage() {
         generalNotes: item.generalNotes ?? null,
         dateOfBirth: item.dateOfBirth ?? null,
         address: item.address ?? null,
-        clinicId: clinic?.id,
+        clinicId: item.clinicId ?? clinic?.id,
         clinicName: clinic?.name,
         lastVisit: item.lastVisitAt ? String(item.lastVisitAt).slice(0, 10) : "-",
         createdAt: item.createdAt ? String(item.createdAt).slice(0, 10) : "-",
@@ -663,10 +672,6 @@ export default function PatientsPage() {
     mutationFn: patientService.create,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["patients"] });
-      toast.success(t("patients.profileSaved"));
-    },
-    onError: () => {
-      toast.error("Unable to save patient");
     }
   });
 
@@ -676,20 +681,14 @@ export default function PatientsPage() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["patients"] });
       toast.success("Patient updated");
-    },
-    onError: () => {
-      toast.error("Unable to save patient");
     }
   });
 
   const removeMutation = useMutation({
-    mutationFn: (id: string) => patientService.remove(id),
+    mutationFn: ({ id, clinicId }: { id: string; clinicId?: string }) => patientService.remove(id, clinicId),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["patients"] });
       toast.success("Patient deleted");
-    },
-    onError: () => {
-      toast.error("Unable to delete patient");
     }
   });
 
@@ -800,60 +799,67 @@ export default function PatientsPage() {
     [getLeadSourceLabel, getProfessionLabel, scrollToFormTop, t]
   );
 
-  const handleSubmit = async (values: PatientFormValues) => {
-    try {
-      const payload = {
-        fullName: values.fullName.trim(),
-        nationalId: values.nationalId?.trim() || undefined,
-        phone: values.phone.trim(),
-        whatsapp: values.whatsapp || undefined,
-        alternatePhone: values.alternatePhone || undefined,
-        email: values.email?.trim() || undefined,
-        dateOfBirth: values.dateOfBirth || undefined,
-        gender: values.gender || undefined,
-        genderOther: values.genderOther || undefined,
-        nationality: values.nationality || undefined,
-        nationalityOther: values.nationalityOther || undefined,
-        country: values.country || undefined,
-        countryOther: values.countryOther || undefined,
-        governorate: values.governorate || undefined,
-        governorateOther: values.governorateOther || undefined,
-        maritalStatus: values.maritalStatus || undefined,
-        maritalStatusOther: values.maritalStatusOther || undefined,
-        profession: values.profession,
-        professionOther: values.professionOther || undefined,
-        occupation: values.occupation || undefined,
-        leadSource: values.leadSource,
-        leadSourceOther: values.leadSourceOther || undefined,
-        branch: values.branch || undefined,
-        specialtyCode: values.specialtyCode || undefined,
-        specialtyName: values.specialtyName || undefined,
-        clinicName: values.clinicName || undefined,
-        doctorName: values.doctorName || undefined,
-        campaignName: values.campaignName || undefined,
-        referrerName: values.referrerName || undefined,
-        referralType: values.referralType,
-        referralTypeOther: values.referralTypeOther || undefined,
-        generalNotes: values.generalNotes || undefined,
-        address: values.address || undefined
-      };
-      let patientId = editing?.id ?? "";
+  const handleSubmit = async (values: PatientFormValues): Promise<boolean> => {
+    const payload = {
+      fullName: values.fullName.trim(),
+      nationalId: values.nationalId?.trim() || undefined,
+      phone: values.phone.trim(),
+      whatsapp: values.whatsapp || undefined,
+      alternatePhone: values.alternatePhone || undefined,
+      email: values.email?.trim() || undefined,
+      dateOfBirth: values.dateOfBirth || undefined,
+      gender: values.gender || undefined,
+      genderOther: values.genderOther || undefined,
+      nationality: values.nationality || undefined,
+      nationalityOther: values.nationalityOther || undefined,
+      country: values.country || undefined,
+      countryOther: values.countryOther || undefined,
+      governorate: values.governorate || undefined,
+      governorateOther: values.governorateOther || undefined,
+      maritalStatus: values.maritalStatus || undefined,
+      maritalStatusOther: values.maritalStatusOther || undefined,
+      profession: values.profession,
+      professionOther: values.professionOther || undefined,
+      occupation: values.occupation || undefined,
+      leadSource: values.leadSource,
+      leadSourceOther: values.leadSourceOther || undefined,
+      branch: values.branch || undefined,
+      specialtyCode: values.specialtyCode || undefined,
+      specialtyName: values.specialtyName || undefined,
+      clinicName: values.clinicName || undefined,
+      doctorName: values.doctorName || undefined,
+      campaignName: values.campaignName || undefined,
+      referrerName: values.referrerName || undefined,
+      referralType: values.referralType,
+      referralTypeOther: values.referralTypeOther || undefined,
+      generalNotes: values.generalNotes || undefined,
+      address: values.address || undefined
+    };
+    let patientId = editing?.id ?? "";
 
+    try {
       if (editing) {
         await updateMutation.mutateAsync({ id: editing.id, payload });
       } else {
         const createdPatient = await createMutation.mutateAsync(payload);
         patientId = createdPatient.id;
+        toast.success(t("patients.profileSaved"));
       }
+    } catch (error) {
+      toast.error(getApiErrorMessage(error) ?? t("patients.saveFailed"));
+      return false;
+    }
 
-      if (values.createAppointmentNow) {
-        if (isSuperAdmin && selectedClinicId === "all") {
-          toast.error(t("doctors.selectClinicScope"));
-          return;
-        }
-        if (!patientId) {
-          throw new Error("Unable to resolve patient id for appointment");
-        }
+    if (values.createAppointmentNow) {
+      if (isSuperAdmin && selectedClinicId === "all") {
+        toast.error(t("doctors.selectClinicScope"));
+        return false;
+      }
+      if (!patientId) {
+        toast.error(t("patients.saveFailed"));
+        return false;
+      }
+      try {
         const { startsAt, endsAt } = buildAppointmentWindowIso(
           String(values.appointmentDate ?? ""),
           String(values.appointmentTime ?? "")
@@ -873,12 +879,14 @@ export default function PatientsPage() {
           appointmentMutationClinicScope
         );
         await queryClient.invalidateQueries({ queryKey: ["appointments"] });
+      } catch (error) {
+        const detail = getApiErrorMessage(error);
+        toast.error(detail ? `${t("patients.appointmentCreateFailed")}: ${detail}` : t("patients.appointmentCreateFailed"));
       }
-
-      setEditing(null);
-    } catch {
-      toast.error("Unable to save patient");
     }
+
+    setEditing(null);
+    return true;
   };
 
   const patientFormExpander = formExpanded ? (
@@ -964,9 +972,11 @@ export default function PatientsPage() {
           }
           submitLabel={editing ? t("patients.updatePatient") : undefined}
           onSubmit={async (values) => {
-            await handleSubmit(values);
-            setFormExpanded(false);
-            setEditing(null);
+            const closedOk = await handleSubmit(values);
+            if (closedOk) {
+              setFormExpanded(false);
+              setEditing(null);
+            }
           }}
         />
         <div className="mt-3">
@@ -1572,8 +1582,15 @@ export default function PatientsPage() {
                   className="from-rose-600 to-red-500 hover:shadow-rose-500/30"
                   onClick={async () => {
                     if (!deleteTarget) return;
-                    await removeMutation.mutateAsync(deleteTarget.id);
-                    setDeleteTarget(null);
+                    try {
+                      await removeMutation.mutateAsync({
+                        id: deleteTarget.id,
+                        clinicId: deleteTarget.clinicId
+                      });
+                      setDeleteTarget(null);
+                    } catch (error) {
+                      toast.error(getApiErrorMessage(error) ?? t("patients.deleteFailed"));
+                    }
                   }}
                   disabled={removeMutation.isPending}
                 >

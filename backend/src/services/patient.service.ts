@@ -154,6 +154,7 @@ export const patientService = {
         include: {
           clinic: {
             select: {
+              id: true,
               name: true
             }
           },
@@ -251,10 +252,22 @@ export const patientService = {
     }
 
     return prisma.$transaction(async (tx) => {
-      const counter = await tx.clinicCounter.upsert({
+      const maxAgg = await tx.patient.aggregate({
+        where: { clinicId, deletedAt: null },
+        _max: { fileNumber: true }
+      });
+      const maxFromPatients = maxAgg._max.fileNumber ?? 0;
+      const counterRow = await tx.clinicCounter.findUnique({
         where: { clinicId },
-        create: { clinicId, lastPatientFileNumber: 1 },
-        update: { lastPatientFileNumber: { increment: 1 } }
+        select: { lastPatientFileNumber: true }
+      });
+      const counterVal = counterRow?.lastPatientFileNumber ?? 0;
+      const nextFileNumber = Math.max(maxFromPatients, counterVal) + 1;
+
+      await tx.clinicCounter.upsert({
+        where: { clinicId },
+        create: { clinicId, lastPatientFileNumber: nextFileNumber },
+        update: { lastPatientFileNumber: nextFileNumber }
       });
 
       return tx.patient.create({
@@ -295,7 +308,7 @@ export const patientService = {
           referralTypeOther: data.referralType === "OTHER" ? data.referralTypeOther?.trim() ?? null : null,
           generalNotes: data.generalNotes?.trim() || null,
           address: data.address || null,
-          fileNumber: counter.lastPatientFileNumber
+          fileNumber: nextFileNumber
         }
       });
     });
