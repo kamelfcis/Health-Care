@@ -14,6 +14,10 @@ interface ListInput {
   search?: string;
   status?: InvoiceStatus;
   sort?: "created_desc" | "due_asc";
+  /** Inclusive due date lower bound YYYY-MM-DD (UTC) */
+  dueFrom?: string;
+  /** Inclusive due date upper bound YYYY-MM-DD (UTC) */
+  dueTo?: string;
 }
 
 export type BillingCreateInput = {
@@ -66,6 +70,14 @@ export const billingService = {
                 patient: { is: { fullName: { contains: normalizedSearch, mode: "insensitive" as const } } }
               }
             ]
+          }
+        : {}),
+      ...(input.dueFrom || input.dueTo
+        ? {
+            dueDate: {
+              ...(input.dueFrom ? { gte: new Date(`${input.dueFrom}T00:00:00.000Z`) } : {}),
+              ...(input.dueTo ? { lte: new Date(`${input.dueTo}T23:59:59.999Z`) } : {})
+            }
           }
         : {})
     };

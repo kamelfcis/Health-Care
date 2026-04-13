@@ -8,6 +8,11 @@ interface ListInput {
   pageSize: number;
   search?: string;
   status?: PaymentStatus;
+  method?: PaymentMethod;
+  /** Inclusive start (YYYY-MM-DD), UTC day bounds */
+  createdFrom?: string;
+  /** Inclusive end (YYYY-MM-DD), UTC day bounds */
+  createdTo?: string;
 }
 
 const EPS = 0.005;
@@ -50,10 +55,21 @@ export const paymentService = {
   async list(input: ListInput) {
     const normalizedSearch = input.search?.trim();
     const isShortSearch = Boolean(normalizedSearch && normalizedSearch.length <= 3);
+    const createdBounds =
+      input.createdFrom || input.createdTo
+        ? {
+            createdAt: {
+              ...(input.createdFrom ? { gte: new Date(`${input.createdFrom}T00:00:00.000Z`) } : {}),
+              ...(input.createdTo ? { lte: new Date(`${input.createdTo}T23:59:59.999Z`) } : {})
+            }
+          }
+        : {};
     const where = {
       ...(input.clinicId ? { clinicId: input.clinicId } : {}),
       deletedAt: null,
       ...(input.status ? { status: input.status } : {}),
+      ...(input.method ? { method: input.method } : {}),
+      ...createdBounds,
       ...(normalizedSearch
         ? {
             OR: [
@@ -64,7 +80,14 @@ export const paymentService = {
                   ]
                 : []),
               { transactionRef: { contains: normalizedSearch, mode: "insensitive" as const } },
-              { invoice: { invoiceNumber: { contains: normalizedSearch, mode: "insensitive" as const } } }
+              { invoice: { invoiceNumber: { contains: normalizedSearch, mode: "insensitive" as const } } },
+              {
+                invoice: {
+                  is: {
+                    patient: { fullName: { contains: normalizedSearch, mode: "insensitive" as const } }
+                  }
+                }
+              }
             ]
           }
         : {})

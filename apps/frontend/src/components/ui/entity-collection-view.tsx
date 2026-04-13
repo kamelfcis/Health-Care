@@ -30,6 +30,8 @@ interface EntityCollectionViewProps<TData> {
   listLoading?: boolean;
   /** When set, `data` is one server page; pagination uses this total (no client slice) */
   serverTotal?: number;
+  dateRangeHint?: string;
+  filterExtras?: React.ReactNode;
 }
 
 export function EntityCollectionView<TData>({
@@ -48,7 +50,9 @@ export function EntityCollectionView<TData>({
   skipLocalFiltering = false,
   searchSlot,
   listLoading = false,
-  serverTotal
+  serverTotal,
+  dateRangeHint,
+  filterExtras
 }: EntityCollectionViewProps<TData>) {
   const { state, setQuery } = useListQueryState();
   const [searchInput, setSearchInput] = useState(state.q);
@@ -112,10 +116,21 @@ export function EntityCollectionView<TData>({
           onToChange={(value) => setQuery({ to: value, page: 1 })}
           onClear={() => {
             setSearchInput("");
-            setQuery({ q: "", status: "all", from: "", to: "", page: 1 });
+            setQuery({
+              q: "",
+              status: "all",
+              from: "",
+              to: "",
+              page: 1,
+              method: "all",
+              sort: "",
+              openOnly: false
+            });
           }}
           statusOptions={statusOptions}
           placeholder={searchPlaceholder}
+          dateRangeHint={dateRangeHint}
+          filterExtras={filterExtras}
         />
       )}
 

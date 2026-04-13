@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Filter, Search, X } from "lucide-react";
 import { useState } from "react";
@@ -22,6 +23,10 @@ interface AdvancedSearchProps {
   onClear: () => void;
   statusOptions: FilterOption[];
   placeholder?: string;
+  /** Shown under the date row (e.g. what the date range filters) */
+  dateRangeHint?: string;
+  /** Extra controls inside the expandable filters panel */
+  filterExtras?: ReactNode;
 }
 
 export function AdvancedSearch({
@@ -35,7 +40,9 @@ export function AdvancedSearch({
   onToChange,
   onClear,
   statusOptions,
-  placeholder
+  placeholder,
+  dateRangeHint,
+  filterExtras
 }: AdvancedSearchProps) {
   const [open, setOpen] = useState(false);
   const { t } = useI18n();
@@ -101,6 +108,10 @@ export function AdvancedSearch({
               onChange={(event) => onToChange(event.target.value)}
               className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200"
             />
+            {dateRangeHint ? (
+              <p className="text-xs leading-relaxed text-slate-500 md:col-span-3">{dateRangeHint}</p>
+            ) : null}
+            {filterExtras ? <div className="w-full pt-1 md:col-span-3">{filterExtras}</div> : null}
           </motion.div>
         ) : null}
       </AnimatePresence>

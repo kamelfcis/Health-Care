@@ -36,6 +36,9 @@ export interface BillingListParams {
   sort?: "created_desc" | "due_asc";
   search?: string;
   status?: string;
+  /** Invoice due date range (YYYY-MM-DD), sent as from=/to= */
+  from?: string;
+  to?: string;
   page?: number;
   pageSize?: number;
 }
@@ -92,6 +95,8 @@ function listParams(params?: BillingListParams): Record<string, string | number>
   if (params?.sort) p.sort = params.sort;
   if (params?.search?.trim()) p.search = params.search.trim();
   if (params?.status && params.status !== "all") p.status = params.status;
+  if (params?.from?.trim()) p.from = params.from.trim().slice(0, 10);
+  if (params?.to?.trim()) p.to = params.to.trim().slice(0, 10);
   return p;
 }
 

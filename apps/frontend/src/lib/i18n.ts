@@ -9,6 +9,7 @@ export const translations: Record<Locale, Dictionary> = {
     "common.loading": "Loading...",
     "common.search": "Search...",
     "common.filters": "Filters",
+    "common.sort": "Sort",
     "common.clear": "Clear",
     "common.add": "Add",
     "common.allClinics": "All Clinics",
@@ -612,6 +613,9 @@ export const translations: Record<Locale, Dictionary> = {
     "billing.selectClinic": "Select a clinic to create invoices",
     "billing.patientFilter": "Filtered by patient",
     "billing.clearPatientFilter": "Clear filter",
+    "billing.sort.newest": "Newest invoices first",
+    "billing.sort.dueSoon": "Due date (soonest first)",
+    "billing.filter.openOnly": "Open only (pending / overdue)",
     "payments.loading": "Loading payments...",
     "payments.column.invoice": "Invoice",
     "payments.column.amount": "Amount",
@@ -697,12 +701,18 @@ export const translations: Record<Locale, Dictionary> = {
     "collection.of": "of",
     "collection.perPage": "/page",
     "collection.fromDate": "From date",
-    "collection.toDate": "To date"
+    "collection.toDate": "To date",
+    "collection.method": "Payment method",
+    "collection.dateHintPayments": "Date range filters by payment date (when recorded).",
+    "collection.dateHintBilling": "Date range filters by invoice due date.",
+    "collection.smartSearchHintPayments": "Smart search: invoice number, reference, or patient name (longer text uses wider matching).",
+    "collection.smartSearchHintBilling": "Smart search: invoice number, notes, or patient name."
   },
   ar: {
     "common.loading": "جارٍ التحميل...",
     "common.search": "بحث...",
     "common.filters": "الفلاتر",
+    "common.sort": "الترتيب",
     "common.clear": "مسح",
     "common.add": "إضافة",
     "common.allClinics": "كل العيادات",
@@ -1306,6 +1316,9 @@ export const translations: Record<Locale, Dictionary> = {
     "billing.selectClinic": "اختر عيادة لإنشاء الفواتير",
     "billing.patientFilter": "مفلتر حسب المريض",
     "billing.clearPatientFilter": "إلغاء التصفية",
+    "billing.sort.newest": "أحدث الفواتير أولاً",
+    "billing.sort.dueSoon": "تاريخ الاستحقاق (الأقرب أولاً)",
+    "billing.filter.openOnly": "المفتوحة فقط (قيد الانتظار / متأخرة)",
     "payments.loading": "جارٍ تحميل المدفوعات...",
     "payments.column.invoice": "الفاتورة",
     "payments.column.amount": "المبلغ",
@@ -1391,7 +1404,12 @@ export const translations: Record<Locale, Dictionary> = {
     "collection.of": "من",
     "collection.perPage": "/الصفحة",
     "collection.fromDate": "من تاريخ",
-    "collection.toDate": "إلى تاريخ"
+    "collection.toDate": "إلى تاريخ",
+    "collection.method": "طريقة الدفع",
+    "collection.dateHintPayments": "نطاق التاريخ يصفّي حسب تاريخ تسجيل الدفعة.",
+    "collection.dateHintBilling": "نطاق التاريخ يصفّي حسب تاريخ استحقاق الفاتورة.",
+    "collection.smartSearchHintPayments": "بحث ذكي: رقم الفاتورة، المرجع، أو اسم المريض (النص الأطول يوسّع المطابقة).",
+    "collection.smartSearchHintBilling": "بحث ذكي: رقم الفاتورة، الملاحظات، أو اسم المريض."
   }
 };
 

@@ -29,6 +29,8 @@ export const billingController = {
     const openOnly = openOnlyRaw === "1" || openOnlyRaw === "true";
     const sort =
       req.query.sort === "due_asc" || req.query.sort === "created_desc" ? (req.query.sort as "due_asc" | "created_desc") : undefined;
+    const dueFrom = typeof req.query.from === "string" ? req.query.from.trim().slice(0, 10) : undefined;
+    const dueTo = typeof req.query.to === "string" ? req.query.to.trim().slice(0, 10) : undefined;
     const cachePrefix = buildCacheKey("billing", clinicId ?? "all");
     const data = await getOrSetCache(
       buildCacheKey(
@@ -41,7 +43,9 @@ export const billingController = {
         patientId ?? "",
         invoiceId ?? "",
         openOnly ? "1" : "",
-        sort ?? ""
+        sort ?? "",
+        dueFrom ?? "",
+        dueTo ?? ""
       ),
       45_000,
       () =>
@@ -54,7 +58,9 @@ export const billingController = {
           pageSize,
           search,
           status,
-          sort
+          sort,
+          dueFrom: dueFrom || undefined,
+          dueTo: dueTo || undefined
         })
     );
     res.json(apiSuccess(data));

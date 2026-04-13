@@ -11,16 +11,25 @@ export interface ListQueryState {
   from: string;
   to: string;
   view: "table" | "cards";
+  /** Payments: payment method filter */
+  method: string;
+  /** Billing: created_desc | due_asc */
+  sort: string;
+  /** Billing: pending + overdue only */
+  openOnly: boolean;
 }
 
 const defaultState: ListQueryState = {
   page: 1,
-  pageSize: 10,
+  pageSize: 20,
   q: "",
   status: "all",
   from: "",
   to: "",
-  view: "table"
+  view: "table",
+  method: "all",
+  sort: "",
+  openOnly: false
 };
 
 export function useListQueryState() {
@@ -30,9 +39,8 @@ export function useListQueryState() {
 
   const state = useMemo<ListQueryState>(() => {
     const page = Math.max(1, Number(searchParams.get("page") ?? defaultState.page));
-    const pageSize = [10, 20, 50, 100].includes(Number(searchParams.get("pageSize")))
-      ? Number(searchParams.get("pageSize"))
-      : defaultState.pageSize;
+    const rawPs = Number(searchParams.get("pageSize"));
+    const pageSize = [10, 20, 50, 100].includes(rawPs) ? rawPs : defaultState.pageSize;
     const viewParam = searchParams.get("view");
     const view: "table" | "cards" =
       viewParam === "cards"
@@ -43,6 +51,9 @@ export function useListQueryState() {
             ? "cards"
             : "table";
 
+    const sortParam = searchParams.get("sort") ?? "";
+    const sort = sortParam === "due_asc" ? "due_asc" : "";
+
     return {
       page,
       pageSize,
@@ -50,7 +61,10 @@ export function useListQueryState() {
       status: searchParams.get("status") ?? "all",
       from: searchParams.get("from") ?? "",
       to: searchParams.get("to") ?? "",
-      view
+      view,
+      method: searchParams.get("method") ?? "all",
+      sort,
+      openOnly: searchParams.get("open") === "1"
     };
   }, [pathname, searchParams]);
 
@@ -58,6 +72,11 @@ export function useListQueryState() {
     const params = new URLSearchParams(searchParams.toString());
 
     Object.entries(updates).forEach(([key, value]) => {
+      if (key === "openOnly") {
+        if (value) params.set("open", "1");
+        else params.delete("open");
+        return;
+      }
       if (value === undefined || value === "" || value === "all") {
         params.delete(key);
       } else {

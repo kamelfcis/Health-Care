@@ -22,6 +22,7 @@ import {
 } from "@/lib/payment-service";
 import { billingService, invoiceBalanceDue } from "@/lib/billing-service";
 import { storage } from "@/lib/storage";
+import { useListQueryState } from "@/hooks/use-list-query-state";
 import { RoleGate } from "@/components/auth/role-gate";
 import { StatCard } from "@/components/ui/stat-card";
 import { toast } from "sonner";
@@ -58,6 +59,7 @@ function PaymentsPageInner() {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
+  const { state, setQuery } = useListQueryState();
   const urlInvoiceId = searchParams.get("invoiceId")?.trim() || undefined;
 
   const [currentUser, setCurrentUser] = useState<ReturnType<typeof storage.getUser>>(null);
@@ -80,15 +82,15 @@ function PaymentsPageInner() {
     [isSuperAdmin, selectedClinicId]
   );
 
-  const listPage = Math.max(1, Number(searchParams.get("page") ?? 1));
-  const rawPageSize = Number(searchParams.get("pageSize") ?? 20);
-  const listPageSize = [10, 20, 50, 100].includes(rawPageSize) ? rawPageSize : 20;
-  const listSearch = searchParams.get("q")?.trim() || undefined;
-  const listStatusRaw = searchParams.get("status") ?? "all";
+  const listPage = state.page;
+  const listPageSize = state.pageSize;
+  const listSearch = state.q.trim() || undefined;
   const listStatus =
-    listStatusRaw !== "all" && (PAY_STATUSES as readonly string[]).includes(listStatusRaw)
-      ? listStatusRaw
-      : undefined;
+    state.status !== "all" && (PAY_STATUSES as readonly string[]).includes(state.status) ? state.status : undefined;
+  const listMethod =
+    state.method !== "all" && (METHODS as readonly string[]).includes(state.method) ? state.method : undefined;
+  const listDateFrom = state.from.trim() || undefined;
+  const listDateTo = state.to.trim() || undefined;
 
   const [payModal, setPayModal] = useState<"create" | "edit" | null>(null);
   const [editingPayment, setEditingPayment] = useState<PaymentListItem | null>(null);
@@ -192,7 +194,10 @@ function PaymentsPageInner() {
       listPage,
       listPageSize,
       listSearch ?? "",
-      listStatus ?? ""
+      listStatus ?? "",
+      listMethod ?? "",
+      listDateFrom ?? "",
+      listDateTo ?? ""
     ],
     queryFn: () =>
       paymentService.listResult({
@@ -200,7 +205,10 @@ function PaymentsPageInner() {
         page: listPage,
         pageSize: listPageSize,
         search: listSearch,
-        status: listStatus
+        status: listStatus,
+        method: listMethod,
+        from: listDateFrom,
+        to: listDateTo
       }),
     placeholderData: keepPreviousData
   });
@@ -262,17 +270,23 @@ function PaymentsPageInner() {
     return m;
   }, [paymentsListQuery.data?.data]);
 
-  const methodLabel = (m: string) => {
-    const key = `paymentMethod.${m}`;
-    const tr = t(key);
-    return tr === key ? m : tr;
-  };
+  const methodLabel = useCallback(
+    (m: string) => {
+      const key = `paymentMethod.${m}`;
+      const tr = t(key);
+      return tr === key ? m : tr;
+    },
+    [t]
+  );
 
-  const statusLabel = (status: string) => {
-    const key = `status.${status}`;
-    const translated = t(key);
-    return translated === key ? status : translated;
-  };
+  const statusLabel = useCallback(
+    (status: string) => {
+      const key = `status.${status}`;
+      const translated = t(key);
+      return translated === key ? status : translated;
+    },
+    [t]
+  );
 
   const rows: PaymentRow[] = useMemo(
     () =>
@@ -306,8 +320,12 @@ function PaymentsPageInner() {
       if (!editingPayment) throw new Error("No payment");
       return paymentService.update(editingPayment.id, payload.body as PaymentUpdatePayload, scopeForMutation(editingPayment.clinicId));
     },
-    onSuccess: () => {
+    onSuccess: async (_, variables) => {
       invalidatePayments();
+      await queryClient.refetchQueries({ queryKey: ["payments", "list"] });
+      if (variables.mode === "create") {
+        setQuery({ page: 1 });
+      }
       setPayModal(null);
       setEditingPayment(null);
       resetForm();
@@ -373,7 +391,7 @@ function PaymentsPageInner() {
           ]
         : [])
     ],
-    [t, canManage, itemsById, statusLabel]
+    [t, canManage, itemsById, statusLabel, methodLabel]
   );
 
   const stats = statsQuery.data;
@@ -503,7 +521,28 @@ function PaymentsPageInner() {
           storageKey="payment-view"
           skipLocalFiltering
           serverTotal={paymentsListQuery.data?.total ?? 0}
-          listLoading={paymentsListQuery.isLoading}
+          listLoading={paymentsListQuery.isLoading || paymentsListQuery.isFetching}
+          dateRangeHint={t("collection.dateHintPayments")}
+          filterExtras={
+            <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+              <label className="flex min-w-[200px] flex-1 flex-col gap-1 text-xs font-medium text-slate-600">
+                {t("collection.method")}
+                <select
+                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200"
+                  value={state.method}
+                  onChange={(e) => setQuery({ method: e.target.value, page: 1 })}
+                >
+                  <option value="all">{t("common.all")}</option>
+                  {METHODS.map((m) => (
+                    <option key={m} value={m}>
+                      {methodLabel(m)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="max-w-xl flex-1 text-xs leading-relaxed text-slate-500">{t("collection.smartSearchHintPayments")}</p>
+            </div>
+          }
           statusOptions={[
             { label: t("common.allStatuses"), value: "all" },
             ...PAY_STATUSES.map((status) => ({ label: statusLabel(status), value: status }))

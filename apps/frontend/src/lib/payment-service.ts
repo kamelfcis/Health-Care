@@ -26,6 +26,11 @@ export interface PaymentListParams {
   clinicId?: string;
   search?: string;
   status?: string;
+  method?: string;
+  /** Payment createdAt from (YYYY-MM-DD) */
+  from?: string;
+  /** Payment createdAt to (YYYY-MM-DD) */
+  to?: string;
   page?: number;
   pageSize?: number;
 }
@@ -70,6 +75,9 @@ function listParams(params?: PaymentListParams): Record<string, string | number>
   if (params?.clinicId) p.clinicId = params.clinicId;
   if (params?.search?.trim()) p.search = params.search.trim();
   if (params?.status && params.status !== "all") p.status = params.status;
+  if (params?.method && params.method !== "all") p.method = params.method;
+  if (params?.from?.trim()) p.from = params.from.trim().slice(0, 10);
+  if (params?.to?.trim()) p.to = params.to.trim().slice(0, 10);
   return p;
 }
 

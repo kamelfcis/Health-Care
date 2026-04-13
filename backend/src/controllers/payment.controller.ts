@@ -1,5 +1,5 @@
 import { Response } from "express";
-import { PaymentStatus } from "@prisma/client";
+import { PaymentMethod, PaymentStatus } from "@prisma/client";
 import { paymentService } from "../services/payment.service";
 import { getPagination } from "../utils/http";
 import { apiSuccess } from "../utils/api-response";
@@ -24,10 +24,27 @@ export const paymentController = {
       Object.values(PaymentStatus).includes(req.query.status as PaymentStatus)
         ? (req.query.status as PaymentStatus)
         : undefined;
+    const method =
+      typeof req.query.method === "string" &&
+      Object.values(PaymentMethod).includes(req.query.method as PaymentMethod)
+        ? (req.query.method as PaymentMethod)
+        : undefined;
+    const createdFrom = typeof req.query.from === "string" ? req.query.from.trim().slice(0, 10) : undefined;
+    const createdTo = typeof req.query.to === "string" ? req.query.to.trim().slice(0, 10) : undefined;
     const clinicId = getOptionalClinicScope(req);
     const cachePrefix = buildCacheKey("payments", clinicId ?? "all");
     const data = await getOrSetCache(
-      buildCacheKey(cachePrefix, "list", page, pageSize, search ?? "", status ?? ""),
+      buildCacheKey(
+        cachePrefix,
+        "list",
+        page,
+        pageSize,
+        search ?? "",
+        status ?? "",
+        method ?? "",
+        createdFrom ?? "",
+        createdTo ?? ""
+      ),
       45_000,
       () =>
         paymentService.list({
@@ -35,7 +52,10 @@ export const paymentController = {
           page,
           pageSize,
           search,
-          status
+          status,
+          method,
+          createdFrom: createdFrom || undefined,
+          createdTo: createdTo || undefined
         })
     );
     res.json(apiSuccess(data));

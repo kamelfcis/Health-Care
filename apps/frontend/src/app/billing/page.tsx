@@ -27,8 +27,10 @@ import { appointmentService } from "@/lib/appointment-service";
 import { storage } from "@/lib/storage";
 import { RoleGate } from "@/components/auth/role-gate";
 import { useDebounce } from "@/hooks/use-debounce";
+import { useListQueryState } from "@/hooks/use-list-query-state";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const INVOICE_STATUSES = ["DRAFT", "PENDING", "PAID", "OVERDUE", "CANCELLED"] as const;
 
@@ -57,6 +59,7 @@ function BillingPageInner() {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
+  const { state, setQuery } = useListQueryState();
   const urlPatientId = searchParams.get("patientId")?.trim() || undefined;
   const urlInvoiceId = searchParams.get("invoiceId")?.trim() || undefined;
 
@@ -106,15 +109,15 @@ function BillingPageInner() {
     return map;
   }, [clinicsQuery.data, myClinicQuery.data]);
 
-  const listPage = Math.max(1, Number(searchParams.get("page") ?? 1));
-  const rawPageSize = Number(searchParams.get("pageSize") ?? 20);
-  const listPageSize = [10, 20, 50, 100].includes(rawPageSize) ? rawPageSize : 20;
-  const listSearch = searchParams.get("q")?.trim() || undefined;
-  const listStatusRaw = searchParams.get("status") ?? "all";
+  const listPage = state.page;
+  const listPageSize = state.pageSize;
+  const listSearch = state.q.trim() || undefined;
   const listStatus =
-    listStatusRaw !== "all" && (INVOICE_STATUSES as readonly string[]).includes(listStatusRaw)
-      ? listStatusRaw
-      : undefined;
+    state.status !== "all" && (INVOICE_STATUSES as readonly string[]).includes(state.status) ? state.status : undefined;
+  const listSort = state.sort === "due_asc" ? "due_asc" : "created_desc";
+  const listOpenOnly = state.openOnly;
+  const listDueFrom = state.from.trim() || undefined;
+  const listDueTo = state.to.trim() || undefined;
 
   const billingListQuery = useQuery({
     queryKey: [
@@ -125,7 +128,11 @@ function BillingPageInner() {
       listPage,
       listPageSize,
       listSearch ?? "",
-      listStatus ?? ""
+      listStatus ?? "",
+      listSort,
+      listOpenOnly ? "1" : "",
+      listDueFrom ?? "",
+      listDueTo ?? ""
     ],
     queryFn: () =>
       billingService.listResult({
@@ -135,7 +142,10 @@ function BillingPageInner() {
         pageSize: listPageSize,
         search: listSearch,
         status: listStatus,
-        sort: "created_desc"
+        sort: listSort,
+        openOnly: listOpenOnly,
+        from: listDueFrom,
+        to: listDueTo
       }),
     placeholderData: keepPreviousData
   });
@@ -311,11 +321,14 @@ function BillingPageInner() {
     onError: (err) => toast.error(getApiErrorMessage(err) ?? t("billing.deleteFailed"))
   });
 
-  const statusLabel = (status: string) => {
-    const key = `status.${status}`;
-    const translated = t(key);
-    return translated === key ? status : translated;
-  };
+  const statusLabel = useCallback(
+    (status: string) => {
+      const key = `status.${status}`;
+      const translated = t(key);
+      return translated === key ? status : translated;
+    },
+    [t]
+  );
 
   const stats = statsQuery.data;
   const selectedCurrency =
@@ -378,7 +391,7 @@ function BillingPageInner() {
           ]
         : [])
     ],
-    [t, canManage, canRecordPayment]
+    [t, canManage, canRecordPayment, statusLabel]
   );
 
   const createDisabled = isSuperAdmin && selectedClinicId === "all";
@@ -415,24 +428,28 @@ function BillingPageInner() {
           </div>
         ) : null}
 
-        {statsQuery.isSuccess && stats ? (
-          <section className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            <StatCard title={t("billing.stats.pending")} value={stats.pendingCount} gradientClassName="bg-gradient-to-br from-amber-50 to-white" />
-            <StatCard title={t("billing.stats.overdue")} value={stats.overdueCount} gradientClassName="bg-gradient-to-br from-rose-50 to-white" />
-            <StatCard title={t("billing.stats.paid")} value={stats.paidCount} gradientClassName="bg-gradient-to-br from-emerald-50 to-white" />
-            <StatCard
-              title={t("billing.stats.outstanding")}
-              value={formatCurrency(stats.outstandingTotal, selectedCurrency)}
-              gradientClassName="bg-gradient-to-br from-orange-50 to-white"
-            />
-            <StatCard
-              title={t("billing.stats.paymentsThisMonth")}
-              value={formatCurrency(stats.paymentsThisMonthTotal, selectedCurrency)}
-              gradientClassName="bg-gradient-to-br from-cyan-50 to-white"
-            />
-            <StatCard title={t("payments.stats.thisMonth")} value={stats.paymentsThisMonthCount} gradientClassName="bg-gradient-to-br from-slate-50 to-white" />
-          </section>
-        ) : null}
+        <section className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          {statsQuery.isLoading ? (
+            Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-28 rounded-2xl" />)
+          ) : stats ? (
+            <>
+              <StatCard title={t("billing.stats.pending")} value={stats.pendingCount} gradientClassName="bg-gradient-to-br from-amber-50 to-white" />
+              <StatCard title={t("billing.stats.overdue")} value={stats.overdueCount} gradientClassName="bg-gradient-to-br from-rose-50 to-white" />
+              <StatCard title={t("billing.stats.paid")} value={stats.paidCount} gradientClassName="bg-gradient-to-br from-emerald-50 to-white" />
+              <StatCard
+                title={t("billing.stats.outstanding")}
+                value={formatCurrency(stats.outstandingTotal, selectedCurrency)}
+                gradientClassName="bg-gradient-to-br from-orange-50 to-white"
+              />
+              <StatCard
+                title={t("billing.stats.paymentsThisMonth")}
+                value={formatCurrency(stats.paymentsThisMonthTotal, selectedCurrency)}
+                gradientClassName="bg-gradient-to-br from-cyan-50 to-white"
+              />
+              <StatCard title={t("payments.stats.thisMonth")} value={stats.paymentsThisMonthCount} gradientClassName="bg-gradient-to-br from-slate-50 to-white" />
+            </>
+          ) : null}
+        </section>
 
         <EntityCollectionView
           title={t("nav.billing")}
@@ -441,7 +458,33 @@ function BillingPageInner() {
           storageKey="billing-view"
           skipLocalFiltering
           serverTotal={billingListQuery.data?.total ?? 0}
-          listLoading={billingListQuery.isLoading}
+          listLoading={billingListQuery.isLoading || billingListQuery.isFetching}
+          dateRangeHint={t("collection.dateHintBilling")}
+          filterExtras={
+            <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+              <label className="flex min-w-[220px] flex-1 flex-col gap-1 text-xs font-medium text-slate-600">
+                {t("common.sort")}
+                <select
+                  className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200"
+                  value={state.sort}
+                  onChange={(e) => setQuery({ sort: e.target.value, page: 1 })}
+                >
+                  <option value="">{t("billing.sort.newest")}</option>
+                  <option value="due_asc">{t("billing.sort.dueSoon")}</option>
+                </select>
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-300"
+                  checked={state.openOnly}
+                  onChange={(e) => setQuery({ openOnly: e.target.checked, page: 1 })}
+                />
+                {t("billing.filter.openOnly")}
+              </label>
+              <p className="max-w-xl flex-1 text-xs leading-relaxed text-slate-500">{t("collection.smartSearchHintBilling")}</p>
+            </div>
+          }
           statusOptions={[
             { label: t("common.allStatuses"), value: "all" },
             ...INVOICE_STATUSES.map((status) => ({ label: statusLabel(status), value: status }))
