@@ -365,7 +365,7 @@ function PaymentsPageInner() {
               header: t("common.edit"),
               id: "actions",
               cell: ({ row }: { row: { original: PaymentRow } }) => (
-                <div className="flex gap-1">
+                <div className="flex justify-center gap-1">
                   <button
                     type="button"
                     className="rounded-lg border border-cyan-200 p-1.5 text-cyan-700 hover:bg-cyan-50"
@@ -519,6 +519,7 @@ function PaymentsPageInner() {
           columns={columns}
           data={rows}
           storageKey="payment-view"
+          tableCellsCenter
           skipLocalFiltering
           serverTotal={paymentsListQuery.data?.total ?? 0}
           listLoading={paymentsListQuery.isLoading || paymentsListQuery.isFetching}

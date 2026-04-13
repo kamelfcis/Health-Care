@@ -16,7 +16,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/components/providers/i18n-provider";
 
-function PremiumTableSkeleton({ view, columnCount }: { view: "table" | "cards"; columnCount: number }) {
+function PremiumTableSkeleton({
+  view,
+  columnCount,
+  cellsCenter
+}: {
+  view: "table" | "cards";
+  columnCount: number;
+  cellsCenter?: boolean;
+}) {
   const cols = Math.min(Math.max(columnCount, 4), 10);
   const rowCount = 8;
 
@@ -32,8 +40,11 @@ function PremiumTableSkeleton({ view, columnCount }: { view: "table" | "cards"; 
               <thead className="sticky top-0 z-10 bg-white/95">
                 <tr>
                   {Array.from({ length: cols }).map((_, i) => (
-                    <th key={i} className="border-b border-slate-100 px-4 py-3 text-left">
-                      <Skeleton className="h-4 w-20" />
+                    <th
+                      key={i}
+                      className={cn("border-b border-slate-100 px-4 py-3", cellsCenter ? "text-center" : "text-left")}
+                    >
+                      <Skeleton className={cn("h-4 w-20", cellsCenter && "mx-auto")} />
                     </th>
                   ))}
                 </tr>
@@ -42,8 +53,11 @@ function PremiumTableSkeleton({ view, columnCount }: { view: "table" | "cards"; 
                 {Array.from({ length: rowCount }).map((_, ri) => (
                   <tr key={ri} className={cn("border-b border-slate-100", ri % 2 === 0 ? "bg-white/80" : "bg-slate-50/30")}>
                     {Array.from({ length: cols }).map((_, ci) => (
-                      <td key={ci} className="px-4 py-3">
-                        <Skeleton className={cn("h-4", ci === 0 ? "w-32" : "w-24")} />
+                      <td
+                        key={ci}
+                        className={cn("px-4 py-3", cellsCenter && "text-center")}
+                      >
+                        <Skeleton className={cn("h-4", ci === 0 ? "w-32" : "w-24", cellsCenter && "mx-auto")} />
                       </td>
                     ))}
                   </tr>
@@ -99,6 +113,8 @@ interface PremiumTableProps<TData> {
   emptyMessage?: string;
   cardRender: (row: TData) => React.ReactNode;
   view: "table" | "cards";
+  /** Center-align table headers and cells (e.g. billing RTL) */
+  cellsCenter?: boolean;
 }
 
 export function PremiumTable<TData>({
@@ -107,7 +123,8 @@ export function PremiumTable<TData>({
   loading = false,
   emptyMessage,
   cardRender,
-  view
+  view,
+  cellsCenter = false
 }: PremiumTableProps<TData>) {
   const { t } = useI18n();
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -140,7 +157,7 @@ export function PremiumTable<TData>({
   if (loading) {
     return (
       <div className="animate-in fade-in duration-200" aria-busy="true" aria-label={t("common.loading")}>
-        <PremiumTableSkeleton view={view} columnCount={skeletonColumnCount} />
+        <PremiumTableSkeleton view={view} columnCount={skeletonColumnCount} cellsCenter={cellsCenter} />
       </div>
     );
   }
@@ -205,10 +222,20 @@ export function PremiumTable<TData>({
                   {table.getHeaderGroups().map((headerGroup) => (
                     <tr key={headerGroup.id}>
                       {headerGroup.headers.map((header) => (
-                        <th key={header.id} className="border-b border-slate-100 px-4 py-3 text-left font-medium text-slate-600">
+                        <th
+                          key={header.id}
+                          className={cn(
+                            "border-b border-slate-100 px-4 py-3 font-medium text-slate-600",
+                            cellsCenter ? "text-center" : "text-left"
+                          )}
+                        >
                           {header.isPlaceholder ? null : (
                             <button
-                              className="inline-flex items-center gap-1"
+                              type="button"
+                              className={cn(
+                                "inline-flex items-center gap-1",
+                                cellsCenter && "w-full justify-center"
+                              )}
                               onClick={header.column.getToggleSortingHandler()}
                             >
                               {flexRender(header.column.columnDef.header, header.getContext())}
@@ -241,7 +268,10 @@ export function PremiumTable<TData>({
                       )}
                     >
                       {row.getVisibleCells().map((cell) => (
-                        <td key={cell.id} className="px-4 py-3 text-slate-700">
+                        <td
+                          key={cell.id}
+                          className={cn("px-4 py-3 text-slate-700", cellsCenter && "text-center")}
+                        >
                           {flexRender(cell.column.columnDef.cell, cell.getContext())}
                         </td>
                       ))}

@@ -32,6 +32,8 @@ interface EntityCollectionViewProps<TData> {
   serverTotal?: number;
   dateRangeHint?: string;
   filterExtras?: React.ReactNode;
+  /** Center-align table mode headers and cells */
+  tableCellsCenter?: boolean;
 }
 
 export function EntityCollectionView<TData>({
@@ -52,7 +54,8 @@ export function EntityCollectionView<TData>({
   listLoading = false,
   serverTotal,
   dateRangeHint,
-  filterExtras
+  filterExtras,
+  tableCellsCenter
 }: EntityCollectionViewProps<TData>) {
   const { state, setQuery } = useListQueryState();
   const [searchInput, setSearchInput] = useState(state.q);
@@ -140,6 +143,7 @@ export function EntityCollectionView<TData>({
         view={state.view}
         cardRender={renderCard}
         loading={listLoading}
+        cellsCenter={tableCellsCenter}
       />
 
       {!listLoading ? (

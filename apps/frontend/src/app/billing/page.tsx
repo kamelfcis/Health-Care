@@ -354,7 +354,7 @@ function BillingPageInner() {
               header: "",
               id: "actions",
               cell: ({ row }: { row: { original: InvoiceRow } }) => (
-                <div className="flex justify-end gap-1">
+                <div className="flex justify-center gap-1">
                   {canRecordPayment && invoiceBalanceDue(row.original.raw) > 0 ? (
                     <Link
                       href={`/payments?invoiceId=${encodeURIComponent(row.original.id)}`}
@@ -456,6 +456,7 @@ function BillingPageInner() {
           columns={columns}
           data={rows}
           storageKey="billing-view"
+          tableCellsCenter
           skipLocalFiltering
           serverTotal={billingListQuery.data?.total ?? 0}
           listLoading={billingListQuery.isLoading || billingListQuery.isFetching}
