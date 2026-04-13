@@ -107,22 +107,19 @@ export const NAVIGATION_LINKS: NavigationLink[] = [
     href: "/billing",
     labelKey: "nav.billing",
     iconName: "CreditCard",
-    requiredPermissions: ["billing.read"],
-    comingSoon: true
+    requiredPermissions: ["billing.read"]
   },
   {
     href: "/payments",
     labelKey: "nav.payments",
     iconName: "Wallet",
-    requiredPermissions: ["payments.read"],
-    comingSoon: true
+    requiredPermissions: ["payments.read"]
   },
   {
     href: "/dashboard/leads",
     labelKey: "nav.leads",
     iconName: "ClipboardList",
-    requiredPermissions: ["leads.read"],
-    comingSoon: true
+    requiredPermissions: ["leads.read"]
   },
   {
     href: "/settings",
