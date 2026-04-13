@@ -28,6 +28,8 @@ interface EntityCollectionViewProps<TData> {
   searchSlot?: React.ReactNode;
   /** When true, table shows skeleton rows and pagination is hidden (e.g. initial server fetch) */
   listLoading?: boolean;
+  /** When set, `data` is one server page; pagination uses this total (no client slice) */
+  serverTotal?: number;
 }
 
 export function EntityCollectionView<TData>({
@@ -45,7 +47,8 @@ export function EntityCollectionView<TData>({
   storageKey,
   skipLocalFiltering = false,
   searchSlot,
-  listLoading = false
+  listLoading = false,
+  serverTotal
 }: EntityCollectionViewProps<TData>) {
   const { state, setQuery } = useListQueryState();
   const [searchInput, setSearchInput] = useState(state.q);
@@ -80,11 +83,11 @@ export function EntityCollectionView<TData>({
     });
   }, [data, getDate, getSearchText, getStatus, skipLocalFiltering, state.from, state.q, state.status, state.to]);
 
-  const total = filtered.length;
+  const total = serverTotal ?? filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / state.pageSize));
   const page = Math.min(state.page, totalPages);
   const start = (page - 1) * state.pageSize;
-  const paginated = filtered.slice(start, start + state.pageSize);
+  const paginated = serverTotal != null ? data : filtered.slice(start, start + state.pageSize);
 
   return (
     <section className="space-y-3">

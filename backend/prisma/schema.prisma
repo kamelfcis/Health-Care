@@ -363,6 +363,7 @@ model Appointment {
   patient   Patient           @relation(fields: [patientId], references: [id])
   specialty SpecialtyCatalog? @relation(fields: [specialtyId], references: [id], onDelete: SetNull)
   specialtyAssessments PatientSpecialtyAssessment[]
+  invoices  Invoice[]
 
   @@index([clinicId])
   @@index([specialtyId])
@@ -417,6 +418,7 @@ model Invoice {
   id            String        @id @default(cuid())
   clinicId      String
   patientId     String
+  appointmentId String?
   invoiceNumber String
   amount        Float
   taxAmount     Float         @default(0)
@@ -429,8 +431,10 @@ model Invoice {
   deletedAt     DateTime?
   clinic        Clinic        @relation(fields: [clinicId], references: [id])
   patient       Patient       @relation(fields: [patientId], references: [id])
+  appointment   Appointment?  @relation(fields: [appointmentId], references: [id])
   payments      Payment[]
 
+  @@index([appointmentId])
   @@unique([clinicId, invoiceNumber])
   @@index([clinicId])
   @@index([clinicId, deletedAt, createdAt])
@@ -514,9 +518,10 @@ model FollowUp {
 }
 
 model ClinicCounter {
-  clinicId            String @id
-  lastPatientFileNumber Int @default(0)
-  clinic              Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  clinicId              String @id
+  lastPatientFileNumber Int    @default(0)
+  lastInvoiceSequence   Int    @default(0)
+  clinic                Clinic @relation(fields: [clinicId], references: [id], onDelete: Cascade)
 }
 
 model SpecialtyCatalog {

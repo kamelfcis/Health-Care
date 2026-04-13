@@ -199,7 +199,11 @@ export default function AppointmentsPage() {
         specialtyCode: selectedSpecialtyCode || "all"
       }
     ],
-    queryFn: () => doctorService.list(appointmentClinicScope, selectedSpecialtyName || undefined),
+    queryFn: () =>
+      doctorService.list(
+        appointmentClinicScope,
+        selectedSpecialtyName ? { specialty: selectedSpecialtyName } : {}
+      ),
     enabled: formScopeReady
   });
   const patientsQuery = useQuery({

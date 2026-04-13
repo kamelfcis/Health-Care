@@ -4,6 +4,8 @@ import { LeadSource, Prisma, Profession } from "@prisma/client";
 
 interface ListInput {
   clinicId?: string;
+  /** Exact patient id (e.g. global search deep link) */
+  patientId?: string;
   page: number;
   pageSize: number;
   search?: string;
@@ -64,6 +66,10 @@ export const patientService = {
       { deletedAt: null },
       ...(Object.keys(doctorScope).length ? [doctorScope] : [])
     ];
+
+    if (input.patientId?.trim()) {
+      andParts.push({ id: input.patientId.trim() });
+    }
 
     if (input.leadSource) {
       andParts.push({ leadSource: input.leadSource });

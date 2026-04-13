@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import Image from "next/image";
-import { Bell, ChevronDown, LogOut, Menu, Search, User } from "lucide-react";
+import { Bell, ChevronDown, Loader2, LogOut, Menu, Search, User } from "lucide-react";
 import { AvatarIcon } from "@radix-ui/react-icons";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -17,6 +17,8 @@ import { authService } from "@/lib/auth-service";
 import { toast } from "sonner";
 import { useSidebar } from "./sidebar-context";
 import { clinicService } from "@/lib/clinic-service";
+import { useDebounce } from "@/hooks/use-debounce";
+import { searchService } from "@/lib/search-service";
 
 export function TopNavbar() {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -27,11 +29,25 @@ export function TopNavbar() {
   const { t } = useI18n();
   const router = useRouter();
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
+  const searchWrapRef = useRef<HTMLDivElement | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
+  const debouncedSearch = useDebounce(searchInput, 350);
 
   useEffect(() => {
     setUser(storage.getUser());
     setMounted(true);
   }, []);
+
+  const searchQuery = useQuery({
+    queryKey: ["global-search", debouncedSearch, user?.clinicId ?? "none"],
+    queryFn: () =>
+      searchService.global(
+        debouncedSearch,
+        user?.role === "SuperAdmin" ? undefined : user?.clinicId
+      ),
+    enabled: mounted && debouncedSearch.trim().length >= 2
+  });
 
   const clinicsQuery = useQuery({
     queryKey: ["top-navbar", "clinics", user?.role ?? "none", user?.clinicId ?? "none"],
@@ -64,6 +80,16 @@ export function TopNavbar() {
       }
     };
 
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!searchWrapRef.current?.contains(event.target as Node)) {
+        setSearchOpen(false);
+      }
+    };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
@@ -102,13 +128,110 @@ export function TopNavbar() {
           <Menu size={16} />
         </button>
       </div>
-      <motion.div whileHover={{ scale: 1.01 }} className="mx-3 hidden flex-1 items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/80 md:flex">
-        <Search size={15} className="text-slate-400 dark:text-slate-500" />
-        <input
-          placeholder={t("nav.search.placeholder")}
-          className="w-72 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-100 dark:placeholder:text-slate-500"
-        />
-      </motion.div>
+      <div ref={searchWrapRef} className="relative mx-3 hidden max-w-xl flex-1 md:block">
+        <motion.div whileHover={{ scale: 1.01 }} className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/80">
+          <Search size={15} className="shrink-0 text-slate-400 dark:text-slate-500" />
+          <input
+            placeholder={t("nav.search.placeholder")}
+            className="min-w-0 flex-1 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-100 dark:placeholder:text-slate-500"
+            value={searchInput}
+            onChange={(e) => {
+              setSearchInput(e.target.value);
+              setSearchOpen(true);
+            }}
+            onFocus={() => setSearchOpen(true)}
+            aria-expanded={searchOpen}
+            aria-autocomplete="list"
+          />
+          {searchQuery.isFetching ? <Loader2 size={15} className="shrink-0 animate-spin text-slate-400" /> : null}
+        </motion.div>
+        {searchOpen && searchInput.trim().length > 0 ? (
+          <div className="absolute start-0 end-0 top-[calc(100%+6px)] z-50 max-h-80 overflow-y-auto rounded-xl border border-slate-200 bg-white py-2 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-900">
+            {debouncedSearch.trim().length < 2 ? (
+              <p className="px-3 py-2 text-slate-500">{t("nav.search.typeMore")}</p>
+            ) : searchQuery.isError ? (
+              <p className="px-3 py-2 text-rose-600">{t("common.noData")}</p>
+            ) : !searchQuery.data ||
+              (!searchQuery.data.patients.length &&
+                !searchQuery.data.doctors.length &&
+                !searchQuery.data.invoices.length) ? (
+              <p className="px-3 py-2 text-slate-500">{t("nav.search.noResults")}</p>
+            ) : (
+              <div className="space-y-3 px-1">
+                {searchQuery.data.patients.length ? (
+                  <div>
+                    <p className="px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">{t("nav.search.section.patients")}</p>
+                    <ul className="space-y-0.5">
+                      {searchQuery.data.patients.map((hit) => (
+                        <li key={`p-${hit.id}`}>
+                          <button
+                            type="button"
+                            className="w-full rounded-lg px-2 py-1.5 text-start hover:bg-orange-50 dark:hover:bg-slate-800"
+                            onClick={() => {
+                              setSearchOpen(false);
+                              setSearchInput("");
+                              router.push(hit.href);
+                            }}
+                          >
+                            <span className="block font-medium text-slate-800 dark:text-slate-100">{hit.title}</span>
+                            {hit.subtitle ? <span className="block text-xs text-slate-500">{hit.subtitle}</span> : null}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {searchQuery.data.doctors.length ? (
+                  <div>
+                    <p className="px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">{t("nav.search.section.doctors")}</p>
+                    <ul className="space-y-0.5">
+                      {searchQuery.data.doctors.map((hit) => (
+                        <li key={`d-${hit.id}`}>
+                          <button
+                            type="button"
+                            className="w-full rounded-lg px-2 py-1.5 text-start hover:bg-orange-50 dark:hover:bg-slate-800"
+                            onClick={() => {
+                              setSearchOpen(false);
+                              setSearchInput("");
+                              router.push(hit.href);
+                            }}
+                          >
+                            <span className="block font-medium text-slate-800 dark:text-slate-100">{hit.title}</span>
+                            {hit.subtitle ? <span className="block text-xs text-slate-500">{hit.subtitle}</span> : null}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+                {searchQuery.data.invoices.length ? (
+                  <div>
+                    <p className="px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">{t("nav.search.section.invoices")}</p>
+                    <ul className="space-y-0.5">
+                      {searchQuery.data.invoices.map((hit) => (
+                        <li key={`i-${hit.id}`}>
+                          <button
+                            type="button"
+                            className="w-full rounded-lg px-2 py-1.5 text-start hover:bg-orange-50 dark:hover:bg-slate-800"
+                            onClick={() => {
+                              setSearchOpen(false);
+                              setSearchInput("");
+                              router.push(hit.href);
+                            }}
+                          >
+                            <span className="block font-medium text-slate-800 dark:text-slate-100">{hit.title}</span>
+                            {hit.subtitle ? <span className="block text-xs text-slate-500">{hit.subtitle}</span> : null}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </div>
+        ) : null}
+      </div>
       <div className="flex items-center gap-2 md:gap-4">
         <div className="hidden md:block">
           <ThemeToggle />

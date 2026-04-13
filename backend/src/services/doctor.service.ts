@@ -4,6 +4,8 @@ import { AppError } from "../utils/app-error";
 
 interface ListInput {
   clinicId?: string;
+  /** Exact doctor id (e.g. global search deep link) */
+  doctorId?: string;
   page: number;
   pageSize: number;
   search?: string;
@@ -16,6 +18,7 @@ export const doctorService = {
     const isShortSearch = Boolean(normalizedSearch && normalizedSearch.length <= 3);
     const where = {
       ...(input.clinicId ? { clinicId: input.clinicId } : {}),
+      ...(input.doctorId?.trim() ? { id: input.doctorId.trim() } : {}),
       deletedAt: null,
       ...(input.specialty ? { specialty: input.specialty } : {}),
       ...(normalizedSearch

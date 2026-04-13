@@ -24,11 +24,18 @@ interface DoctorListPayload {
   totalPages: number;
 }
 
+export type DoctorListQuery = {
+  specialty?: string;
+  doctorId?: string;
+};
+
 export const doctorService = {
-  async list(clinicId?: string, specialty?: string) {
-    const res = await api.get<{ data: DoctorListPayload }>("/doctors", {
-      params: { page: 1, pageSize: 500, ...(clinicId ? { clinicId } : {}), ...(specialty ? { specialty } : {}) }
-    });
+  async list(clinicId?: string, query: DoctorListQuery = {}) {
+    const params: Record<string, string | number> = { page: 1, pageSize: 500 };
+    if (clinicId) params.clinicId = clinicId;
+    if (query.specialty?.trim()) params.specialty = query.specialty.trim();
+    if (query.doctorId?.trim()) params.doctorId = query.doctorId.trim();
+    const res = await api.get<{ data: DoctorListPayload }>("/doctors", { params });
     return res.data.data.data;
   },
 

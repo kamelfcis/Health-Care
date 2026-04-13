@@ -4,6 +4,7 @@ import { AppError } from "../utils/app-error";
 
 export interface AppointmentListInput {
   clinicId?: string;
+  patientId?: string;
   doctorUserId?: string;
   page: number;
   pageSize: number;
@@ -24,6 +25,10 @@ function buildAppointmentListWhere(input: AppointmentListInput): Prisma.Appointm
 
   if (input.clinicId) {
     and.push({ clinicId: input.clinicId });
+  }
+
+  if (input.patientId?.trim()) {
+    and.push({ patientId: input.patientId.trim() });
   }
 
   if (input.status) {

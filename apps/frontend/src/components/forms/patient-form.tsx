@@ -261,7 +261,8 @@ export function PatientForm({
   );
   const doctorsQuery = useQuery({
     queryKey: ["patients", "form", "doctors", clinicScope ?? "mine", selectedSpecialtyName ?? "all"],
-    queryFn: () => doctorService.list(clinicScope, selectedSpecialtyName || undefined),
+    queryFn: () =>
+      doctorService.list(clinicScope, selectedSpecialtyName ? { specialty: selectedSpecialtyName } : {}),
     enabled: Boolean(specialtyCode)
   });
   /** List all clinic doctors: backend filters doctors by exact `specialty` string, which often mismatches catalog `name`, yielding an empty dropdown. Appointment create only requires doctorId + specialtyCode. */

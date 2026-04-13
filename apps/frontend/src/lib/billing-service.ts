@@ -1,19 +1,46 @@
 import { api } from "./api";
 
-interface InvoicePatient {
+export interface InvoicePatientRef {
+  id: string;
   fullName: string;
+}
+
+export interface InvoicePaymentSlice {
+  amount: number;
+  status: string;
 }
 
 export interface BillingListItem {
   id: string;
   clinicId: string;
+  patientId: string;
+  appointmentId?: string | null;
+  appointment?: { id: string; startsAt: string; status?: string } | null;
   invoiceNumber: string;
   amount: number;
+  taxAmount: number;
+  discount: number;
+  dueDate: string | null;
   status: string;
-  patient?: InvoicePatient | null;
+  notes?: string | null;
+  patient?: InvoicePatientRef | null;
+  payments?: InvoicePaymentSlice[];
 }
 
-interface BillingListPayload {
+export interface BillingListParams {
+  clinicId?: string;
+  patientId?: string;
+  invoiceId?: string;
+  /** Server: PENDING + OVERDUE only */
+  openOnly?: boolean;
+  sort?: "created_desc" | "due_asc";
+  search?: string;
+  status?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface BillingListPayload {
   data: BillingListItem[];
   total: number;
   page: number;
@@ -21,11 +48,105 @@ interface BillingListPayload {
   totalPages: number;
 }
 
+export interface BillingStats {
+  pendingCount: number;
+  overdueCount: number;
+  paidCount: number;
+  draftCount: number;
+  outstandingTotal: number;
+  paymentsThisMonthTotal: number;
+  paymentsThisMonthCount: number;
+}
+
+export type BillingCreatePayload = {
+  patientId: string;
+  appointmentId?: string;
+  invoiceNumber?: string;
+  amount: number;
+  taxAmount?: number;
+  discount?: number;
+  dueDate?: string;
+  notes?: string;
+  status?: string;
+};
+
+export type BillingUpdatePayload = {
+  status?: string;
+  notes?: string;
+  amount?: number;
+  taxAmount?: number;
+  discount?: number;
+  dueDate?: string | null;
+  appointmentId?: string | null;
+};
+
+function listParams(params?: BillingListParams): Record<string, string | number> {
+  const p: Record<string, string | number> = {
+    page: params?.page ?? 1,
+    pageSize: params?.pageSize ?? 20
+  };
+  if (params?.clinicId) p.clinicId = params.clinicId;
+  if (params?.patientId) p.patientId = params.patientId;
+  if (params?.invoiceId?.trim()) p.invoiceId = params.invoiceId.trim();
+  if (params?.openOnly) p.openOnly = "1";
+  if (params?.sort) p.sort = params.sort;
+  if (params?.search?.trim()) p.search = params.search.trim();
+  if (params?.status && params.status !== "all") p.status = params.status;
+  return p;
+}
+
+export function invoicePaidSuccessSum(item: Pick<BillingListItem, "payments">) {
+  const list = item.payments ?? [];
+  return list.filter((pay) => pay.status === "SUCCESS").reduce((s, pay) => s + pay.amount, 0);
+}
+
+export function invoiceBalanceDue(item: BillingListItem) {
+  const due = invoiceTotalDue(item);
+  const paid = invoicePaidSuccessSum(item);
+  return Math.max(0, due - paid);
+}
+
 export const billingService = {
-  async list(clinicId?: string) {
-    const res = await api.get<{ data: BillingListPayload }>("/billing", {
-      params: { page: 1, pageSize: 500, ...(clinicId ? { clinicId } : {}) }
+  async listResult(params?: BillingListParams) {
+    const res = await api.get<{ data: BillingListPayload }>("/billing", { params: listParams(params) });
+    return res.data.data;
+  },
+
+  async list(params?: BillingListParams) {
+    const r = await billingService.listResult(params);
+    return r.data;
+  },
+
+  async stats(clinicId?: string) {
+    const res = await api.get<{ data: BillingStats }>("/billing/stats", {
+      params: clinicId ? { clinicId } : undefined
     });
-    return res.data.data.data;
+    return res.data.data;
+  },
+
+  async create(payload: BillingCreatePayload, createClinicId?: string) {
+    const res = await api.post<{ data: BillingListItem }>("/billing", payload, {
+      params: createClinicId ? { clinicId: createClinicId } : undefined
+    });
+    return res.data.data;
+  },
+
+  async update(id: string, payload: BillingUpdatePayload, clinicId?: string) {
+    const res = await api.patch<{ data: BillingListItem }>(`/billing/${id}`, payload, {
+      params: clinicId ? { clinicId } : undefined
+    });
+    return res.data.data;
+  },
+
+  async remove(id: string, clinicId?: string) {
+    await api.delete(`/billing/${id}`, {
+      params: clinicId ? { clinicId } : undefined
+    });
   }
 };
+
+export function invoiceTotalDue(item: { amount: number; taxAmount?: number; discount?: number }) {
+  const tax = item.taxAmount ?? 0;
+  const disc = item.discount ?? 0;
+  return Math.max(0, item.amount + tax - disc);
+}

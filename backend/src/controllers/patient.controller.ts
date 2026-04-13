@@ -40,6 +40,7 @@ export const patientController = {
           page: q.page,
           pageSize: q.pageSize,
           search: q.search,
+          patientId: q.patientId,
           fullName: q.fullName,
           phone: q.phone,
           clinicName: q.clinicName,

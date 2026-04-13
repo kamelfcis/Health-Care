@@ -20,13 +20,16 @@ export const doctorController = {
     const { page, pageSize, search } = getPagination(req);
     const clinicId = getOptionalClinicScope(req);
     const specialty = typeof req.query.specialty === "string" ? req.query.specialty : undefined;
+    const doctorId =
+      typeof req.query.doctorId === "string" && req.query.doctorId.trim() ? req.query.doctorId.trim() : undefined;
     const cachePrefix = buildCacheKey("doctors", clinicId ?? "all");
     const data = await getOrSetCache(
-      buildCacheKey(cachePrefix, "list", page, pageSize, search ?? "", specialty ?? ""),
+      buildCacheKey(cachePrefix, "list", page, pageSize, search ?? "", specialty ?? "", doctorId ?? ""),
       45_000,
       () =>
         doctorService.list({
           clinicId,
+          doctorId,
           page,
           pageSize,
           search,

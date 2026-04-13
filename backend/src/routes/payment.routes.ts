@@ -18,7 +18,19 @@ const createSchema = z.object({
   })
 });
 
+const updateSchema = z.object({
+  body: z
+    .object({
+      status: z.enum(["PENDING", "SUCCESS", "FAILED", "REFUNDED"]).optional(),
+      transactionRef: z.string().optional(),
+      amount: z.number().positive().optional(),
+      method: z.enum(["CASH", "CARD", "ONLINE", "INSURANCE"]).optional()
+    })
+    .refine((b) => Object.keys(b).length > 0, { message: "At least one field required" })
+});
+
 router.get("/", requireAuth, requirePermissions("payments.read"), asyncHandler(paymentController.list));
+router.get("/stats", requireAuth, requirePermissions("payments.read"), asyncHandler(paymentController.stats));
 router.post(
   "/",
   requireAuth,
@@ -30,6 +42,7 @@ router.patch(
   "/:id",
   requireAuth,
   requirePermissions("payments.manage"),
+  validate(updateSchema),
   asyncHandler(paymentController.update)
 );
 router.delete("/:id", requireAuth, requirePermissions("payments.manage"), asyncHandler(paymentController.remove));

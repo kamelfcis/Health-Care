@@ -89,6 +89,7 @@ export interface AppointmentListQuery {
   search?: string;
   status?: string;
   entryType?: VisitEntryType | "";
+  patientId?: string;
   patientFullName?: string;
   patientPhone?: string;
   patientFileNumber?: string;
@@ -126,6 +127,7 @@ function buildAppointmentListParams(clinicId: string | undefined, query: Appoint
     ["search", query.search],
     ["status", query.status],
     ["entryType", query.entryType ? String(query.entryType) : undefined],
+    ["patientId", query.patientId],
     ["patientFullName", query.patientFullName],
     ["patientPhone", query.patientPhone],
     ["patientFileNumber", query.patientFileNumber],

@@ -1,5 +1,7 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 import { ColumnDef } from "@tanstack/react-table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -17,6 +19,7 @@ import { specialtyService } from "@/lib/specialty-service";
 import { storage } from "@/lib/storage";
 import { RoleGate } from "@/components/auth/role-gate";
 import { hasPermission } from "@/lib/permissions";
+import { cn } from "@/lib/utils";
 
 type DoctorRow = {
   id: string;
@@ -27,7 +30,7 @@ type DoctorRow = {
   license: string;
 };
 
-export default function DoctorsPage() {
+function DoctorsPageInner() {
   const getErrorMessage = (error: unknown, fallbackKey: string) => {
     if (axios.isAxiosError(error)) {
       if (error.response?.status === 409) {
@@ -45,6 +48,8 @@ export default function DoctorsPage() {
   };
   const { t, locale } = useI18n();
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
+  const urlDoctorId = searchParams.get("doctorId")?.trim() || undefined;
   const [currentUser, setCurrentUser] = useState<ReturnType<typeof storage.getUser>>(null);
   useEffect(() => {
     setCurrentUser(storage.getUser());
@@ -98,8 +103,11 @@ export default function DoctorsPage() {
     : myClinicQuery.data?.id ?? currentUser?.clinicId;
 
   const doctorsQuery = useQuery({
-    queryKey: ["doctors", { page: 1, pageSize: 500, clinicId: listClinicScope ?? "mine-pending" }],
-    queryFn: () => doctorService.list(listClinicScope),
+    queryKey: [
+      "doctors",
+      { page: 1, pageSize: 500, clinicId: listClinicScope ?? "mine-pending", doctorId: urlDoctorId ?? "" }
+    ],
+    queryFn: () => doctorService.list(listClinicScope, urlDoctorId ? { doctorId: urlDoctorId } : {}),
     enabled: isSuperAdmin || Boolean(myClinicQuery.data?.id ?? currentUser?.clinicId)
   });
   const specialtyCatalogQuery = useQuery({
@@ -434,6 +442,14 @@ export default function DoctorsPage() {
           </div>
         </section>
       ) : null}
+      {urlDoctorId ? (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-2xl border border-cyan-200 bg-cyan-50/80 px-4 py-2 text-sm text-cyan-900">
+          <span>{t("doctors.deepLinkFilter")}</span>
+          <Link href="/doctors" className="font-medium underline">
+            {t("doctors.clearDeepLinkFilter")}
+          </Link>
+        </div>
+      ) : null}
       {doctorsQuery.isLoading ? (
         <div className="card p-6 text-sm text-slate-500">{t("doctors.loading")}</div>
       ) : (
@@ -442,6 +458,7 @@ export default function DoctorsPage() {
           columns={columns}
           data={data}
           storageKey="doctor-view"
+          skipLocalFiltering={Boolean(urlDoctorId)}
           belowHeader={formBlock}
           statusOptions={[
             { label: t("common.allSpecialties"), value: "all" },
@@ -464,7 +481,12 @@ export default function DoctorsPage() {
           getSearchText={(row) => `${row.name} ${row.specialty} ${row.license} ${row.email}`}
           getStatus={(row) => row.specialty}
           renderCard={(row) => (
-            <div className="space-y-2">
+            <div
+              className={cn(
+                "space-y-2",
+                urlDoctorId === row.id && "ring-2 ring-orange-400 ring-offset-2 rounded-xl p-1 -m-1"
+              )}
+            >
               <h3 className="font-semibold text-slate-900">{row.name}</h3>
               <p className="text-sm text-slate-600">{row.specialty}</p>
               <p className="text-xs text-slate-500">{row.email}</p>
@@ -513,5 +535,22 @@ export default function DoctorsPage() {
       />
     </AppShell>
     </RoleGate>
+  );
+}
+
+export default function DoctorsPage() {
+  const { t } = useI18n();
+  return (
+    <Suspense
+      fallback={
+        <RoleGate requiredPermissions={["doctors.read"]} fallback={<div className="card p-6 text-sm text-slate-500">{t("common.notAllowed")}</div>}>
+          <AppShell>
+            <div className="card p-6 text-sm text-slate-500">{t("doctors.loading")}</div>
+          </AppShell>
+        </RoleGate>
+      }
+    >
+      <DoctorsPageInner />
+    </Suspense>
   );
 }

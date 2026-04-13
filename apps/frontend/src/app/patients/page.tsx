@@ -2,6 +2,8 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ColumnDef } from "@tanstack/react-table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -9,6 +11,7 @@ import {
   ChevronDown,
   Clock,
   ClipboardList,
+  CreditCard,
   Loader2,
   MapPin,
   Mic,
@@ -162,9 +165,11 @@ type BrowserSpeechRecognition = {
 };
 type SpeechRecognitionConstructor = new () => BrowserSpeechRecognition;
 
-export default function PatientsPage() {
+function PatientsPageInner() {
   const { locale, t } = useI18n();
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
+  const urlPatientId = searchParams.get("patientId")?.trim() || undefined;
   const [currentUser, setCurrentUser] = useState<ReturnType<typeof storage.getUser>>(null);
   const [userHydrated, setUserHydrated] = useState(false);
   useEffect(() => {
@@ -172,6 +177,7 @@ export default function PatientsPage() {
     setUserHydrated(true);
   }, []);
   const isSuperAdmin = currentUser?.role === "SuperAdmin";
+  const canViewPatientBilling = isSuperAdmin || Boolean(currentUser?.permissions?.includes("billing.read"));
   const [selectedClinicId, setSelectedClinicId] = useState<string>("all");
   const [formExpanded, setFormExpanded] = useState(false);
   const [editing, setEditing] = useState<PatientRow | null>(null);
@@ -201,6 +207,10 @@ export default function PatientsPage() {
   const [expandedCardId, setExpandedCardId] = useState<string | null>(null);
   const [patientFilterDraft, setPatientFilterDraft] = useState<PatientListQuery>(() => emptyPatientListQuery());
   const debouncedPatientFilters = useDebounce(patientFilterDraft, 400);
+  const effectiveListQuery = useMemo(
+    () => (urlPatientId ? { ...debouncedPatientFilters, patientId: urlPatientId } : debouncedPatientFilters),
+    [debouncedPatientFilters, urlPatientId]
+  );
   const formRef = useRef<HTMLElement | null>(null);
   const assessmentRef = useRef<HTMLElement | null>(null);
   const scrollToFormTop = useCallback(() => {
@@ -258,10 +268,16 @@ export default function PatientsPage() {
   });
 
   const patientsQuery = useQuery({
-    queryKey: ["patients", "list", selectedClinicId, debouncedPatientFilters],
+    queryKey: ["patients", "list", selectedClinicId, effectiveListQuery],
     queryFn: () =>
-      patientService.list(selectedClinicId === "all" ? undefined : selectedClinicId, debouncedPatientFilters)
+      patientService.list(selectedClinicId === "all" ? undefined : selectedClinicId, effectiveListQuery)
   });
+
+  useEffect(() => {
+    if (!urlPatientId) return;
+    const found = (patientsQuery.data ?? []).some((p) => p.id === urlPatientId);
+    if (found) setExpandedCardId(urlPatientId);
+  }, [urlPatientId, patientsQuery.data]);
 
   const statsQuery = useQuery({
     queryKey: ["patients", "stats", selectedClinicId],
@@ -1139,6 +1155,14 @@ export default function PatientsPage() {
           </div>
         </section>
       ) : null}
+      {urlPatientId ? (
+        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-2xl border border-cyan-200 bg-cyan-50/80 px-4 py-2 text-sm text-cyan-900">
+          <span>{t("patients.deepLinkFilter")}</span>
+          <Link href="/patients" className="font-medium underline">
+            {t("patients.clearDeepLinkFilter")}
+          </Link>
+        </div>
+      ) : null}
       <section className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {statsQuery.isLoading ? (
           <PatientsStatsSkeleton />
@@ -1222,7 +1246,12 @@ export default function PatientsPage() {
             getStatus={(row) => row.leadSource}
             getDate={(row) => row.lastVisit}
             renderCard={(row) => (
-              <div className="relative overflow-hidden rounded-2xl border border-orange-100/70 border-l-4 border-l-orange-500 bg-gradient-to-br from-white via-orange-50/40 to-cyan-50/30 p-4">
+              <div
+                className={cn(
+                  "relative overflow-hidden rounded-2xl border border-orange-100/70 border-l-4 border-l-orange-500 bg-gradient-to-br from-white via-orange-50/40 to-cyan-50/30 p-4",
+                  urlPatientId === row.id && "ring-2 ring-orange-400 ring-offset-2"
+                )}
+              >
                 <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-orange-200/30 blur-xl" />
                 <div className="pointer-events-none absolute -bottom-8 -left-8 h-24 w-24 rounded-full bg-cyan-200/20 blur-xl" />
                 <div className="relative space-y-3">
@@ -1319,6 +1348,16 @@ export default function PatientsPage() {
                           >
                             <ClipboardList size={11} aria-hidden />
                           </button>
+                          {canViewPatientBilling ? (
+                            <Link
+                              href={`/billing?patientId=${encodeURIComponent(row.id)}`}
+                              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border border-violet-200 bg-gradient-to-b from-white to-violet-50 text-violet-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-violet-300 hover:shadow"
+                              title={t("patients.card.openBilling")}
+                              aria-label={t("patients.card.openBilling")}
+                            >
+                              <CreditCard size={11} aria-hidden />
+                            </Link>
+                          ) : null}
                         </div>
 
                         <div className="flex items-center justify-between">
@@ -1620,5 +1659,26 @@ export default function PatientsPage() {
       />
     </AppShell>
     </RoleGate>
+  );
+}
+
+export default function PatientsPage() {
+  const { t } = useI18n();
+  return (
+    <Suspense
+      fallback={
+        <RoleGate requiredPermissions={["patients.read"]} fallback={<div className="card p-6 text-sm text-slate-500">{t("common.notAllowed")}</div>}>
+          <AppShell>
+            <section className="mb-4 space-y-3 p-4">
+              <Skeleton className="h-9 w-48 rounded-lg" />
+              <Skeleton className="h-32 w-full rounded-2xl" />
+              <Skeleton className="h-48 w-full rounded-2xl" />
+            </section>
+          </AppShell>
+        </RoleGate>
+      }
+    >
+      <PatientsPageInner />
+    </Suspense>
   );
 }

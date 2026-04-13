@@ -20,3 +20,18 @@ export const getOptionalClinicScope = (req: AuthenticatedRequest) => {
 
   return req.user.clinicId;
 };
+
+/** For POST create: clinic users use their clinic; SuperAdmin must pass ?clinicId= */
+export const getScopedClinicIdForCreate = (req: AuthenticatedRequest) => {
+  if (!req.user) {
+    throw new AppError("Unauthorized", 401);
+  }
+  const requestedClinicId = typeof req.query.clinicId === "string" ? req.query.clinicId.trim() : undefined;
+  if (req.user.role === "SuperAdmin") {
+    if (!requestedClinicId) {
+      throw new AppError("clinicId query parameter is required", 400);
+    }
+    return requestedClinicId;
+  }
+  return getScopedClinicId(req);
+};

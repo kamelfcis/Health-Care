@@ -174,6 +174,8 @@ export interface PatientExamsResponse {
 }
 
 export interface PatientListQuery {
+  /** Exact id filter (deep links / global search) */
+  patientId?: string;
   /** Legacy combined search (OR on name/phones/file#); prefer fullName + phone + fileNumber for quick search */
   search?: string;
   /** Quick / explicit: exact file number */
@@ -201,6 +203,7 @@ const buildPatientListParams = (clinicId: string | undefined, query: PatientList
   const params: Record<string, string | number> = { page: 1, pageSize: 500 };
   if (clinicId) params.clinicId = clinicId;
   const entries: [keyof PatientListQuery, string | undefined][] = [
+    ["patientId", query.patientId],
     ["search", query.search],
     ["fullName", query.fullName],
     ["phone", query.phone],

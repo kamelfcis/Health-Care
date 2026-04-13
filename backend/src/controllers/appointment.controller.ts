@@ -53,6 +53,7 @@ export const appointmentController = {
         ? (req.query.entryType as VisitEntryType)
         : undefined;
 
+    const patientId = optionalTrimmed(req.query.patientId);
     const patientFullName = optionalTrimmed(req.query.patientFullName);
     const patientPhone = optionalTrimmed(req.query.patientPhone);
     const patientFileNumber = optionalFileNumber(req.query.patientFileNumber);
@@ -64,6 +65,7 @@ export const appointmentController = {
 
     const data = await appointmentService.list({
       clinicId: getOptionalClinicScope(req),
+      patientId,
       doctorUserId: req.user?.role === "Doctor" ? req.user?.sub : undefined,
       page,
       pageSize,

@@ -4,8 +4,17 @@ import { paymentService } from "../services/payment.service";
 import { getPagination } from "../utils/http";
 import { apiSuccess } from "../utils/api-response";
 import { AuthenticatedRequest } from "../types/auth";
-import { getOptionalClinicScope, getScopedClinicId } from "../utils/tenant";
+import { getOptionalClinicScope, getScopedClinicIdForCreate } from "../utils/tenant";
 import { buildCacheKey, getOrSetCache, invalidateCacheByPrefix } from "../utils/response-cache";
+
+const invalidatePaymentBillingDashboard = (clinicId: string) => {
+  invalidateCacheByPrefix(buildCacheKey("payments", clinicId));
+  invalidateCacheByPrefix(buildCacheKey("payments", "all"));
+  invalidateCacheByPrefix(buildCacheKey("billing", clinicId));
+  invalidateCacheByPrefix(buildCacheKey("billing", "all"));
+  invalidateCacheByPrefix(buildCacheKey("dashboard", clinicId));
+  invalidateCacheByPrefix(buildCacheKey("dashboard", "all"));
+};
 
 export const paymentController = {
   async list(req: AuthenticatedRequest, res: Response) {
@@ -32,27 +41,41 @@ export const paymentController = {
     res.json(apiSuccess(data));
   },
 
+  async stats(req: AuthenticatedRequest, res: Response) {
+    const clinicId = getOptionalClinicScope(req);
+    const cachePrefix = buildCacheKey("payments", clinicId ?? "all");
+    const data = await getOrSetCache(buildCacheKey(cachePrefix, "stats"), 30_000, () => paymentService.stats(clinicId));
+    res.json(apiSuccess(data));
+  },
+
   async create(req: AuthenticatedRequest, res: Response) {
-    const clinicId = getScopedClinicId(req);
+    const clinicId = getScopedClinicIdForCreate(req);
     const data = await paymentService.create(clinicId, req.body);
-    invalidateCacheByPrefix(buildCacheKey("payments", clinicId));
-    invalidateCacheByPrefix(buildCacheKey("dashboard", clinicId));
+    invalidatePaymentBillingDashboard(clinicId);
     res.status(201).json(apiSuccess(data, "Payment created"));
   },
 
   async update(req: AuthenticatedRequest, res: Response) {
-    const clinicId = getScopedClinicId(req);
+    const clinicId = getOptionalClinicScope(req);
     const data = await paymentService.update(String(req.params.id), clinicId, req.body);
-    invalidateCacheByPrefix(buildCacheKey("payments", clinicId));
-    invalidateCacheByPrefix(buildCacheKey("dashboard", clinicId));
+    if (clinicId) invalidatePaymentBillingDashboard(clinicId);
+    else {
+      invalidateCacheByPrefix(buildCacheKey("payments", "all"));
+      invalidateCacheByPrefix(buildCacheKey("billing", "all"));
+      invalidateCacheByPrefix(buildCacheKey("dashboard", "all"));
+    }
     res.json(apiSuccess(data, "Payment updated"));
   },
 
   async remove(req: AuthenticatedRequest, res: Response) {
-    const clinicId = getScopedClinicId(req);
-    const data = await paymentService.remove(String(req.params.id), clinicId);
-    invalidateCacheByPrefix(buildCacheKey("payments", clinicId));
-    invalidateCacheByPrefix(buildCacheKey("dashboard", clinicId));
-    res.json(apiSuccess(data, "Payment deleted"));
+    const clinicId = getOptionalClinicScope(req);
+    await paymentService.remove(String(req.params.id), clinicId);
+    if (clinicId) invalidatePaymentBillingDashboard(clinicId);
+    else {
+      invalidateCacheByPrefix(buildCacheKey("payments", "all"));
+      invalidateCacheByPrefix(buildCacheKey("billing", "all"));
+      invalidateCacheByPrefix(buildCacheKey("dashboard", "all"));
+    }
+    res.json(apiSuccess({ ok: true }, "Payment deleted"));
   }
 };
