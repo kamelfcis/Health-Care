@@ -60,6 +60,7 @@ export interface AppointmentAssessmentResponse {
 export interface AppointmentListItem {
   id: string;
   clinicId: string;
+  clinic?: { id: string; name: string } | null;
   startsAt: string;
   endsAt: string;
   entryType: VisitEntryType;
@@ -76,7 +77,7 @@ export interface AppointmentListItem {
   doctor?: AppointmentDoctor | null;
 }
 
-interface AppointmentListPayload {
+export interface AppointmentListPayload {
   data: AppointmentListItem[];
   total: number;
   page: number;
@@ -97,6 +98,8 @@ export interface AppointmentListQuery {
   specialtyCode?: string;
   startsFrom?: string;
   startsTo?: string;
+  /** Override list page size (e.g. dashboard calendar month range) */
+  listPageSize?: number;
 }
 
 const APPOINTMENT_LIST_PAGE_SIZE = 500;
@@ -118,9 +121,10 @@ export function emptyAppointmentListQuery(): AppointmentListQuery {
 }
 
 function buildAppointmentListParams(clinicId: string | undefined, query: AppointmentListQuery = {}) {
+  const pageSize = query.listPageSize ?? APPOINTMENT_LIST_PAGE_SIZE;
   const params: Record<string, string | number> = {
     page: 1,
-    pageSize: APPOINTMENT_LIST_PAGE_SIZE,
+    pageSize,
     ...(clinicId ? { clinicId } : {})
   };
   const entries: [keyof AppointmentListQuery, string | undefined][] = [
@@ -145,11 +149,16 @@ function buildAppointmentListParams(clinicId: string | undefined, query: Appoint
 }
 
 export const appointmentService = {
-  async list(clinicId?: string, query: AppointmentListQuery = {}) {
+  async listResult(clinicId?: string, query: AppointmentListQuery = {}) {
     const res = await api.get<{ data: AppointmentListPayload }>("/appointments", {
       params: buildAppointmentListParams(clinicId, query)
     });
-    return res.data.data.data;
+    return res.data.data;
+  },
+
+  async list(clinicId?: string, query: AppointmentListQuery = {}) {
+    const payload = await appointmentService.listResult(clinicId, query);
+    return payload.data;
   },
 
   async create(

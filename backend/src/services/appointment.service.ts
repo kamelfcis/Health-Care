@@ -126,6 +126,7 @@ export const appointmentService = {
       prisma.appointment.findMany({
         where,
         include: {
+          clinic: { select: { id: true, name: true } },
           patient: true,
           specialty: true,
           doctor: { include: { user: true } }

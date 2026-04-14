@@ -41,7 +41,7 @@ const optionalFileNumber = (value: unknown): number | undefined => {
 
 export const appointmentController = {
   async list(req: AuthenticatedRequest, res: Response) {
-    const { page, pageSize, search } = getPagination(req);
+    const { page, pageSize, search } = getPagination(req, { maxPageSize: 5000 });
     const status =
       typeof req.query.status === "string" &&
       Object.values(AppointmentStatus).includes(req.query.status as AppointmentStatus)

@@ -20,6 +20,7 @@ import { RoleDefinition, RoleName } from "@/types";
 import { toast } from "sonner";
 import { useI18n } from "@/components/providers/i18n-provider";
 import { hasPermission } from "@/lib/permissions";
+import { DashboardAppointmentCalendar } from "@/components/dashboard/appointment-calendar";
 
 interface NewUserForm {
   firstName: string;
@@ -269,6 +270,11 @@ export default function DashboardPage() {
           </div>
         )}
       </section>
+      <RoleGate requiredPermissions={["appointments.read"]}>
+        <section className="mb-4">
+          <DashboardAppointmentCalendar clinicScopeId={clinicScopeForMetrics} isSuperAdmin={isSuperAdmin} />
+        </section>
+      </RoleGate>
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {loading ? (
           <Skeleton className="h-28 rounded-2xl" />

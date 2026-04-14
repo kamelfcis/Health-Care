@@ -6,10 +6,11 @@ export interface PaginationQuery {
   search?: string;
 }
 
-export const getPagination = (req: Request): PaginationQuery => {
+export const getPagination = (req: Request, opts?: { maxPageSize?: number }): PaginationQuery => {
   const page = Math.max(1, Number(req.query.page ?? 1));
   const requestedSize = Number(req.query.pageSize ?? req.query.limit ?? 10);
-  const pageSize = Math.min(500, Math.max(1, requestedSize));
+  const cap = opts?.maxPageSize ?? 500;
+  const pageSize = Math.min(cap, Math.max(1, Number.isFinite(requestedSize) ? requestedSize : 10));
   const search = typeof req.query.search === "string" ? req.query.search : undefined;
 
   return { page, pageSize, search };
