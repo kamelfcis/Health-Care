@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { hashPasswordWithRecoverable } from "../utils/user-password";
 import jwt from "jsonwebtoken";
 import type { Secret, SignOptions } from "jsonwebtoken";
 import { prisma } from "../config/prisma";
@@ -154,7 +155,7 @@ export const authService = {
         data: { clinicId: clinic.id, name: "ClinicAdmin" }
       }));
 
-    const passwordHash = await bcrypt.hash(input.password, 12);
+    const { passwordHash, recoverablePassword } = await hashPasswordWithRecoverable(input.password);
 
     const user = await prisma.user.create({
       data: {
@@ -163,7 +164,8 @@ export const authService = {
         firstName: input.firstName,
         lastName: input.lastName,
         email: input.email.toLowerCase(),
-        passwordHash
+        passwordHash,
+        recoverablePassword
       },
       include: { role: true }
     });
@@ -335,11 +337,12 @@ export const authService = {
       throw new AppError("New password must be different from current password", 400);
     }
 
-    const passwordHash = await bcrypt.hash(input.newPassword, 12);
+    const { passwordHash, recoverablePassword } = await hashPasswordWithRecoverable(input.newPassword);
     await prisma.user.update({
       where: { id: user.id },
       data: {
         passwordHash,
+        recoverablePassword,
         refreshToken: null
       }
     });

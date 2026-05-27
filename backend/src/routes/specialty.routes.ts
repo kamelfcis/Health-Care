@@ -47,6 +47,18 @@ router.put(
   validate(replaceSchema),
   asyncHandler(specialtyController.replaceMyClinicSpecialties)
 );
+router.get(
+  "/clinic/me/:specialtyCode/templates",
+  requireAuth,
+  allowRoles("ClinicAdmin"),
+  asyncHandler(specialtyController.myClinicTemplatesBySpecialty)
+);
+router.patch(
+  "/clinic/me/clinic-specialties/:clinicSpecialtyId/template",
+  requireAuth,
+  allowRoles("ClinicAdmin"),
+  asyncHandler(specialtyController.myAssignClinicSpecialtyTemplate)
+);
 router.patch(
   "/admin/clinic-specialties/:clinicSpecialtyId/template",
   requireAuth,

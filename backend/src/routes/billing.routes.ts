@@ -9,6 +9,7 @@ import { asyncHandler } from "../utils/async-handler";
 const router = Router();
 
 const invoiceStatusZ = z.enum(["DRAFT", "PENDING", "PAID", "OVERDUE", "CANCELLED"]);
+const invoiceTypeZ = z.enum(["PROCEDURE", "EXAM", "CONSULTATION", "OTHER"]);
 
 const createSchema = z.object({
   body: z.object({
@@ -20,7 +21,8 @@ const createSchema = z.object({
     discount: z.number().min(0).optional(),
     dueDate: z.string().optional(),
     notes: z.string().optional(),
-    status: invoiceStatusZ.optional()
+    status: invoiceStatusZ.optional(),
+    invoiceType: invoiceTypeZ.optional()
   })
 });
 
@@ -33,7 +35,8 @@ const updateSchema = z.object({
       taxAmount: z.number().min(0).optional(),
       discount: z.number().min(0).optional(),
       dueDate: z.union([z.string(), z.literal("")]).optional(),
-      appointmentId: z.union([z.string().min(1), z.literal(""), z.null()]).optional()
+      appointmentId: z.union([z.string().min(1), z.literal(""), z.null()]).optional(),
+      invoiceType: invoiceTypeZ.optional()
     })
     .refine((b) => Object.keys(b).length > 0, { message: "At least one field required" })
 });

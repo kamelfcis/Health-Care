@@ -1,5 +1,7 @@
 import { Response } from "express";
-import { InvoiceStatus } from "@prisma/client";
+import { InvoiceSourceType, InvoiceStatus } from "@prisma/client";
+
+const INVOICE_SOURCE_TYPES = ["PROCEDURE", "EXAM", "CONSULTATION", "OTHER"] as const;
 import { billingService } from "../services/billing.service";
 import { getPagination } from "../utils/http";
 import { apiSuccess } from "../utils/api-response";
@@ -10,6 +12,8 @@ import { buildCacheKey, getOrSetCache, invalidateCacheByPrefix } from "../utils/
 const invalidateBillingDashboard = (clinicId: string) => {
   invalidateCacheByPrefix(buildCacheKey("billing", clinicId));
   invalidateCacheByPrefix(buildCacheKey("billing", "all"));
+  invalidateCacheByPrefix(buildCacheKey("payments", clinicId));
+  invalidateCacheByPrefix(buildCacheKey("payments", "all"));
   invalidateCacheByPrefix(buildCacheKey("dashboard", clinicId));
   invalidateCacheByPrefix(buildCacheKey("dashboard", "all"));
 };
@@ -31,6 +35,11 @@ export const billingController = {
       req.query.sort === "due_asc" || req.query.sort === "created_desc" ? (req.query.sort as "due_asc" | "created_desc") : undefined;
     const dueFrom = typeof req.query.from === "string" ? req.query.from.trim().slice(0, 10) : undefined;
     const dueTo = typeof req.query.to === "string" ? req.query.to.trim().slice(0, 10) : undefined;
+    const invoiceTypeRaw = typeof req.query.invoiceType === "string" ? req.query.invoiceType.trim() : undefined;
+    const invoiceType =
+      invoiceTypeRaw && INVOICE_SOURCE_TYPES.includes(invoiceTypeRaw as (typeof INVOICE_SOURCE_TYPES)[number])
+        ? (invoiceTypeRaw as InvoiceSourceType)
+        : undefined;
     const cachePrefix = buildCacheKey("billing", clinicId ?? "all");
     const data = await getOrSetCache(
       buildCacheKey(
@@ -45,7 +54,8 @@ export const billingController = {
         openOnly ? "1" : "",
         sort ?? "",
         dueFrom ?? "",
-        dueTo ?? ""
+        dueTo ?? "",
+        invoiceType ?? ""
       ),
       45_000,
       () =>
@@ -60,7 +70,8 @@ export const billingController = {
           status,
           sort,
           dueFrom: dueFrom || undefined,
-          dueTo: dueTo || undefined
+          dueTo: dueTo || undefined,
+          invoiceType
         })
     );
     res.json(apiSuccess(data));
@@ -91,6 +102,12 @@ export const billingController = {
         : apptRaw === null || apptRaw === ""
           ? null
           : (apptRaw as string);
+    const invoiceTypeRaw = body.invoiceType;
+    const invoiceType =
+      typeof invoiceTypeRaw === "string" &&
+      INVOICE_SOURCE_TYPES.includes(invoiceTypeRaw as (typeof INVOICE_SOURCE_TYPES)[number])
+        ? (invoiceTypeRaw as InvoiceSourceType)
+        : undefined;
     const data = await billingService.update(String(req.params.id), clinicId, {
       status: body.status as InvoiceStatus | undefined,
       notes: body.notes as string | undefined,
@@ -98,7 +115,8 @@ export const billingController = {
       taxAmount: body.taxAmount as number | undefined,
       discount: body.discount as number | undefined,
       dueDate: dueRaw === "" ? null : (dueRaw as string | undefined),
-      appointmentId
+      appointmentId,
+      invoiceType
     });
     if (clinicId) invalidateBillingDashboard(clinicId);
     else {

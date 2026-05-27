@@ -25,6 +25,7 @@ export interface NavigationLink {
     | "Pill"
     | "CreditCard"
     | "Wallet"
+    | "TrendingUp"
     | "Settings";
   requiredPermissions?: string[];
   allowedRoles?: RoleName[];
@@ -44,7 +45,9 @@ export const ROUTE_ACCESS_RULES: RouteAccessRule[] = [
   { pattern: "/appointments", requiredPermissions: ["appointments.read"] },
   { pattern: "/pharmacy", requiredPermissions: ["pharmacy.view"] },
   { pattern: "/billing", requiredPermissions: ["billing.read"] },
+  { pattern: "/procedures", requiredPermissions: ["billing.manage"] },
   { pattern: "/payments", requiredPermissions: ["payments.read"] },
+  { pattern: "/finance", requiredPermissions: ["finance.read"] },
   { pattern: "/settings", allowedRoles: ["ClinicAdmin"] },
   { pattern: "/profile" }
 ];
@@ -107,13 +110,20 @@ export const NAVIGATION_LINKS: NavigationLink[] = [
     href: "/billing",
     labelKey: "nav.billing",
     iconName: "CreditCard",
-    requiredPermissions: ["billing.read"]
+    requiredPermissions: ["billing.read"],
+    children: [{ href: "/procedures", labelKey: "nav.procedures" }]
   },
   {
     href: "/payments",
     labelKey: "nav.payments",
     iconName: "Wallet",
     requiredPermissions: ["payments.read"]
+  },
+  {
+    href: "/finance",
+    labelKey: "nav.finance",
+    iconName: "TrendingUp",
+    requiredPermissions: ["finance.read"]
   },
   {
     href: "/dashboard/leads",

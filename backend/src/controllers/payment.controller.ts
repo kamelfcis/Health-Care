@@ -14,6 +14,8 @@ const invalidatePaymentBillingDashboard = (clinicId: string) => {
   invalidateCacheByPrefix(buildCacheKey("billing", "all"));
   invalidateCacheByPrefix(buildCacheKey("dashboard", clinicId));
   invalidateCacheByPrefix(buildCacheKey("dashboard", "all"));
+  invalidateCacheByPrefix(buildCacheKey("finance", clinicId));
+  invalidateCacheByPrefix(buildCacheKey("finance", "all"));
 };
 
 export const paymentController = {

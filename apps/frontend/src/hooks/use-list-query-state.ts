@@ -17,6 +17,8 @@ export interface ListQueryState {
   sort: string;
   /** Billing: pending + overdue only */
   openOnly: boolean;
+  /** Billing: invoice source type filter */
+  invoiceType: string;
 }
 
 const defaultState: ListQueryState = {
@@ -29,7 +31,8 @@ const defaultState: ListQueryState = {
   view: "table",
   method: "all",
   sort: "",
-  openOnly: false
+  openOnly: false,
+  invoiceType: "all"
 };
 
 export function useListQueryState() {
@@ -64,7 +67,8 @@ export function useListQueryState() {
       view,
       method: searchParams.get("method") ?? "all",
       sort,
-      openOnly: searchParams.get("open") === "1"
+      openOnly: searchParams.get("open") === "1",
+      invoiceType: searchParams.get("invoiceType") ?? "all"
     };
   }, [pathname, searchParams]);
 

@@ -32,6 +32,11 @@ export const clinicController = {
     res.json(apiSuccess(data, "Clinic settings updated"));
   },
 
+  async listUsers(req: Request, res: Response) {
+    const data = await clinicService.listUsersForSuperAdmin(String(req.params.id));
+    res.json(apiSuccess(data));
+  },
+
   async list(req: Request, res: Response) {
     const { page, pageSize, search } = getPagination(req);
     const cachePrefix = buildCacheKey("clinics");

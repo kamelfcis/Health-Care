@@ -30,6 +30,7 @@ import { appointmentService } from "@/lib/appointment-service";
 import { clinicService } from "@/lib/clinic-service";
 import { medicineService, MedicineItem } from "@/lib/medicine-service";
 import { patientService, PatientAssessmentHistoryItem, PatientExamAttachmentItem, PatientExamItem } from "@/lib/patient-service";
+import { PatientProceduresPanel } from "@/components/patients/patient-procedures-panel";
 import { specialtyService, SpecialtyTemplate } from "@/lib/specialty-service";
 import { useDebounce } from "@/hooks/use-debounce";
 
@@ -680,7 +681,7 @@ export function MedicalRecordModal({
   const { t, locale } = useI18n();
   const queryClient = useQueryClient();
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
-  const [activePatientTab, setActivePatientTab] = useState<"history" | "exams">("history");
+  const [activePatientTab, setActivePatientTab] = useState<"history" | "exams" | "procedures">("history");
   const [medicineSearchInput, setMedicineSearchInput] = useState("");
   const [medicineCatalogPage, setMedicineCatalogPage] = useState(1);
   const [medicineDropdownOpen, setMedicineDropdownOpen] = useState(false);
@@ -1781,6 +1782,12 @@ export function MedicalRecordModal({
       return <PatientExamsPanel patientId={patientContext?.id} clinicScope={resolvedPatientClinicScope} />;
     }
 
+    if (activePatientTab === "procedures") {
+      return (
+        <PatientProceduresPanel patientId={String(patientContext?.id)} clinicScope={resolvedPatientClinicScope} />
+      );
+    }
+
     if (patientAssessmentsQuery.isLoading) {
       return (
         <div className="space-y-3">
@@ -1832,7 +1839,7 @@ export function MedicalRecordModal({
       >
         <div className="space-y-4">
           {mode === "patient" ? (
-            <div className="grid grid-cols-2 gap-1 rounded-2xl border border-orange-100/80 bg-gradient-to-r from-slate-50 via-white to-orange-50/60 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
+            <div className="grid grid-cols-3 gap-1 rounded-2xl border border-orange-100/80 bg-gradient-to-r from-slate-50 via-white to-orange-50/60 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)]">
               <button
                 type="button"
                 className={`rounded-xl px-3 py-2.5 text-sm font-semibold transition duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300/70 ${
@@ -1854,6 +1861,17 @@ export function MedicalRecordModal({
                 onClick={() => setActivePatientTab("exams")}
               >
                 {t("patients.exams.tab")}
+              </button>
+              <button
+                type="button"
+                className={`rounded-xl px-3 py-2.5 text-sm font-semibold transition duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-300/70 ${
+                  activePatientTab === "procedures"
+                    ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-[0_8px_24px_-12px_rgba(249,115,22,0.9)] ring-1 ring-orange-300/50"
+                    : "text-slate-600 hover:-translate-y-0.5 hover:bg-white/85 hover:text-slate-800 hover:shadow-sm active:translate-y-0"
+                }`}
+                onClick={() => setActivePatientTab("procedures")}
+              >
+                {t("patients.procedures.tab")}
               </button>
             </div>
           ) : null}

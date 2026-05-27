@@ -21,6 +21,7 @@ import { patientService } from "@/lib/patient-service";
 import { storage } from "@/lib/storage";
 import { RoleGate } from "@/components/auth/role-gate";
 import { hasPermission } from "@/lib/permissions";
+import { formatDateTimeDisplay } from "@/lib/date-time-format";
 import { specialtyService, VisitEntryType } from "@/lib/specialty-service";
 import { AppointmentMedicalRecordContext, MedicalRecordModal } from "@/components/appointments/medical-record-modal";
 
@@ -101,6 +102,7 @@ export default function AppointmentsPage() {
   const [selectedClinicId, setSelectedClinicId] = useState<string>("all");
   const [formExpanded, setFormExpanded] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingClinicId, setEditingClinicId] = useState<string | null>(null);
   const [medicalFileAppointment, setMedicalFileAppointment] = useState<AppointmentMedicalRecordContext | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AppointmentRow | null>(null);
   const [whatsappTarget, setWhatsappTarget] = useState<{ name: string; whatsapp: string } | null>(null);
@@ -218,6 +220,15 @@ export default function AppointmentsPage() {
 
   const mutationClinicScope = isSuperAdmin ? (selectedClinicId === "all" ? undefined : selectedClinicId) : undefined;
 
+  const scopeForRowMutation = useCallback(
+    (rowClinicId: string) => {
+      if (isSuperAdmin && selectedClinicId === "all") return rowClinicId;
+      if (isSuperAdmin && selectedClinicId !== "all") return selectedClinicId;
+      return undefined;
+    },
+    [isSuperAdmin, selectedClinicId]
+  );
+
   const clearAppointmentFilters = useCallback(() => {
     if (currentUser?.role === "Doctor") {
       const y = toLocalDateInputValue(new Date());
@@ -240,6 +251,7 @@ export default function AppointmentsPage() {
       notes: ""
     });
     setEditingId(null);
+    setEditingClinicId(null);
   }, []);
 
   const toLocalInput = (isoText: string) => {
@@ -271,7 +283,7 @@ export default function AppointmentsPage() {
         doctorSpecialty: item.doctor?.specialty ?? "",
         startsAtIso: item.startsAt,
         endsAtIso: item.endsAt,
-        start: new Date(item.startsAt).toLocaleString(),
+        start: formatDateTimeDisplay(item.startsAt, locale),
         status: item.status,
         entryType: item.entryType,
         reason: item.reason ?? "",
@@ -286,7 +298,7 @@ export default function AppointmentsPage() {
         patientLeadSource: item.patient?.leadSource ?? "",
         patientFileNumber: item.patient?.fileNumber ?? null
       })) ?? [],
-    [appointmentsQuery.data]
+    [appointmentsQuery.data, locale]
   );
 
   const specialtyOptions = useMemo(
@@ -620,7 +632,7 @@ export default function AppointmentsPage() {
           reason: form.reason.trim(),
           notes: form.notes.trim()
         },
-        mutationClinicScope
+        editingClinicId ? scopeForRowMutation(editingClinicId) : mutationClinicScope
       );
     },
     onSuccess: () => {
@@ -633,7 +645,8 @@ export default function AppointmentsPage() {
   });
 
   const removeMutation = useMutation({
-    mutationFn: (id: string) => appointmentService.remove(id, mutationClinicScope),
+    mutationFn: ({ id, clinicId }: { id: string; clinicId: string }) =>
+      appointmentService.remove(id, scopeForRowMutation(clinicId)),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["appointments"] });
       setDeleteTarget(null);
@@ -650,6 +663,7 @@ export default function AppointmentsPage() {
       specialtyOptions.find((option) => option.name === (selectedDoctor?.specialty ?? row.doctorSpecialty))?.code ||
       "";
     setEditingId(row.id);
+    setEditingClinicId(row.clinicId);
     setForm({
       patientId: row.patientId,
       specialtyCode: mappedSpecialtyCode,
@@ -775,18 +789,24 @@ export default function AppointmentsPage() {
             </option>
           ) : null}
         </select>
-        <input
-          className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
-          type="date"
-          value={form.appointmentDate}
-          onChange={(event) => setForm((prev) => ({ ...prev, appointmentDate: event.target.value }))}
-        />
-        <input
-          className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
-          type="time"
-          value={form.appointmentTime}
-          onChange={(event) => setForm((prev) => ({ ...prev, appointmentTime: event.target.value }))}
-        />
+        <div>
+          <label className="mb-1 block text-xs text-slate-500">{t("appointments.medicalFile.date")}</label>
+          <input
+            className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+            type="date"
+            value={form.appointmentDate}
+            onChange={(event) => setForm((prev) => ({ ...prev, appointmentDate: event.target.value }))}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-slate-500">{t("appointments.medicalFile.time")}</label>
+          <input
+            className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
+            type="time"
+            value={form.appointmentTime}
+            onChange={(event) => setForm((prev) => ({ ...prev, appointmentTime: event.target.value }))}
+          />
+        </div>
         <select
           className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
           value={form.entryType}
@@ -823,19 +843,30 @@ export default function AppointmentsPage() {
         <RippleButton
           type="button"
           className="h-10 text-sm"
-          disabled={
-            (isSuperAdmin && selectedClinicId === "all") ||
-            !form.patientId ||
-            !form.specialtyCode ||
-            !form.doctorId ||
-            !form.appointmentDate ||
-            !form.appointmentTime ||
-            createMutation.isPending ||
-            updateMutation.isPending
-          }
+          disabled={(isSuperAdmin && selectedClinicId === "all") || createMutation.isPending || updateMutation.isPending}
           onClick={() => {
             if (isSuperAdmin && selectedClinicId === "all") {
               toast.error(t("doctors.selectClinicScope"));
+              return;
+            }
+            if (!form.patientId) {
+              toast.error(t("appointments.validation.patientRequired"));
+              return;
+            }
+            if (!form.specialtyCode) {
+              toast.error(t("appointments.validation.specialtyRequired"));
+              return;
+            }
+            if (!form.doctorId) {
+              toast.error(t("appointments.validation.doctorRequired"));
+              return;
+            }
+            if (!form.appointmentDate?.trim()) {
+              toast.error(t("appointments.validation.dateRequired"));
+              return;
+            }
+            if (!form.appointmentTime?.trim()) {
+              toast.error(t("appointments.validation.timeRequired"));
               return;
             }
             if (editingId) {
@@ -923,7 +954,7 @@ export default function AppointmentsPage() {
           }
           getSearchText={(row) => `${row.patient} ${row.doctor} ${row.start} ${row.status} ${row.entryType}`}
           getStatus={(row) => row.status}
-          getDate={(row) => row.start.slice(0, 10)}
+          getDate={(row) => row.startsAtIso.slice(0, 10)}
           renderCard={(row) => (
           <div className="space-y-3 rounded-2xl border border-slate-200/80 border-l-4 border-l-orange-500 bg-gradient-to-br from-white to-orange-50/30 p-4 shadow-sm transition hover:shadow-md">
             <h3 className="text-base font-bold text-slate-900">{row.patient}</h3>
@@ -1009,7 +1040,7 @@ export default function AppointmentsPage() {
         onCancel={() => setDeleteTarget(null)}
         onConfirm={() => {
           if (!deleteTarget) return;
-          removeMutation.mutate(deleteTarget.id);
+          removeMutation.mutate({ id: deleteTarget.id, clinicId: deleteTarget.clinicId });
         }}
       />
       {whatsappTarget ? (

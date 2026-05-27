@@ -5,6 +5,7 @@ import { createContext, useCallback, useContext, useMemo, useRef, useState } fro
 import { AnimatePresence, motion } from "framer-motion";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useI18n } from "./i18n-provider";
+import { BRAND } from "@/lib/brand";
 
 interface LoadingOverlayContextValue {
   startLoading: () => void;
@@ -73,13 +74,13 @@ export function LoadingOverlayProvider({ children }: { children: React.ReactNode
               className="flex w-full max-w-sm flex-col items-center rounded-3xl border border-white/60 bg-white/90 px-8 py-10 shadow-premium"
             >
               <Image
-                src="/healthcare.jpeg"
-                alt="Healthcare CRM logo"
-                width={90}
-                height={90}
-                className="rounded-2xl"
+                src={BRAND.logoSrc}
+                alt={BRAND.logoAlt}
+                width={120}
+                height={80}
+                className="h-auto w-full max-w-[120px] object-contain"
               />
-              <p className="mt-4 text-lg font-semibold text-brand-navy">HealthCare CRM</p>
+              <p className="mt-4 text-lg font-semibold text-brand-navy">{BRAND.name}</p>
               <div className="mt-4 inline-flex items-center gap-2 text-sm text-slate-600">
                 <LoadingSpinner className="h-4 w-4 text-orange-500" />
                 {t("common.loading")}

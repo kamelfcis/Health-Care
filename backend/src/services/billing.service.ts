@@ -1,7 +1,7 @@
-import { InvoiceStatus, Prisma } from "@prisma/client";
+import { InvoiceSourceType, InvoiceStatus, Prisma, VisitEntryType } from "@prisma/client";
 import { prisma } from "../config/prisma";
 import { AppError } from "../utils/app-error";
-import { syncInvoiceStatusFromPayments } from "./payment.service";
+import { invoiceTotalDue, syncInvoiceStatusFromPayments } from "./payment.service";
 
 interface ListInput {
   clinicId?: string;
@@ -18,6 +18,7 @@ interface ListInput {
   dueFrom?: string;
   /** Inclusive due date upper bound YYYY-MM-DD (UTC) */
   dueTo?: string;
+  invoiceType?: InvoiceSourceType;
 }
 
 export type BillingCreateInput = {
@@ -30,7 +31,19 @@ export type BillingCreateInput = {
   dueDate?: string;
   notes?: string;
   status?: InvoiceStatus;
+  invoiceType?: InvoiceSourceType;
 };
+
+const INVOICE_LIST_INCLUDE = {
+  patient: true,
+  appointment: { select: { id: true, startsAt: true, status: true, entryType: true } },
+  patientProcedure: { select: { id: true, name: true } },
+  payments: { where: { deletedAt: null } }
+} as const;
+
+function entryTypeToInvoiceType(entryType: VisitEntryType): InvoiceSourceType {
+  return entryType === "CONSULTATION" ? "CONSULTATION" : "EXAM";
+}
 
 async function assertAppointmentBelongsToPatient(clinicId: string, patientId: string, appointmentId: string) {
   const appt = await prisma.appointment.findFirst({
@@ -39,6 +52,21 @@ async function assertAppointmentBelongsToPatient(clinicId: string, patientId: st
   if (!appt) {
     throw new AppError("Appointment not found for this patient", 404);
   }
+  return appt;
+}
+
+async function resolveInvoiceTypeForCreate(
+  clinicId: string,
+  patientId: string,
+  appointmentId: string | null,
+  provided?: InvoiceSourceType
+): Promise<InvoiceSourceType> {
+  if (provided) return provided;
+  if (appointmentId) {
+    const appt = await assertAppointmentBelongsToPatient(clinicId, patientId, appointmentId);
+    return entryTypeToInvoiceType(appt.entryType);
+  }
+  return "OTHER";
 }
 
 export const billingService = {
@@ -79,7 +107,8 @@ export const billingService = {
               ...(input.dueTo ? { lte: new Date(`${input.dueTo}T23:59:59.999Z`) } : {})
             }
           }
-        : {})
+        : {}),
+      ...(input.invoiceType ? { invoiceType: input.invoiceType } : {})
     };
 
     const orderBy: Prisma.InvoiceOrderByWithRelationInput | Prisma.InvoiceOrderByWithRelationInput[] =
@@ -90,7 +119,7 @@ export const billingService = {
     const [items, total] = await Promise.all([
       prisma.invoice.findMany({
         where,
-        include: { patient: true, appointment: true, payments: { where: { deletedAt: null } } },
+        include: INVOICE_LIST_INCLUDE,
         skip: (input.page - 1) * input.pageSize,
         take: input.pageSize,
         orderBy
@@ -153,51 +182,82 @@ export const billingService = {
     let appointmentId: string | null = null;
     const rawAppt = data.appointmentId?.trim();
     if (rawAppt) {
-      await assertAppointmentBelongsToPatient(clinicId, data.patientId, rawAppt);
       appointmentId = rawAppt;
     }
 
-    let invoiceNumber = data.invoiceNumber?.trim();
-    if (!invoiceNumber) {
-      const counter = await prisma.clinicCounter.upsert({
-        where: { clinicId },
-        create: { clinicId, lastPatientFileNumber: 0, lastInvoiceSequence: 1 },
-        update: { lastInvoiceSequence: { increment: 1 } }
-      });
-      invoiceNumber = `INV-${String(counter.lastInvoiceSequence).padStart(5, "0")}`;
-    }
+    const invoiceType = await resolveInvoiceTypeForCreate(
+      clinicId,
+      data.patientId,
+      appointmentId,
+      data.invoiceType
+    );
 
-    const existingNum = await prisma.invoice.findFirst({
-      where: { clinicId, invoiceNumber, deletedAt: null }
-    });
-    if (existingNum) {
-      throw new AppError("Invoice number already exists for this clinic", 409);
-    }
+    const invoiceNumber = data.invoiceNumber?.trim() || undefined;
 
     const taxAmount = data.taxAmount ?? 0;
     const discount = data.discount ?? 0;
-    const initialStatus = data.status ?? "PENDING";
+    const requestedStatus = data.status ?? "PENDING";
+    const markPaidOnCreate = requestedStatus === "PAID";
+    const initialStatus = markPaidOnCreate ? "PENDING" : requestedStatus;
 
-    const created = await prisma.invoice.create({
-      data: {
-        clinicId,
-        patientId: data.patientId,
-        appointmentId,
-        invoiceNumber,
-        amount: data.amount,
-        taxAmount,
-        discount,
-        dueDate: data.dueDate ? new Date(data.dueDate) : null,
-        notes: data.notes,
-        status: initialStatus
+    const created = await prisma.$transaction(async (tx) => {
+      let resolvedInvoiceNumber = invoiceNumber;
+      if (!resolvedInvoiceNumber) {
+        const counter = await tx.clinicCounter.upsert({
+          where: { clinicId },
+          create: { clinicId, lastPatientFileNumber: 0, lastInvoiceSequence: 1 },
+          update: { lastInvoiceSequence: { increment: 1 } }
+        });
+        resolvedInvoiceNumber = `INV-${String(counter.lastInvoiceSequence).padStart(5, "0")}`;
       }
+
+      const duplicateNum = await tx.invoice.findFirst({
+        where: { clinicId, invoiceNumber: resolvedInvoiceNumber, deletedAt: null }
+      });
+      if (duplicateNum) {
+        throw new AppError("Invoice number already exists for this clinic", 409);
+      }
+
+      const invoice = await tx.invoice.create({
+        data: {
+          clinicId,
+          patientId: data.patientId,
+          appointmentId,
+          invoiceNumber: resolvedInvoiceNumber,
+          amount: data.amount,
+          taxAmount,
+          discount,
+          dueDate: data.dueDate ? new Date(data.dueDate) : null,
+          notes: data.notes,
+          status: initialStatus,
+          invoiceType
+        }
+      });
+
+      if (markPaidOnCreate) {
+        const totalDue = invoiceTotalDue(invoice);
+        if (totalDue > 0.005) {
+          await tx.payment.create({
+            data: {
+              clinicId,
+              invoiceId: invoice.id,
+              amount: totalDue,
+              method: "CASH",
+              status: "SUCCESS",
+              paidAt: new Date()
+            }
+          });
+        }
+      }
+
+      return invoice;
     });
 
     await syncInvoiceStatusFromPayments(created.id);
 
     return prisma.invoice.findFirst({
       where: { id: created.id },
-      include: { patient: true, appointment: true, payments: { where: { deletedAt: null } } }
+      include: INVOICE_LIST_INCLUDE
     });
   },
 
@@ -212,8 +272,17 @@ export const billingService = {
       discount?: number;
       dueDate?: string | null;
       appointmentId?: string | null;
+      invoiceType?: InvoiceSourceType;
     }
   ) {
+    const existing = await prisma.invoice.findFirst({
+      where: { id, ...(clinicId ? { clinicId } : {}), deletedAt: null },
+      include: { patientProcedure: { select: { id: true } } }
+    });
+    if (!existing) {
+      throw new AppError("Invoice not found", 404);
+    }
+
     const patch: Record<string, unknown> = {};
     if (data.status !== undefined) patch.status = data.status;
     if (data.notes !== undefined) patch.notes = data.notes;
@@ -228,20 +297,20 @@ export const billingService = {
       if (data.appointmentId === null || data.appointmentId === "") {
         patch.appointmentId = null;
       } else {
-        const inv = await prisma.invoice.findFirst({
-          where: { id, ...(clinicId ? { clinicId } : {}), deletedAt: null },
-          select: { patientId: true, clinicId: true }
-        });
-        if (!inv) {
-          throw new AppError("Invoice not found", 404);
-        }
-        await assertAppointmentBelongsToPatient(inv.clinicId, inv.patientId, data.appointmentId);
+        await assertAppointmentBelongsToPatient(existing.clinicId, existing.patientId, data.appointmentId);
         patch.appointmentId = data.appointmentId;
       }
     }
 
+    if (data.invoiceType !== undefined) {
+      if (existing.patientProcedure) {
+        throw new AppError("Procedure invoice type cannot be changed", 400);
+      }
+      patch.invoiceType = data.invoiceType;
+    }
+
     const result = await prisma.invoice.updateMany({
-      where: { id, ...(clinicId ? { clinicId } : {}), deletedAt: null },
+      where: { id: existing.id, clinicId: existing.clinicId, deletedAt: null },
       data: patch as {
         status?: InvoiceStatus;
         notes?: string;
@@ -250,6 +319,7 @@ export const billingService = {
         discount?: number;
         dueDate?: Date | null;
         appointmentId?: string | null;
+        invoiceType?: InvoiceSourceType;
       }
     });
     if (!result.count) {
@@ -263,7 +333,7 @@ export const billingService = {
 
     return prisma.invoice.findFirst({
       where: { id },
-      include: { patient: true, appointment: true, payments: { where: { deletedAt: null } } }
+      include: INVOICE_LIST_INCLUDE
     });
   },
 

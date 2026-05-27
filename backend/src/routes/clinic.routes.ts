@@ -113,6 +113,7 @@ router.patch(
 );
 
 router.get("/", requireAuth, allowRoles("SuperAdmin"), asyncHandler(clinicController.list));
+router.get("/:id/users", requireAuth, allowRoles("SuperAdmin"), asyncHandler(clinicController.listUsers));
 router.post(
   "/",
   requireAuth,

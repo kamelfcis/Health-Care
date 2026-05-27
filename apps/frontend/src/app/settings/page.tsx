@@ -10,6 +10,8 @@ import { FloatingInput } from "@/components/ui/floating-input";
 import { RippleButton } from "@/components/ui/ripple-button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { ClinicSpecialtiesSettings } from "@/components/settings/clinic-specialties-settings";
+import { CLINIC_ME_QUERY_KEY } from "@/hooks/use-clinic-currency";
 import { clinicService } from "@/lib/clinic-service";
 import { COUNTRY_OPTIONS, CURRENCY_OPTIONS } from "@/lib/country-currency-data";
 import { storage } from "@/lib/storage";
@@ -38,7 +40,7 @@ export default function SettingsPage() {
   const isClinicAdmin = userRole === "ClinicAdmin";
 
   const clinicQuery = useQuery({
-    queryKey: ["settings", "clinic-me", userRole ?? "none"],
+    queryKey: [...CLINIC_ME_QUERY_KEY, userRole ?? "none"],
     queryFn: () => clinicService.getMyClinic(),
     enabled: hasHydrated && isClinicAdmin
   });
@@ -101,9 +103,11 @@ export default function SettingsPage() {
     },
     onSuccess: () => {
       toast.success(t("settings.updated"));
-      void queryClient.invalidateQueries({ queryKey: ["settings", "clinic-me"] });
+      void queryClient.invalidateQueries({ queryKey: CLINIC_ME_QUERY_KEY });
       void queryClient.invalidateQueries({ queryKey: ["top-navbar", "clinics"] });
       void queryClient.invalidateQueries({ queryKey: ["clinics", "for-filter"] });
+      void queryClient.invalidateQueries({ queryKey: ["clinics", "for-finance"] });
+      void queryClient.invalidateQueries({ queryKey: ["clinics", "for-procedures"] });
       setClinicImageFile(null);
     },
     onError: (error) => {
@@ -251,6 +255,7 @@ export default function SettingsPage() {
             </RippleButton>
           </form>
         ) : null}
+        {hasHydrated && isClinicAdmin ? <ClinicSpecialtiesSettings /> : null}
       </div>
     </AppShell>
   );

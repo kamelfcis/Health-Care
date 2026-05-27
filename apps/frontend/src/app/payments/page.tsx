@@ -11,7 +11,7 @@ import { EntityCollectionView } from "@/components/ui/entity-collection-view";
 import { RippleButton } from "@/components/ui/ripple-button";
 import { useI18n } from "@/components/providers/i18n-provider";
 import { clinicService } from "@/lib/clinic-service";
-import { formatCurrency } from "@/lib/currency-format";
+import { useClinicCurrency } from "@/hooks/use-clinic-currency";
 import {
   paymentService,
   PaymentCreatePayload,
@@ -138,22 +138,10 @@ function PaymentsPageInner() {
     queryFn: () => clinicService.list(),
     enabled: isSuperAdmin
   });
-  const myClinicQuery = useQuery({
-    queryKey: ["settings", "clinic-me", currentUser?.role ?? "none"],
-    queryFn: () => clinicService.getMyClinic(),
-    enabled: !!currentUser && currentUser.role !== "SuperAdmin"
+  const { formatMoney } = useClinicCurrency({
+    clinicId: isSuperAdmin ? selectedClinicId : undefined,
+    clinics: clinicsQuery.data
   });
-
-  const clinicCurrencyById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const clinic of clinicsQuery.data ?? []) {
-      if (clinic.id) map.set(clinic.id, (clinic.currencyCode ?? "USD").toUpperCase());
-    }
-    if (myClinicQuery.data?.id) {
-      map.set(myClinicQuery.data.id, (myClinicQuery.data.currencyCode ?? "USD").toUpperCase());
-    }
-    return map;
-  }, [clinicsQuery.data, myClinicQuery.data]);
 
   const invoicePickClinicId = isSuperAdmin
     ? selectedClinicId === "all"
@@ -295,7 +283,7 @@ function PaymentsPageInner() {
         clinicId: item.clinicId,
         invoiceId: item.invoiceId,
         invoice: item.invoice?.invoiceNumber ?? "-",
-        amount: formatCurrency(item.amount, clinicCurrencyById.get(item.clinicId) ?? "USD"),
+        amount: formatMoney(item.amount),
         method: methodLabel(item.method),
         methodKey: item.method,
         status: item.status,
@@ -303,7 +291,7 @@ function PaymentsPageInner() {
         ref: item.transactionRef ?? "-",
         amountNum: item.amount
       })) ?? [],
-    [paymentsListQuery.data?.data, clinicCurrencyById, methodLabel]
+    [formatMoney, paymentsListQuery.data?.data, methodLabel]
   );
 
   const invalidatePayments = () => {
@@ -395,8 +383,6 @@ function PaymentsPageInner() {
   );
 
   const stats = statsQuery.data;
-  const currency =
-    (listClinicId ? clinicCurrencyById.get(listClinicId) : myClinicQuery.data?.currencyCode?.toUpperCase()) ?? "USD";
 
   const selectedInvoiceBalance = useMemo(() => {
     if (!formInvoiceId || payModal !== "create") return null;
@@ -449,9 +435,8 @@ function PaymentsPageInner() {
   };
 
   const formatInvOption = (inv: (typeof payableInvoices)[0]) => {
-    const cur = clinicCurrencyById.get(inv.clinicId) ?? "USD";
     const bal = invoiceBalanceDue(inv);
-    return `${inv.invoiceNumber} — ${inv.patient?.fullName ?? ""} · ${t("billing.column.balanceDue")} ${formatCurrency(bal, cur)} (${inv.status})`;
+    return `${inv.invoiceNumber} — ${inv.patient?.fullName ?? ""} · ${t("billing.column.balanceDue")} ${formatMoney(bal)} (${inv.status})`;
   };
 
   return (
@@ -484,7 +469,7 @@ function PaymentsPageInner() {
             <>
               <StatCard
                 title={t("payments.stats.collected")}
-                value={formatCurrency(stats.successTotalAmount, currency)}
+                value={formatMoney(stats.successTotalAmount)}
                 icon={<Banknote size={17} />}
                 gradientClassName="bg-gradient-to-br from-emerald-50 via-white to-teal-100"
                 iconClassName="bg-emerald-500"
@@ -505,7 +490,7 @@ function PaymentsPageInner() {
               />
               <StatCard
                 title={t("payments.stats.thisMonth")}
-                value={formatCurrency(stats.thisMonthAmount, currency)}
+                value={formatMoney(stats.thisMonthAmount)}
                 icon={<Banknote size={17} />}
                 gradientClassName="bg-gradient-to-br from-violet-50 via-white to-fuchsia-100"
                 iconClassName="bg-violet-500"

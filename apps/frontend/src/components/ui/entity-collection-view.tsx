@@ -13,6 +13,8 @@ interface EntityCollectionViewProps<TData> {
   data: TData[];
   columns: ColumnDef<TData>[];
   title: string;
+  /** Rendered beside the page title (e.g. filter toggles) */
+  titleExtra?: React.ReactNode;
   addButton?: React.ReactNode;
   belowHeader?: React.ReactNode;
   statusOptions: FilterOption[];
@@ -34,12 +36,15 @@ interface EntityCollectionViewProps<TData> {
   filterExtras?: React.ReactNode;
   /** Center-align table mode headers and cells */
   tableCellsCenter?: boolean;
+  /** Optional thead classes for table mode (e.g. branded orange header) */
+  tableHeaderClassName?: string;
 }
 
 export function EntityCollectionView<TData>({
   data,
   columns,
   title,
+  titleExtra,
   addButton,
   belowHeader,
   statusOptions,
@@ -55,7 +60,8 @@ export function EntityCollectionView<TData>({
   serverTotal,
   dateRangeHint,
   filterExtras,
-  tableCellsCenter
+  tableCellsCenter,
+  tableHeaderClassName
 }: EntityCollectionViewProps<TData>) {
   const { state, setQuery } = useListQueryState();
   const [searchInput, setSearchInput] = useState(state.q);
@@ -99,7 +105,10 @@ export function EntityCollectionView<TData>({
   return (
     <section className="space-y-3">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-semibold text-brand-navy">{title}</h1>
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-semibold text-brand-navy">{title}</h1>
+          {titleExtra}
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <ViewToggle value={state.view} onChange={(view) => setQuery({ view })} storageKey={storageKey} />
           {addButton}
@@ -144,6 +153,7 @@ export function EntityCollectionView<TData>({
         cardRender={renderCard}
         loading={listLoading}
         cellsCenter={tableCellsCenter}
+        headerClassName={tableHeaderClassName}
       />
 
       {!listLoading ? (

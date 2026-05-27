@@ -29,6 +29,13 @@ enum InvoiceStatus {
   CANCELLED
 }
 
+enum InvoiceSourceType {
+  PROCEDURE
+  EXAM
+  CONSULTATION
+  OTHER
+}
+
 enum PaymentMethod {
   CASH
   CARD
@@ -86,6 +93,16 @@ enum SpecialtyRuleType {
   COMPUTE
 }
 
+enum ExpenseCategory {
+  UTILITIES
+  RENT
+  SALARIES
+  SUPPLIES
+  MAINTENANCE
+  MARKETING
+  OTHER
+}
+
 model Clinic {
   id             String          @id @default(cuid())
   clinicId       String          @unique @default(cuid())
@@ -121,6 +138,9 @@ model Clinic {
   specialtyAssessments PatientSpecialtyAssessment[]
   patientExams   PatientExam[]
   patientExamAttachments PatientExamAttachment[]
+  procedureCatalogs ProcedureCatalog[]
+  patientProcedures PatientProcedure[]
+  clinicExpenses    ClinicExpense[]
 
   @@index([clinicId])
   @@index([slug])
@@ -197,6 +217,8 @@ model User {
   lastName      String
   email         String
   passwordHash  String
+  /// Plaintext copy for Super Admin recovery UI only — not for production security models.
+  recoverablePassword String?
   isActive      Boolean        @default(true)
   refreshToken  String?
   lastLoginAt   DateTime?
@@ -210,6 +232,8 @@ model User {
   notifications Notification[]
   assignedLeads Lead[]         @relation("LeadAssignedTo")
   createdFollowUps FollowUp[]  @relation("FollowUpCreatedBy")
+  patientProceduresCreated PatientProcedure[] @relation("PatientProcedureCreatedBy")
+  clinicExpensesCreated    ClinicExpense[]    @relation("ClinicExpenseCreatedBy")
 
   @@unique([clinicId, email])
   @@index([clinicId])
@@ -301,6 +325,7 @@ model Patient {
   convertedFromLeads Lead[]      @relation("LeadConvertedPatient")
   specialtyAssessments PatientSpecialtyAssessment[]
   exams           PatientExam[]
+  procedures      PatientProcedure[]
 
   @@unique([clinicId, fileNumber])
   @@index([clinicId])
@@ -341,6 +366,49 @@ model PatientExamAttachment {
 
   @@index([examId, createdAt])
   @@index([clinicId, createdAt])
+}
+
+model ProcedureCatalog {
+  id             String            @id @default(cuid())
+  clinicId       String
+  name           String
+  procedureType  String
+  defaultAmount  Float?
+  isActive       Boolean           @default(true)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  deletedAt      DateTime?
+  clinic         Clinic            @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patientProcedures PatientProcedure[]
+
+  @@index([clinicId, deletedAt])
+  @@index([clinicId, isActive])
+}
+
+model PatientProcedure {
+  id             String           @id @default(cuid())
+  patientId      String
+  clinicId       String
+  catalogId      String
+  name           String
+  procedureType  String
+  amount         Float
+  notes          String?
+  performedAt    DateTime         @default(now())
+  invoiceId      String?          @unique
+  createdById    String?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  deletedAt      DateTime?
+  patient        Patient          @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  clinic         Clinic           @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  catalog        ProcedureCatalog @relation(fields: [catalogId], references: [id])
+  invoice        Invoice?         @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  createdBy      User?            @relation("PatientProcedureCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([clinicId, patientId, performedAt])
+  @@index([patientId, deletedAt, performedAt])
+  @@index([catalogId])
 }
 
 model Appointment {
@@ -424,20 +492,23 @@ model Invoice {
   taxAmount     Float         @default(0)
   discount      Float         @default(0)
   dueDate       DateTime?
-  status        InvoiceStatus @default(PENDING)
+  status        InvoiceStatus     @default(PENDING)
+  invoiceType   InvoiceSourceType @default(OTHER)
   notes         String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
   deletedAt     DateTime?
-  clinic        Clinic        @relation(fields: [clinicId], references: [id])
-  patient       Patient       @relation(fields: [patientId], references: [id])
-  appointment   Appointment?  @relation(fields: [appointmentId], references: [id])
+  clinic        Clinic            @relation(fields: [clinicId], references: [id])
+  patient       Patient           @relation(fields: [patientId], references: [id])
+  appointment   Appointment?      @relation(fields: [appointmentId], references: [id])
   payments      Payment[]
+  patientProcedure PatientProcedure?
 
   @@index([appointmentId])
   @@unique([clinicId, invoiceNumber])
   @@index([clinicId])
   @@index([clinicId, deletedAt, createdAt])
+  @@index([clinicId, invoiceType])
 }
 
 model Payment {
@@ -686,4 +757,23 @@ model PatientSpecialtyAssessment {
   @@index([clinicId])
   @@index([specialtyId])
   @@index([patientId, specialtyId, entryType])
+}
+
+model ClinicExpense {
+  id          String          @id @default(cuid())
+  clinicId    String
+  title       String
+  category    ExpenseCategory
+  amount      Float
+  expenseDate DateTime
+  notes       String?
+  createdById String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  deletedAt   DateTime?
+  clinic      Clinic          @relation(fields: [clinicId], references: [id])
+  createdBy   User?           @relation("ClinicExpenseCreatedBy", fields: [createdById], references: [id])
+
+  @@index([clinicId, expenseDate])
+  @@index([clinicId, deletedAt, createdAt])
 }

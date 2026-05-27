@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { hashPasswordWithRecoverable } from "../utils/user-password";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../config/prisma";
 import { permissionService } from "./permission.service";
@@ -142,7 +143,7 @@ export const adminService = {
       throw new AppError("This role cannot be assigned by Clinic Admin", 403);
     }
 
-    const passwordHash = await bcrypt.hash(input.password, 12);
+    const { passwordHash, recoverablePassword } = await hashPasswordWithRecoverable(input.password);
     const user = await prisma.$transaction(async (tx) => {
       const createdUser = await tx.user.create({
         data: {
@@ -151,7 +152,8 @@ export const adminService = {
           firstName: input.firstName,
           lastName: input.lastName,
           email: input.email.toLowerCase(),
-          passwordHash
+          passwordHash,
+          recoverablePassword
         },
         include: { role: true }
       });
@@ -190,7 +192,7 @@ export const adminService = {
       throw new AppError("This account cannot be edited", 403);
     }
 
-    const data: { email?: string; passwordHash?: string } = {};
+    const data: { email?: string; passwordHash?: string; recoverablePassword?: string } = {};
 
     if (input.email) {
       const normalizedEmail = input.email.toLowerCase();
@@ -206,7 +208,9 @@ export const adminService = {
     }
 
     if (input.newPassword) {
-      data.passwordHash = await bcrypt.hash(input.newPassword, 12);
+      const hashed = await hashPasswordWithRecoverable(input.newPassword);
+      data.passwordHash = hashed.passwordHash;
+      data.recoverablePassword = hashed.recoverablePassword;
     }
 
     if (Object.keys(data).length === 0) {

@@ -15,13 +15,15 @@ import { useI18n } from "@/components/providers/i18n-provider";
 import {
   billingService,
   BillingListItem,
+  INVOICE_SOURCE_TYPES,
   invoiceBalanceDue,
   invoiceTotalDue,
   type BillingCreatePayload,
-  type BillingUpdatePayload
+  type BillingUpdatePayload,
+  type InvoiceSourceType
 } from "@/lib/billing-service";
 import { clinicService } from "@/lib/clinic-service";
-import { formatCurrency } from "@/lib/currency-format";
+import { useClinicCurrency } from "@/hooks/use-clinic-currency";
 import { patientService, PatientListItem } from "@/lib/patient-service";
 import { appointmentService } from "@/lib/appointment-service";
 import { storage } from "@/lib/storage";
@@ -31,8 +33,143 @@ import { useListQueryState } from "@/hooks/use-list-query-state";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/ui/searchable-select";
 
 const INVOICE_STATUSES = ["DRAFT", "PENDING", "PAID", "OVERDUE", "CANCELLED"] as const;
+
+function invoiceTypeBadgeClass(type: InvoiceSourceType): string {
+  switch (type) {
+    case "PROCEDURE":
+      return "border-violet-200 bg-violet-50 text-violet-800";
+    case "EXAM":
+      return "border-cyan-200 bg-cyan-50 text-cyan-800";
+    case "CONSULTATION":
+      return "border-indigo-200 bg-indigo-50 text-indigo-800";
+    default:
+      return "border-slate-200 bg-slate-50 text-slate-700";
+  }
+}
+
+function InvoiceTypeBadge({ label, type }: { label: string; type: InvoiceSourceType }) {
+  return (
+    <span className={cn("inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium", invoiceTypeBadgeClass(type))}>
+      {label}
+    </span>
+  );
+}
+
+type InvoiceTypeFilterOption = { value: string; label: string };
+
+function InvoiceTypeFilterToggles({
+  value,
+  options,
+  onChange,
+  ariaLabel
+}: {
+  value: string;
+  options: InvoiceTypeFilterOption[];
+  onChange: (value: string) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <div
+      className="inline-flex max-w-full flex-wrap items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm"
+      role="group"
+      aria-label={ariaLabel}
+    >
+      {options.map((opt) => {
+        const active = value === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(opt.value)}
+            className={cn(
+              "inline-flex h-9 shrink-0 items-center rounded-lg px-2.5 text-xs font-medium transition sm:px-3 sm:text-sm",
+              active ? "bg-orange-500 text-white shadow-sm" : "text-slate-600 hover:bg-orange-50"
+            )}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function entryTypeToInvoiceType(entryType?: string): InvoiceSourceType {
+  return entryType === "CONSULTATION" ? "CONSULTATION" : "EXAM";
+}
+
+/** Premium status accents for cards and table badges (RTL-safe logical start border). */
+function invoiceStatusStyles(status: string): { card: string; badge: string; shine: string } {
+  switch (status) {
+    case "PAID":
+      return {
+        card: "border-s-[5px] border-s-emerald-600 border-emerald-300/90 bg-gradient-to-br from-emerald-100 via-emerald-50/90 to-white shadow-md shadow-emerald-200/60",
+        badge:
+          "border-emerald-400/90 bg-gradient-to-r from-emerald-200 via-emerald-100 to-emerald-50 text-emerald-950 ring-emerald-300/60 shadow-emerald-200/50",
+        shine: "via-white/70"
+      };
+    case "OVERDUE":
+      return {
+        card: "border-s-[5px] border-s-amber-600 border-amber-300/90 bg-gradient-to-br from-amber-100 via-orange-50/90 to-rose-100/80 shadow-md shadow-amber-200/60",
+        badge:
+          "border-amber-400/90 bg-gradient-to-r from-amber-200 via-amber-100 to-orange-50 text-amber-950 ring-amber-300/60 shadow-amber-200/50",
+        shine: "via-white/65"
+      };
+    case "CANCELLED":
+      return {
+        card: "border-s-[5px] border-s-slate-500 border-slate-300/90 bg-gradient-to-br from-slate-200/90 via-slate-50 to-slate-100/70 opacity-[0.97] shadow-md shadow-slate-200/50",
+        badge:
+          "border-slate-400/80 bg-gradient-to-r from-slate-200 via-slate-100 to-slate-50 text-slate-700 ring-slate-300/50 shadow-slate-200/40",
+        shine: "via-white/50"
+      };
+    case "PENDING":
+      return {
+        card: "border-s-[5px] border-s-sky-600 border-sky-300/90 bg-gradient-to-br from-sky-100 via-sky-50/80 to-orange-50/60 shadow-md shadow-sky-200/55",
+        badge:
+          "border-sky-400/90 bg-gradient-to-r from-sky-200 via-sky-100 to-cyan-50 text-sky-950 ring-sky-300/60 shadow-sky-200/50",
+        shine: "via-white/65"
+      };
+    case "DRAFT":
+      return {
+        card: "border-s-[5px] border-s-zinc-400 border-zinc-300/80 bg-gradient-to-br from-zinc-100/80 via-white to-zinc-50/60 shadow-md shadow-zinc-200/40",
+        badge:
+          "border-zinc-300 bg-gradient-to-r from-zinc-200 via-zinc-100 to-white text-zinc-700 ring-zinc-300/50 shadow-zinc-200/30",
+        shine: "via-white/55"
+      };
+    default:
+      return {
+        card: "border-s-[5px] border-s-slate-400 border-slate-300/80 bg-white shadow-md",
+        badge:
+          "border-slate-300 bg-gradient-to-r from-slate-100 to-slate-50 text-slate-800 ring-slate-200/50",
+        shine: "via-white/55"
+      };
+  }
+}
+
+function InvoiceStatusBadge({ status, label }: { status: string; label: string }) {
+  const styles = invoiceStatusStyles(status);
+  return (
+    <span
+      className={cn(
+        "relative inline-flex shrink-0 items-center overflow-hidden rounded-full border px-3 py-1 text-xs font-bold shadow-sm ring-1 ring-inset",
+        styles.badge
+      )}
+    >
+      <span className="relative z-10 whitespace-nowrap">{label}</span>
+      <span
+        className={cn(
+          "pointer-events-none absolute inset-y-0 start-0 w-[55%] animate-shine bg-gradient-to-r from-transparent to-transparent",
+          styles.shine
+        )}
+        aria-hidden
+      />
+    </span>
+  );
+}
 
 function getApiErrorMessage(error: unknown): string | null {
   if (axios.isAxiosError(error)) {
@@ -53,6 +190,8 @@ type InvoiceRow = {
   balanceDue: string;
   dueDate: string;
   status: string;
+  invoiceType: InvoiceSourceType;
+  typeLabel: string;
 };
 
 function BillingPageInner() {
@@ -92,23 +231,10 @@ function BillingPageInner() {
     queryFn: () => clinicService.list(),
     enabled: isSuperAdmin
   });
-  const myClinicQuery = useQuery({
-    queryKey: ["settings", "clinic-me", currentUser?.role ?? "none"],
-    queryFn: () => clinicService.getMyClinic(),
-    enabled: !!currentUser && currentUser.role !== "SuperAdmin"
+  const { formatMoney } = useClinicCurrency({
+    clinicId: isSuperAdmin ? selectedClinicId : undefined,
+    clinics: clinicsQuery.data
   });
-
-  const clinicCurrencyById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const clinic of clinicsQuery.data ?? []) {
-      if (clinic.id) map.set(clinic.id, (clinic.currencyCode ?? "USD").toUpperCase());
-    }
-    if (myClinicQuery.data?.id) {
-      map.set(myClinicQuery.data.id, (myClinicQuery.data.currencyCode ?? "USD").toUpperCase());
-    }
-    return map;
-  }, [clinicsQuery.data, myClinicQuery.data]);
-
   const listPage = state.page;
   const listPageSize = state.pageSize;
   const listSearch = state.q.trim() || undefined;
@@ -118,6 +244,19 @@ function BillingPageInner() {
   const listOpenOnly = state.openOnly;
   const listDueFrom = state.from.trim() || undefined;
   const listDueTo = state.to.trim() || undefined;
+  const listInvoiceType =
+    state.invoiceType !== "all" && (INVOICE_SOURCE_TYPES as readonly string[]).includes(state.invoiceType)
+      ? (state.invoiceType as InvoiceSourceType)
+      : undefined;
+
+  const invoiceTypeLabel = useCallback(
+    (type: InvoiceSourceType) => {
+      const key = `billing.invoiceType.${type}`;
+      const translated = t(key);
+      return translated === key ? type : translated;
+    },
+    [t]
+  );
 
   const billingListQuery = useQuery({
     queryKey: [
@@ -129,6 +268,7 @@ function BillingPageInner() {
       listPageSize,
       listSearch ?? "",
       listStatus ?? "",
+      listInvoiceType ?? "",
       listSort,
       listOpenOnly ? "1" : "",
       listDueFrom ?? "",
@@ -142,6 +282,7 @@ function BillingPageInner() {
         pageSize: listPageSize,
         search: listSearch,
         status: listStatus,
+        invoiceType: listInvoiceType,
         sort: listSort,
         openOnly: listOpenOnly,
         from: listDueFrom,
@@ -158,7 +299,6 @@ function BillingPageInner() {
   const rows: InvoiceRow[] = useMemo(
     () =>
       (billingListQuery.data?.data ?? []).map((item) => {
-        const cur = clinicCurrencyById.get(item.clinicId) ?? "USD";
         const due = item.dueDate ? String(item.dueDate).slice(0, 10) : "-";
         const bal = invoiceBalanceDue(item);
         return {
@@ -168,13 +308,15 @@ function BillingPageInner() {
           invoice: item.invoiceNumber,
           patient: item.patient?.fullName ?? "-",
           patientId: item.patientId,
-          amount: formatCurrency(invoiceTotalDue(item), cur),
-          balanceDue: formatCurrency(bal, cur),
+          amount: formatMoney(invoiceTotalDue(item)),
+          balanceDue: formatMoney(bal),
           dueDate: due,
-          status: item.status
+          status: item.status,
+          invoiceType: (item.invoiceType ?? "OTHER") as InvoiceSourceType,
+          typeLabel: invoiceTypeLabel((item.invoiceType ?? "OTHER") as InvoiceSourceType)
         };
       }),
-    [billingListQuery.data?.data, clinicCurrencyById]
+    [billingListQuery.data?.data, formatMoney, invoiceTypeLabel]
   );
 
   const highlightedId = urlInvoiceId;
@@ -193,6 +335,17 @@ function BillingPageInner() {
     enabled: modalOpen && !!patientListClinic && (!isSuperAdmin || selectedClinicId !== "all")
   });
 
+  const patientSelectOptions: SearchableSelectOption[] = useMemo(() => {
+    return (patientsForSelect.data ?? []).map((p: PatientListItem) => {
+      const parts = [p.fullName, p.phone, p.nationalId, p.id].filter(Boolean);
+      return {
+        value: p.id,
+        label: `${p.fullName} — ${p.phone}`,
+        searchText: parts.join(" ")
+      };
+    });
+  }, [patientsForSelect.data]);
+
   const [formPatientId, setFormPatientId] = useState("");
   const [formInvoiceNumber, setFormInvoiceNumber] = useState("");
   const [formAmount, setFormAmount] = useState("");
@@ -201,6 +354,7 @@ function BillingPageInner() {
   const [formDue, setFormDue] = useState("");
   const [formNotes, setFormNotes] = useState("");
   const [formStatus, setFormStatus] = useState<string>("PENDING");
+  const [formInvoiceType, setFormInvoiceType] = useState<InvoiceSourceType>("OTHER");
   const [formAppointmentId, setFormAppointmentId] = useState("");
 
   const apptPickClinicId = editing?.clinicId ?? patientListClinic ?? undefined;
@@ -217,6 +371,15 @@ function BillingPageInner() {
     setFormAppointmentId("");
   }, [formPatientId, editing]);
 
+  useEffect(() => {
+    if (editing?.patientProcedure) return;
+    if (!formAppointmentId.trim()) return;
+    const appt = (appointmentsPickQuery.data ?? []).find((a) => a.id === formAppointmentId);
+    if (appt?.entryType) {
+      setFormInvoiceType(entryTypeToInvoiceType(appt.entryType));
+    }
+  }, [formAppointmentId, appointmentsPickQuery.data, editing?.patientProcedure]);
+
   const resetForm = () => {
     setFormPatientId("");
     setFormInvoiceNumber("");
@@ -226,6 +389,7 @@ function BillingPageInner() {
     setFormDue("");
     setFormNotes("");
     setFormStatus("PENDING");
+    setFormInvoiceType("OTHER");
     setFormAppointmentId("");
     setPatientQuery("");
     setEditing(null);
@@ -247,10 +411,13 @@ function BillingPageInner() {
     setFormDue(item.dueDate ? String(item.dueDate).slice(0, 10) : "");
     setFormNotes(item.notes ?? "");
     setFormStatus(item.status);
+    setFormInvoiceType(item.invoiceType ?? "OTHER");
     setFormAppointmentId(item.appointmentId ?? "");
     setPatientQuery("");
     setModalOpen(true);
   };
+
+  const isProcedureInvoice = Boolean(editing?.patientProcedure);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -268,7 +435,8 @@ function BillingPageInner() {
           taxAmount,
           discount,
           dueDate: formDue.trim() ? formDue : null,
-          appointmentId: formAppointmentId.trim() || null
+          appointmentId: formAppointmentId.trim() || null,
+          invoiceType: isProcedureInvoice ? undefined : formInvoiceType
         };
         return billingService.update(editing.id, payload, scopeForRowMutation(editing.clinicId));
       }
@@ -280,7 +448,8 @@ function BillingPageInner() {
         discount,
         dueDate: formDue.trim() || undefined,
         notes: formNotes.trim() || undefined,
-        status: formStatus
+        status: formStatus,
+        invoiceType: formInvoiceType
       };
       const num = formInvoiceNumber.trim();
       if (num) payload.invoiceNumber = num;
@@ -291,6 +460,7 @@ function BillingPageInner() {
     onSuccess: () => {
       toast.success(t("billing.saved"));
       queryClient.invalidateQueries({ queryKey: ["billing"] });
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard"] });
       setModalOpen(false);
       resetForm();
@@ -331,22 +501,25 @@ function BillingPageInner() {
   );
 
   const stats = statsQuery.data;
-  const selectedCurrency =
-    listClinicId && clinicCurrencyById.get(listClinicId)
-      ? clinicCurrencyById.get(listClinicId)!
-      : myClinicQuery.data?.currencyCode?.toUpperCase() ?? "USD";
 
   const columns: ColumnDef<InvoiceRow>[] = useMemo(
     () => [
       { header: t("billing.column.invoice"), accessorKey: "invoice" },
       { header: t("nav.patients"), accessorKey: "patient" },
+      {
+        header: t("billing.form.invoiceType"),
+        id: "invoiceType",
+        cell: ({ row }) => <InvoiceTypeBadge type={row.original.invoiceType} label={row.original.typeLabel} />
+      },
       { header: t("billing.column.amount"), accessorKey: "amount" },
       { header: t("billing.column.balanceDue"), accessorKey: "balanceDue" },
       { header: t("billing.column.dueDate"), accessorKey: "dueDate" },
       {
         header: t("field.status"),
         id: "status",
-        cell: ({ row }) => statusLabel(row.original.status)
+        cell: ({ row }) => (
+          <InvoiceStatusBadge status={row.original.status} label={statusLabel(row.original.status)} />
+        )
       },
       ...(canManage || canRecordPayment
         ? [
@@ -394,6 +567,17 @@ function BillingPageInner() {
     [t, canManage, canRecordPayment, statusLabel]
   );
 
+  const invoiceTypeFilterOptions = useMemo(
+    () => [
+      { label: t("billing.invoiceType.all"), value: "all" },
+      ...INVOICE_SOURCE_TYPES.map((type) => ({
+        label: invoiceTypeLabel(type),
+        value: type
+      }))
+    ],
+    [t, invoiceTypeLabel]
+  );
+
   const createDisabled = isSuperAdmin && selectedClinicId === "all";
 
   return (
@@ -438,12 +622,12 @@ function BillingPageInner() {
               <StatCard title={t("billing.stats.paid")} value={stats.paidCount} gradientClassName="bg-gradient-to-br from-emerald-50 to-white" />
               <StatCard
                 title={t("billing.stats.outstanding")}
-                value={formatCurrency(stats.outstandingTotal, selectedCurrency)}
+                value={formatMoney(stats.outstandingTotal)}
                 gradientClassName="bg-gradient-to-br from-orange-50 to-white"
               />
               <StatCard
                 title={t("billing.stats.paymentsThisMonth")}
-                value={formatCurrency(stats.paymentsThisMonthTotal, selectedCurrency)}
+                value={formatMoney(stats.paymentsThisMonthTotal)}
                 gradientClassName="bg-gradient-to-br from-cyan-50 to-white"
               />
               <StatCard title={t("payments.stats.thisMonth")} value={stats.paymentsThisMonthCount} gradientClassName="bg-gradient-to-br from-slate-50 to-white" />
@@ -453,6 +637,14 @@ function BillingPageInner() {
 
         <EntityCollectionView
           title={t("nav.billing")}
+          titleExtra={
+            <InvoiceTypeFilterToggles
+              value={state.invoiceType}
+              options={invoiceTypeFilterOptions}
+              ariaLabel={t("billing.filter.byType")}
+              onChange={(invoiceType) => setQuery({ invoiceType, page: 1 })}
+            />
+          }
           columns={columns}
           data={rows}
           storageKey="billing-view"
@@ -498,23 +690,46 @@ function BillingPageInner() {
               </RippleButton>
             ) : undefined
           }
-          getSearchText={(row) => `${row.invoice} ${row.patient} ${row.amount} ${row.balanceDue} ${row.status} ${row.dueDate}`}
+          getSearchText={(row) =>
+            `${row.invoice} ${row.patient} ${row.typeLabel} ${row.amount} ${row.balanceDue} ${row.status} ${row.dueDate}`
+          }
           getStatus={(row) => row.status}
           getDate={(row) => (row.dueDate !== "-" ? row.dueDate : undefined)}
-          renderCard={(row) => (
-            <div
-              className={cn(
-                "space-y-2",
-                highlightedId === row.id && "ring-2 ring-orange-400 ring-offset-2 rounded-xl p-1 -m-1"
-              )}
-            >
-              <div className="flex items-start justify-between gap-2">
-                <h3 className="font-semibold text-slate-900">{row.invoice}</h3>
-                <div className="flex gap-1">
+          renderCard={(row) => {
+            const statusStyle = invoiceStatusStyles(row.status);
+            return (
+              <div
+                className={cn(
+                  "-m-5 space-y-3 rounded-xl border border-s-4 p-5 transition-shadow hover:shadow-md",
+                  statusStyle.card,
+                  highlightedId === row.id && "ring-2 ring-orange-400 ring-offset-2"
+                )}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="truncate font-semibold text-slate-900">{row.invoice}</h3>
+                    <p className="mt-0.5 truncate text-sm text-slate-600">{row.patient}</p>
+                    <div className="mt-1.5">
+                      <InvoiceTypeBadge type={row.invoiceType} label={row.typeLabel} />
+                    </div>
+                  </div>
+                  <InvoiceStatusBadge status={row.status} label={statusLabel(row.status)} />
+                </div>
+                <div className="space-y-1 rounded-lg border border-white/60 bg-white/50 px-3 py-2">
+                  <p className="text-sm font-medium text-slate-800">{row.amount}</p>
+                  <p className="text-xs text-slate-600">
+                    {t("billing.column.balanceDue")}:{" "}
+                    <span className="font-semibold text-slate-800">{row.balanceDue}</span>
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {t("billing.column.dueDate")}: {row.dueDate}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-1 pt-0.5">
                   {canRecordPayment && invoiceBalanceDue(row.raw) > 0 ? (
                     <Link
                       href={`/payments?invoiceId=${encodeURIComponent(row.id)}`}
-                      className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-emerald-200 text-emerald-700"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-emerald-200 bg-white/80 text-emerald-700 transition hover:bg-emerald-50"
                       aria-label={t("billing.payQuick")}
                       title={t("billing.payQuick")}
                     >
@@ -525,7 +740,7 @@ function BillingPageInner() {
                     <>
                       <button
                         type="button"
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-cyan-200 text-cyan-700"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-cyan-200 bg-white/80 text-cyan-700 transition hover:bg-cyan-50"
                         onClick={() => openEdit(row.raw)}
                         aria-label={t("common.edit")}
                       >
@@ -533,7 +748,7 @@ function BillingPageInner() {
                       </button>
                       <button
                         type="button"
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-rose-200 text-rose-700"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-rose-200 bg-white/80 text-rose-700 transition hover:bg-rose-50"
                         onClick={() => setDeleteTarget(row)}
                         aria-label={t("common.delete")}
                       >
@@ -543,13 +758,8 @@ function BillingPageInner() {
                   ) : null}
                 </div>
               </div>
-              <p className="text-sm text-slate-500">{row.patient}</p>
-              <p className="text-xs text-slate-500">{row.amount}</p>
-              <p className="text-xs font-medium text-slate-700">{t("billing.column.balanceDue")}: {row.balanceDue}</p>
-              <p className="text-xs text-slate-500">{row.dueDate}</p>
-              <p className="text-xs text-orange-600">{statusLabel(row.status)}</p>
-            </div>
-          )}
+            );
+          }}
         />
 
         {modalOpen ? (
@@ -575,34 +785,48 @@ function BillingPageInner() {
                   }}
                 >
                   {!editing ? (
-                    <label className="block text-sm">
+                    <div className="block text-sm">
                       <span className="text-slate-600">{t("billing.form.patient")}</span>
-                      <input
-                        type="search"
-                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                        placeholder={t("common.search")}
-                        value={patientQuery}
-                        onChange={(e) => setPatientQuery(e.target.value)}
-                      />
-                      <select
-                        required
-                        className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                        value={formPatientId}
-                        onChange={(e) => setFormPatientId(e.target.value)}
-                      >
-                        <option value="">{t("billing.form.selectPatient")}</option>
-                        {(patientsForSelect.data ?? []).map((p: PatientListItem) => (
-                          <option key={p.id} value={p.id}>
-                            {p.fullName} — {p.phone}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                      <div className="mt-1">
+                        <SearchableSelect
+                          id="billing-form-patient"
+                          value={formPatientId}
+                          options={patientSelectOptions}
+                          placeholder={t("billing.form.selectPatient")}
+                          searchPlaceholder={t("billing.form.searchPatient")}
+                          emptyText={t("billing.form.noPatients")}
+                          loadingText={t("billing.form.patientsLoading")}
+                          loading={patientsForSelect.isLoading}
+                          onSearchChange={setPatientQuery}
+                          onChange={setFormPatientId}
+                        />
+                      </div>
+                    </div>
                   ) : (
                     <p className="text-sm text-slate-600">
                       {t("billing.form.patient")}: <span className="font-medium text-slate-900">{editing.patient?.fullName ?? editing.patientId}</span>
                     </p>
                   )}
+
+                  <label className="block text-sm">
+                    <span className="text-slate-600">{t("billing.form.invoiceType")}</span>
+                    <select
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm disabled:bg-slate-100"
+                      value={formInvoiceType}
+                      onChange={(e) => setFormInvoiceType(e.target.value as InvoiceSourceType)}
+                      disabled={isProcedureInvoice}
+                      required
+                    >
+                      {INVOICE_SOURCE_TYPES.map((type) => (
+                        <option key={type} value={type} disabled={!editing && type === "PROCEDURE"}>
+                          {invoiceTypeLabel(type)}
+                        </option>
+                      ))}
+                    </select>
+                    {isProcedureInvoice ? (
+                      <p className="mt-1 text-xs text-slate-500">{t("billing.form.invoiceTypeProcedureLocked")}</p>
+                    ) : null}
+                  </label>
 
                   {apptPatientIdForQuery ? (
                     <label className="block text-sm">

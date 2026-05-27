@@ -217,6 +217,29 @@ const updateExamSchema = z.object({
   })
 });
 
+const createProcedureSchema = z.object({
+  body: z.object({
+    catalogId: z.string().min(1),
+    name: z.string().min(1).optional(),
+    procedureType: z.string().min(1).optional(),
+    amount: z.number().positive().optional(),
+    notes: z.string().optional(),
+    performedAt: z.string().optional()
+  })
+});
+
+const updateProcedureSchema = z.object({
+  body: z
+    .object({
+      name: z.string().min(1).optional(),
+      procedureType: z.string().min(1).optional(),
+      amount: z.number().positive().optional(),
+      notes: z.string().optional(),
+      performedAt: z.string().optional()
+    })
+    .refine((b) => Object.keys(b).length > 0, { message: "At least one field required" })
+});
+
 router.get("/", requireAuth, requirePermissions("patients.read"), asyncHandler(patientController.list));
 router.get("/stats", requireAuth, requirePermissions("patients.read"), asyncHandler(patientController.stats));
 router.get("/:id/assessments", requireAuth, requirePermissions("patients.read"), asyncHandler(patientController.listAssessments));
@@ -248,6 +271,32 @@ router.delete(
   requireAuth,
   requirePermissions("patients.manage"),
   asyncHandler(patientController.removeExamAttachment)
+);
+router.get(
+  "/:id/procedures",
+  requireAuth,
+  requirePermissions("patients.read"),
+  asyncHandler(patientController.listProcedures)
+);
+router.post(
+  "/:id/procedures",
+  requireAuth,
+  requirePermissions("patients.manage", "billing.manage"),
+  validate(createProcedureSchema),
+  asyncHandler(patientController.createProcedure)
+);
+router.patch(
+  "/:id/procedures/:procedureId",
+  requireAuth,
+  requirePermissions("patients.manage"),
+  validate(updateProcedureSchema),
+  asyncHandler(patientController.updateProcedure)
+);
+router.delete(
+  "/:id/procedures/:procedureId",
+  requireAuth,
+  requirePermissions("patients.manage"),
+  asyncHandler(patientController.removeProcedure)
 );
 router.post(
   "/",

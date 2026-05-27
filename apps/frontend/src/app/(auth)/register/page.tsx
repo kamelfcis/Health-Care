@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { LanguageToggle } from "@/components/ui/language-toggle";
 import { useI18n } from "@/components/providers/i18n-provider";
 import { specialtyService } from "@/lib/specialty-service";
+import { BRAND } from "@/lib/brand";
 
 const registerSchema = z.object({
   clinicName: z.string().min(2),
@@ -238,12 +239,12 @@ export default function RegisterPage() {
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_10%,rgba(28,132,143,.24),transparent_42%)]" />
             <div className="absolute inset-0 bg-[linear-gradient(140deg,rgba(255,255,255,0.08),transparent_45%)]" />
             <Image
-              src="/healthcare.jpeg"
-              alt="Healthcare CRM logo"
-              width={178}
-              height={178}
-              className="rounded-2xl"
-              style={{ boxShadow: "0 0 30px rgba(28,132,143,.45)" }}
+              src={BRAND.logoSrc}
+              alt={BRAND.logoAlt}
+              width={240}
+              height={160}
+              priority
+              className="h-auto w-full max-w-[240px] object-contain"
             />
             <h2 className="mt-8 text-4xl font-semibold tracking-tight">{t("auth.premiumClinicOps")}</h2>
             <p className="mt-4 max-w-md text-sm text-slate-200">

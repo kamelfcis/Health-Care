@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ColumnDef } from "@tanstack/react-table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SquarePen, Trash2 } from "lucide-react";
+import { ClinicUsersButton, ClinicUsersModal } from "@/components/clinics/clinic-users-modal";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/app-shell";
 import ProtectedRoute from "@/components/auth/protected-route";
@@ -88,6 +89,8 @@ export default function ClinicsPage() {
   }, [clinicImagePreviewUrl]);
 
   const canManageClinics = hasPermission(currentUser, "clinics.manage");
+  const isSuperAdmin = currentUser?.role === "SuperAdmin";
+  const [usersModalClinic, setUsersModalClinic] = useState<{ id: string; name: string } | null>(null);
   const clinicsQuery = useQuery({
     queryKey: ["clinics", { page: 1, pageSize: 100 }],
     queryFn: () => clinicService.list()
@@ -594,34 +597,50 @@ export default function ClinicsPage() {
                     <p className="text-xs font-semibold text-orange-600">{row.status}</p>
                   </div>
                 </div>
-                {canManageClinics ? (
-                  <div className="flex items-center gap-2 pt-1">
-                    <button
-                      type="button"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-cyan-200 bg-cyan-50 text-cyan-700 transition hover:bg-cyan-100"
-                      onClick={() => startEdit(row)}
-                      aria-label="Edit clinic"
-                    >
-                      <SquarePen size={13} />
-                    </button>
-                    <button
-                      type="button"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 transition hover:bg-rose-100"
-                      onClick={() => {
-                        if (window.confirm(t("clinics.deleteConfirm"))) {
-                          removeMutation.mutate(row.id);
-                        }
-                      }}
-                      aria-label="Delete clinic"
-                    >
-                      <Trash2 size={13} />
-                    </button>
+                {canManageClinics || isSuperAdmin ? (
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    {isSuperAdmin ? (
+                      <ClinicUsersButton
+                        label={t("clinics.users.view")}
+                        onClick={() => setUsersModalClinic({ id: row.id, name: row.name })}
+                      />
+                    ) : null}
+                    {canManageClinics ? (
+                      <>
+                        <button
+                          type="button"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-cyan-200 bg-cyan-50 text-cyan-700 transition hover:bg-cyan-100"
+                          onClick={() => startEdit(row)}
+                          aria-label="Edit clinic"
+                        >
+                          <SquarePen size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 transition hover:bg-rose-100"
+                          onClick={() => {
+                            if (window.confirm(t("clinics.deleteConfirm"))) {
+                              removeMutation.mutate(row.id);
+                            }
+                          }}
+                          aria-label="Delete clinic"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
             )}
           />
         )}
+        <ClinicUsersModal
+          open={Boolean(usersModalClinic)}
+          clinicId={usersModalClinic?.id ?? null}
+          clinicName={usersModalClinic?.name ?? ""}
+          onClose={() => setUsersModalClinic(null)}
+        />
       </AppShell>
     </ProtectedRoute>
   );

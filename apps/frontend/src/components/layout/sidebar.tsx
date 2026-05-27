@@ -1,72 +1,69 @@
 "use client";
 
 import { motion } from "framer-motion";
-import Image from "next/image";
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Bell, Building2, Calendar, ChevronDown, ChevronLeft, ClipboardList, CreditCard, LayoutDashboard, LogOut, Pill, Settings, Stethoscope, User, UserCog, Users, Wallet } from "lucide-react";
+import { PanelRightOpen } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { useI18n } from "@/components/providers/i18n-provider";
 import { storage } from "@/lib/storage";
 import { AuthUser } from "@/types";
 import { hasAllPermissions } from "@/lib/permissions";
-import { NAVIGATION_LINKS, NavigationLink } from "@/lib/route-access";
+import {
+  getRouteAccessForPath,
+  NAVIGATION_LINKS,
+  NavigationChildLink,
+  NavigationLink
+} from "@/lib/route-access";
 import { authService } from "@/lib/auth-service";
-import { ThemeToggle } from "@/components/ui/theme-toggle";
-import { LanguageToggle } from "@/components/ui/language-toggle";
+import { SIDEBAR_ICON_BY_NAME } from "./sidebar-icons";
+import {
+  getSidebarSectionForHref,
+  SIDEBAR_SECTION_LABEL_KEYS,
+  SIDEBAR_SECTION_ORDER,
+  SIDEBAR_WIDTH_COLLAPSED,
+  SIDEBAR_WIDTH_EXPANDED,
+  type SidebarSectionId
+} from "./sidebar-sections";
+import {
+  SidebarNavChild,
+  SidebarNavItem,
+  SidebarNavParent,
+  SidebarSectionLabel
+} from "./sidebar-nav-item";
+import { SidebarHeader } from "./sidebar-header";
+import { SidebarAccount } from "./sidebar-account";
 
 type SidebarLink = Omit<NavigationLink, "iconName"> & {
-  icon: typeof LayoutDashboard;
+  icon: (typeof SIDEBAR_ICON_BY_NAME)[NavigationLink["iconName"]];
 };
-
-const ICON_BY_NAME = {
-  LayoutDashboard,
-  Building2,
-  ClipboardList,
-  UserCog,
-  Stethoscope,
-  Users,
-  Calendar,
-  Pill,
-  CreditCard,
-  Wallet,
-  Settings
-} as const;
 
 const links: SidebarLink[] = NAVIGATION_LINKS.map((link) => ({
   ...link,
-  icon: ICON_BY_NAME[link.iconName]
+  icon: SIDEBAR_ICON_BY_NAME[link.iconName]
 }));
 
 interface SidebarProps {
   collapsed: boolean;
   onToggle: () => void;
   onNavigate?: () => void;
+  /** Mobile drawer: full nav without desktop collapse chrome */
+  variant?: "desktop" | "mobile";
 }
 
-function ComingSoonPill({ active }: { active: boolean }) {
-  const { t, locale } = useI18n();
-  return (
-    <span
-      className={cn(
-        "inline-flex max-w-[5.5rem] shrink-0 items-center justify-center rounded-full border px-2 py-0.5 text-[10px] font-semibold shadow-sm backdrop-blur-sm sm:text-[11px]",
-        locale === "ar" ? "normal-case tracking-normal" : "uppercase tracking-[0.18em]",
-        active
-          ? "border-white/40 bg-white/15 text-white"
-          : "border-amber-400/50 bg-gradient-to-br from-amber-500/20 via-orange-500/15 to-amber-600/10 text-amber-900 dark:border-amber-500/35 dark:from-amber-400/15 dark:text-amber-100"
-      )}
-    >
-      {t("nav.comingSoon")}
-    </span>
-  );
+function isPathActive(pathname: string, href: string) {
+  const normalized = href.endsWith("/") && href !== "/" ? href.slice(0, -1) : href;
+  if (normalized === "/dashboard") {
+    return pathname === "/dashboard" || pathname === "/dashboard/";
+  }
+  return pathname === normalized || pathname.startsWith(`${normalized}/`);
 }
 
-export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
+export function Sidebar({ collapsed, onToggle, onNavigate, variant = "desktop" }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -75,6 +72,8 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
   const [accountOpen, setAccountOpen] = useState(false);
   const [expandedParents, setExpandedParents] = useState<Record<string, boolean>>({});
   const accountMenuRef = useRef<HTMLDivElement | null>(null);
+  const isMobileDrawer = variant === "mobile";
+  const showCollapsed = collapsed && !isMobileDrawer;
 
   useEffect(() => {
     setUser(storage.getUser());
@@ -82,12 +81,10 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (!accountMenuRef.current) return;
-      if (!accountMenuRef.current.contains(event.target as Node)) {
+      if (!accountMenuRef.current?.contains(event.target as Node)) {
         setAccountOpen(false);
       }
     };
-
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
@@ -101,13 +98,28 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
     });
   }, [user]);
 
+  const getVisibleChildren = useCallback(
+    (link: SidebarLink): NavigationChildLink[] => {
+      if (!link.children?.length) return [];
+      return link.children.filter((child) => {
+        const rule = getRouteAccessForPath(child.href);
+        if (rule?.allowedRoles?.length && (!user || !rule.allowedRoles.includes(user.role))) {
+          return false;
+        }
+        return hasAllPermissions(user, rule?.requiredPermissions ?? []);
+      });
+    },
+    [user]
+  );
+
   useEffect(() => {
     setExpandedParents((prev) => {
       let changed = false;
       const next = { ...prev };
       visibleLinks.forEach((link) => {
-        if (!link.children?.length) return;
-        const hasActiveChild = link.children.some((child) => pathname.startsWith(child.href));
+        const children = getVisibleChildren(link);
+        if (!children.length) return;
+        const hasActiveChild = children.some((child) => isPathActive(pathname, child.href));
         if (hasActiveChild && !next[link.href]) {
           next[link.href] = true;
           changed = true;
@@ -115,7 +127,19 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
       });
       return changed ? next : prev;
     });
-  }, [pathname, visibleLinks]);
+  }, [pathname, visibleLinks, getVisibleChildren]);
+
+  const linksBySection = useMemo(() => {
+    const grouped = new Map<SidebarSectionId, SidebarLink[]>();
+    for (const sectionId of SIDEBAR_SECTION_ORDER) {
+      grouped.set(sectionId, []);
+    }
+    for (const link of visibleLinks) {
+      const section = getSidebarSectionForHref(link.href);
+      grouped.get(section)?.push(link);
+    }
+    return grouped;
+  }, [visibleLinks]);
 
   const handleLogout = async () => {
     try {
@@ -130,176 +154,119 @@ export function Sidebar({ collapsed, onToggle, onNavigate }: SidebarProps) {
     }
   };
 
+  const renderLink = (link: SidebarLink) => {
+    const visibleChildren = getVisibleChildren(link);
+    const active = isPathActive(pathname, link.href);
+    const hasActiveChild = visibleChildren.some((child) => isPathActive(pathname, child.href));
+    const isActive = active || hasActiveChild;
+    const isExpanded = expandedParents[link.href] ?? hasActiveChild;
+    const label = t(link.labelKey);
+    const hasChildren = visibleChildren.length > 0;
+
+    if (hasChildren && !showCollapsed) {
+      return (
+        <SidebarNavParent
+          key={link.href}
+          href={link.href}
+          label={label}
+          icon={link.icon}
+          active={isActive}
+          expanded={isExpanded}
+          collapsed={false}
+          comingSoon={link.comingSoon}
+          onNavigate={onNavigate}
+          onToggleExpand={() =>
+            setExpandedParents((prev) => ({
+              ...prev,
+              [link.href]: !(prev[link.href] ?? hasActiveChild)
+            }))
+          }
+        >
+          {isExpanded ? (
+            <ul role="list" className="m-0 flex w-full list-none flex-col gap-1">
+              {visibleChildren.map((child) => (
+                <SidebarNavChild
+                  key={child.href}
+                  href={child.href}
+                  label={t(child.labelKey)}
+                  active={isPathActive(pathname, child.href)}
+                  onNavigate={onNavigate}
+                />
+              ))}
+            </ul>
+          ) : null}
+        </SidebarNavParent>
+      );
+    }
+
+    return (
+      <SidebarNavItem
+        key={link.href}
+        href={link.href}
+        label={label}
+        icon={link.icon}
+        active={isActive}
+        collapsed={showCollapsed}
+        comingSoon={link.comingSoon}
+        onNavigate={onNavigate}
+      />
+    );
+  };
+
   return (
     <motion.aside
-      animate={{ width: collapsed ? 92 : 288 }}
-      transition={{ duration: 0.32, ease: "easeInOut" }}
-      className="sticky top-0 h-screen overflow-y-auto border-r border-slate-200/80 bg-white/70 p-4 backdrop-blur-xl dark:border-slate-800/70 dark:bg-slate-950/85"
+      animate={{ width: showCollapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED }}
+      transition={{ duration: 0.22, ease: [0.4, 0, 0.2, 1] }}
+      className={cn(
+        "relative flex h-screen min-h-0 flex-col md:h-full md:max-h-screen md:sticky md:top-0",
+        "border-e border-slate-200/70 bg-white/98 shadow-[1px_0_0_0_rgba(15,23,42,0.04)] backdrop-blur-md",
+        "dark:border-slate-800/80 dark:bg-slate-950/98 dark:shadow-none",
+        showCollapsed ? "px-2 py-4" : "px-3 py-4",
+        isMobileDrawer && "w-full max-w-none border-0 shadow-none"
+      )}
     >
-      <div className="mb-8 flex items-center justify-between">
-        <div className={cn("flex items-center gap-3", collapsed && "justify-center")}>
-          <div className="rounded-2xl bg-orange-100 p-2 dark:bg-orange-900/40">
-            <Image src="/healthcare.jpeg" alt="Healthcare CRM logo" width={38} height={38} className="rounded-xl" />
-          </div>
-          {!collapsed ? (
-            <div>
-              <p className="text-sm font-semibold text-brand-navy dark:text-slate-100">HealthCare CRM</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">{t("nav.multiClinicSaas")}</p>
-            </div>
-          ) : null}
-        </div>
-        {!collapsed ? (
-          <Button variant="ghost" size="icon" className="h-8 w-8 rounded-xl" onClick={onToggle}>
-            <ChevronLeft size={16} />
-          </Button>
-        ) : null}
-      </div>
+      <SidebarHeader collapsed={showCollapsed} onToggle={onToggle} mobile={isMobileDrawer} />
 
-      <TooltipProvider delayDuration={120}>
-        <nav className="space-y-1">
-        {visibleLinks.map((link) => {
-          const Icon = link.icon;
-          const active = pathname.startsWith(link.href);
-          const hasActiveChild = Boolean(link.children?.some((child) => pathname.startsWith(child.href)));
-          const isActive = active || hasActiveChild;
-          const isExpandable = !collapsed && Boolean(link.children?.length);
-          const isExpanded = expandedParents[link.href] ?? hasActiveChild;
-          const itemBaseClass = cn(
-            "group flex items-center gap-3 rounded-2xl px-3 py-2.5 text-[0.95rem] font-medium transition-all duration-300 sm:text-lg sm:font-semibold",
-            isActive
-              ? "bg-gradient-to-r from-orange-600 to-orange-500 text-white shadow-md"
-              : "text-slate-600 hover:bg-white hover:text-slate-900 hover:shadow-soft dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-slate-100"
-          );
-          const navLabel = !collapsed ? (
-            link.comingSoon ? (
-              <>
-                <span className="min-w-0 flex-1 truncate text-right">{t(link.labelKey)}</span>
-                <ComingSoonPill active={isActive} />
-              </>
-            ) : (
-              <span className="flex-1 text-right">{t(link.labelKey)}</span>
-            )
-          ) : null;
-          const item = isExpandable ? (
-            <button
-              type="button"
-              aria-label="Toggle section"
-              onClick={() =>
-                setExpandedParents((prev) => ({
-                  ...prev,
-                  [link.href]: !(prev[link.href] ?? hasActiveChild)
-                }))
-              }
-              className={cn(itemBaseClass, "w-full text-right")}
-            >
-              <Icon size={18} className={cn(collapsed && "mx-auto")} />
-              <span className="flex-1 text-right">{t(link.labelKey)}</span>
-              <ChevronDown size={15} className={cn("shrink-0 transition-transform", isExpanded ? "rotate-180" : "")} />
-            </button>
-          ) : (
-            <Link href={link.href} onClick={onNavigate} className={itemBaseClass}>
-              <Icon size={18} className={cn(collapsed && "mx-auto")} />
-              {navLabel}
-            </Link>
-          );
-
-          if (!collapsed) {
+      <TooltipProvider delayDuration={100}>
+        <nav
+          aria-label={t("nav.mainNavigation")}
+          className="mt-5 flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overflow-x-hidden px-0 [-ms-overflow-style:none] [scrollbar-width:thin]"
+        >
+          {SIDEBAR_SECTION_ORDER.map((sectionId) => {
+            const sectionLinks = linksBySection.get(sectionId) ?? [];
+            if (!sectionLinks.length) return null;
+            const sectionLabel = t(SIDEBAR_SECTION_LABEL_KEYS[sectionId]);
             return (
-              <div key={link.href} className="space-y-1">
-                {item}
-                {link.children?.length && isExpanded ? (
-                  <div className="ms-4 space-y-1 border-s-2 border-slate-200 pe-1 ps-3 dark:border-slate-700">
-                    {link.children.map((child) => {
-                      const childActive = pathname.startsWith(child.href);
-                      return (
-                        <Link
-                          key={child.href}
-                          href={child.href}
-                          onClick={onNavigate}
-                          className={cn(
-                            "block rounded-xl px-3 py-2 text-sm font-medium transition sm:text-base sm:font-semibold",
-                            childActive
-                              ? "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-200"
-                              : "text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-                          )}
-                        >
-                          {t(child.labelKey)}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                ) : null}
+              <div key={sectionId} className="flex w-full flex-col gap-1">
+                <SidebarSectionLabel label={sectionLabel} collapsed={showCollapsed} />
+                {sectionLinks.map(renderLink)}
               </div>
             );
-          }
-          return (
-            <Tooltip key={link.href}>
-              <TooltipTrigger asChild>{item}</TooltipTrigger>
-              <TooltipContent side="right" className="max-w-[240px] border-slate-200/90 bg-white/95 text-slate-800 shadow-lg dark:border-slate-600 dark:bg-slate-900/95 dark:text-slate-100">
-                <div className="space-y-1.5 text-right">
-                  <p className="text-sm font-semibold leading-tight">{t(link.labelKey)}</p>
-                  {link.comingSoon ? (
-                    <p className="text-xs font-medium text-amber-700 dark:text-amber-300">{t("nav.comingSoon")}</p>
-                  ) : null}
-                </div>
-              </TooltipContent>
-            </Tooltip>
-          );
-        })}
+          })}
         </nav>
       </TooltipProvider>
-      {!collapsed ? (
-        <div ref={accountMenuRef} className="relative mt-4 border-t border-slate-200/70 pt-4 md:hidden dark:border-slate-700/60">
-          <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white/75 p-2 dark:border-slate-700 dark:bg-slate-900/70">
-            <ThemeToggle />
-            <LanguageToggle />
-            <button className="relative inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-              <Bell size={16} />
-              <span className="absolute right-1.5 top-1.5 h-2 w-2 animate-pulse rounded-full bg-orange-500" />
-            </button>
-          </div>
-          <button
-            type="button"
-            className="inline-flex w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white/85 px-2 py-1.5 text-left text-slate-600 transition hover:shadow-soft dark:border-slate-700 dark:bg-slate-900/85 dark:text-slate-200"
-            onClick={() => setAccountOpen((prev) => !prev)}
-          >
-            <div className="text-right">
-              <p className="text-sm font-medium text-brand-navy dark:text-slate-100">
-                {`${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim() || t("common.guest")}
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">{user?.role ?? t("common.guest")}</p>
-            </div>
-            <ChevronDown size={15} className={cn("transition", accountOpen && "rotate-180")} />
-          </button>
-          {accountOpen ? (
-            <div className="mt-2 rounded-xl border border-slate-200 bg-white p-1.5 shadow-soft dark:border-slate-700 dark:bg-slate-900">
-              <button
-                type="button"
-                className="inline-flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 transition hover:bg-orange-50 dark:text-slate-200 dark:hover:bg-slate-800"
-                onClick={() => {
-                  setAccountOpen(false);
-                  onNavigate?.();
-                  router.push("/profile");
-                }}
-              >
-                <User size={15} />
-                {t("common.profile")}
-              </button>
-              <button
-                type="button"
-                className="inline-flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 transition hover:bg-red-50"
-                onClick={handleLogout}
-              >
-                <LogOut size={15} />
-                {t("common.logout")}
-              </button>
-            </div>
-          ) : null}
-        </div>
+
+      {!showCollapsed ? (
+        <SidebarAccount
+          user={user}
+          open={accountOpen}
+          onToggle={() => setAccountOpen((prev) => !prev)}
+          onLogout={handleLogout}
+          onNavigate={onNavigate}
+          menuRef={accountMenuRef}
+        />
       ) : null}
-      {collapsed ? (
-        <Button variant="ghost" size="icon" className="absolute bottom-5 left-1/2 h-9 w-9 -translate-x-1/2 rounded-xl" onClick={onToggle}>
-          <ChevronLeft size={16} className="rotate-180" />
+
+      {showCollapsed ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="mt-2 h-10 w-full shrink-0 rounded-lg text-slate-500 transition-colors duration-200 hover:bg-slate-100 dark:hover:bg-slate-800/50"
+          onClick={onToggle}
+          aria-label={t("nav.expandSidebar")}
+        >
+          <PanelRightOpen size={17} strokeWidth={1.75} />
         </Button>
       ) : null}
     </motion.aside>

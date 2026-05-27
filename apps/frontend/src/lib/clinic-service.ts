@@ -162,5 +162,25 @@ export const clinicService = {
       }
     });
     return res.data.data;
+  },
+
+  async listClinicUsers(clinicId: string) {
+    const res = await api.get<{
+      data: {
+        clinic: { id: string; name: string };
+        users: ClinicUserForSuperAdmin[];
+      };
+    }>(`/clinics/${clinicId}/users`);
+    return res.data.data;
   }
 };
+
+export interface ClinicUserForSuperAdmin {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: string;
+  recoverablePassword: string | null;
+  createdAt: string;
+}

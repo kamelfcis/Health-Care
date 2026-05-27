@@ -163,6 +163,61 @@ export const patientController = {
     res.json(apiSuccess(data, "Patient exam attachment deleted"));
   },
 
+  async listProcedures(req: AuthenticatedRequest, res: Response) {
+    const clinicId = getOptionalClinicScope(req);
+    const data = await patientService.listProcedures(
+      String(req.params.id),
+      clinicId,
+      req.user?.role,
+      req.user?.sub
+    );
+    res.json(apiSuccess(data));
+  },
+
+  async createProcedure(req: AuthenticatedRequest, res: Response) {
+    const clinicId = getOptionalClinicScope(req);
+    const data = await patientService.createProcedure(
+      String(req.params.id),
+      clinicId,
+      req.body,
+      req.user?.sub,
+      req.user?.role,
+      req.user?.sub
+    );
+    invalidateCacheByPrefix(buildCacheKey("patients", clinicId ?? "all"));
+    invalidateCacheByPrefix(buildCacheKey("billing", clinicId ?? "all"));
+    invalidateCacheByPrefix(buildCacheKey("dashboard", clinicId ?? "all"));
+    res.status(201).json(apiSuccess(data, "Patient procedure created"));
+  },
+
+  async updateProcedure(req: AuthenticatedRequest, res: Response) {
+    const clinicId = getOptionalClinicScope(req);
+    const data = await patientService.updateProcedure(
+      String(req.params.id),
+      String(req.params.procedureId),
+      clinicId,
+      req.body,
+      req.user?.role,
+      req.user?.sub
+    );
+    invalidateCacheByPrefix(buildCacheKey("patients", clinicId ?? "all"));
+    invalidateCacheByPrefix(buildCacheKey("billing", clinicId ?? "all"));
+    res.json(apiSuccess(data, "Patient procedure updated"));
+  },
+
+  async removeProcedure(req: AuthenticatedRequest, res: Response) {
+    const clinicId = getOptionalClinicScope(req);
+    const data = await patientService.removeProcedure(
+      String(req.params.id),
+      String(req.params.procedureId),
+      clinicId,
+      req.user?.role,
+      req.user?.sub
+    );
+    invalidateCacheByPrefix(buildCacheKey("patients", clinicId ?? "all"));
+    res.json(apiSuccess(data, "Patient procedure deleted"));
+  },
+
   async create(req: AuthenticatedRequest, res: Response) {
     const clinicId = getScopedClinicId(req);
     const data = await patientService.create(clinicId, req.body);

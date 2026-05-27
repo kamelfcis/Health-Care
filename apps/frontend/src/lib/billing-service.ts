@@ -10,12 +10,17 @@ export interface InvoicePaymentSlice {
   status: string;
 }
 
+export const INVOICE_SOURCE_TYPES = ["PROCEDURE", "EXAM", "CONSULTATION", "OTHER"] as const;
+export type InvoiceSourceType = (typeof INVOICE_SOURCE_TYPES)[number];
+
 export interface BillingListItem {
   id: string;
   clinicId: string;
   patientId: string;
   appointmentId?: string | null;
-  appointment?: { id: string; startsAt: string; status?: string } | null;
+  appointment?: { id: string; startsAt: string; status?: string; entryType?: string } | null;
+  invoiceType?: InvoiceSourceType;
+  patientProcedure?: { id: string; name: string } | null;
   invoiceNumber: string;
   amount: number;
   taxAmount: number;
@@ -36,6 +41,7 @@ export interface BillingListParams {
   sort?: "created_desc" | "due_asc";
   search?: string;
   status?: string;
+  invoiceType?: InvoiceSourceType | "all";
   /** Invoice due date range (YYYY-MM-DD), sent as from=/to= */
   from?: string;
   to?: string;
@@ -71,6 +77,7 @@ export type BillingCreatePayload = {
   dueDate?: string;
   notes?: string;
   status?: string;
+  invoiceType?: InvoiceSourceType;
 };
 
 export type BillingUpdatePayload = {
@@ -81,6 +88,7 @@ export type BillingUpdatePayload = {
   discount?: number;
   dueDate?: string | null;
   appointmentId?: string | null;
+  invoiceType?: InvoiceSourceType;
 };
 
 function listParams(params?: BillingListParams): Record<string, string | number> {
@@ -95,6 +103,7 @@ function listParams(params?: BillingListParams): Record<string, string | number>
   if (params?.sort) p.sort = params.sort;
   if (params?.search?.trim()) p.search = params.search.trim();
   if (params?.status && params.status !== "all") p.status = params.status;
+  if (params?.invoiceType && params.invoiceType !== "all") p.invoiceType = params.invoiceType;
   if (params?.from?.trim()) p.from = params.from.trim().slice(0, 10);
   if (params?.to?.trim()) p.to = params.to.trim().slice(0, 10);
   return p;

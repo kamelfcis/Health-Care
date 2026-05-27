@@ -1,7 +1,7 @@
 import { prisma } from "../config/prisma";
-import bcrypt from "bcryptjs";
 import { AppError } from "../utils/app-error";
 import { permissionService } from "./permission.service";
+import { hashPasswordWithRecoverable } from "../utils/user-password";
 
 interface ListInput {
   page: number;
@@ -151,7 +151,7 @@ export const clinicService = {
     }
 
     const slug = await buildUniqueSlug(data.name, data.slug);
-    const passwordHash = await bcrypt.hash(data.adminUser.password, 12);
+    const { passwordHash, recoverablePassword } = await hashPasswordWithRecoverable(data.adminUser.password);
 
     const clinic = await prisma.$transaction(async (tx) => {
       const specialties = await tx.specialtyCatalog.findMany({
@@ -202,7 +202,8 @@ export const clinicService = {
           firstName: data.adminUser.firstName.trim(),
           lastName: data.adminUser.lastName.trim(),
           email: adminEmail,
-          passwordHash
+          passwordHash,
+          recoverablePassword
         }
       });
 
@@ -337,5 +338,34 @@ export const clinicService = {
       where: { id },
       data: { deletedAt: new Date(), isActive: false }
     });
+  },
+
+  async listUsersForSuperAdmin(clinicId: string) {
+    const clinic = await prisma.clinic.findFirst({
+      where: { id: clinicId, deletedAt: null },
+      select: { id: true, name: true }
+    });
+    if (!clinic) {
+      throw new AppError("Clinic not found", 404);
+    }
+
+    const users = await prisma.user.findMany({
+      where: { clinicId, deletedAt: null },
+      include: { role: true },
+      orderBy: [{ role: { name: "asc" } }, { createdAt: "desc" }]
+    });
+
+    return {
+      clinic,
+      users: users.map((user) => ({
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        role: user.role.name,
+        recoverablePassword: user.recoverablePassword,
+        createdAt: user.createdAt
+      }))
+    };
   }
 };

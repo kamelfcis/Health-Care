@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Building2, Calendar, CalendarClock, ClipboardList, CreditCard, LayoutDashboard, Pill, Settings, Stethoscope, UserCog, Users, Wallet } from "lucide-react";
+import { Building2, Calendar, CalendarClock, ClipboardList, CreditCard, LayoutDashboard, Pill, Settings, Stethoscope, TrendingUp, UserCog, Users, Wallet } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { StatCard } from "@/components/ui/stat-card";
 import { AppShell } from "@/components/layout/app-shell";
@@ -13,8 +13,9 @@ import { RippleButton } from "@/components/ui/ripple-button";
 import { AdvancedSearch } from "@/components/ui/AdvancedSearch";
 import { adminService } from "@/lib/admin-service";
 import { clinicService } from "@/lib/clinic-service";
-import { formatCurrency } from "@/lib/currency-format";
+import { useClinicCurrency } from "@/hooks/use-clinic-currency";
 import { DashboardMetrics, dashboardService } from "@/lib/dashboard-service";
+import { financeService } from "@/lib/finance-service";
 import { storage } from "@/lib/storage";
 import { RoleDefinition, RoleName } from "@/types";
 import { toast } from "sonner";
@@ -58,7 +59,17 @@ export default function DashboardPage() {
   }, []);
   const canManageUsers = hasPermission(currentUser, "users.manage");
   const canViewRoles = hasPermission(currentUser, "roles.read");
+  const canViewFinance = hasPermission(currentUser, "finance.read");
   const isSuperAdmin = currentUser?.role === "SuperAdmin";
+  const monthRange = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const from = `${y}-${String(m + 1).padStart(2, "0")}-01`;
+    const last = new Date(y, m + 1, 0);
+    const to = `${y}-${String(m + 1).padStart(2, "0")}-${String(last.getDate()).padStart(2, "0")}`;
+    return { from, to };
+  }, []);
   const [selectedClinicId, setSelectedClinicId] = useState<string>("all");
   const metricsFallback: DashboardMetrics = {
     totalPatients: 0,
@@ -90,7 +101,7 @@ export default function DashboardPage() {
     enabled: isSuperAdmin
   });
   const myClinicQuery = useQuery({
-    queryKey: ["settings", "clinic-me", currentUser?.role ?? "none"],
+    queryKey: ["clinic", "me", currentUser?.role ?? "none"],
     queryFn: () => clinicService.getMyClinic(),
     enabled: !!currentUser && currentUser.role !== "SuperAdmin"
   });
@@ -103,6 +114,12 @@ export default function DashboardPage() {
     queryKey: ["dashboard", "metrics", clinicScopeForMetrics ?? "mine-pending"],
     queryFn: () => dashboardService.getMetrics(clinicScopeForMetrics),
     enabled: isSuperAdmin || Boolean(myClinicQuery.data?.id ?? currentUser?.clinicId)
+  });
+
+  const financeSummaryQuery = useQuery({
+    queryKey: ["dashboard", "finance-summary", clinicScopeForMetrics ?? "all", monthRange.from, monthRange.to],
+    queryFn: () => financeService.getSummary(clinicScopeForMetrics, monthRange.from, monthRange.to),
+    enabled: canViewFinance && (!isSuperAdmin || selectedClinicId !== "all")
   });
 
   const rolesQuery = useQuery({
@@ -162,19 +179,10 @@ export default function DashboardPage() {
     });
   }, [users, usersSearch, usersRoleFilter, usersFromDate, usersToDate]);
 
-  const selectedCurrencyCode = useMemo(() => {
-    if (isSuperAdmin) {
-      if (selectedClinicId === "all") return "USD";
-      const selectedClinic = (clinicsQuery.data ?? []).find((clinic) => clinic.id === selectedClinicId);
-      return (selectedClinic?.currencyCode ?? "USD").toUpperCase();
-    }
-    return (myClinicQuery.data?.currencyCode ?? "USD").toUpperCase();
-  }, [clinicsQuery.data, isSuperAdmin, myClinicQuery.data?.currencyCode, selectedClinicId]);
-
-  const outstandingInvoicesDisplay = useMemo(
-    () => formatCurrency(metrics.outstandingInvoices, selectedCurrencyCode),
-    [metrics.outstandingInvoices, selectedCurrencyCode]
-  );
+  const { formatMoney } = useClinicCurrency({
+    clinicId: isSuperAdmin ? selectedClinicId : undefined,
+    clinics: clinicsQuery.data
+  });
   const quickActionConfig = useMemo<QuickActionConfig[]>(
     () => [
       { href: "/dashboard", labelKey: "nav.dashboard", icon: LayoutDashboard, requiredPermission: "dashboard.view" },
@@ -303,7 +311,7 @@ export default function DashboardPage() {
         ) : (
           <StatCard
             title={t("dashboard.outstandingInvoices")}
-            value={outstandingInvoicesDisplay}
+            value={formatMoney(metrics.outstandingInvoices)}
             icon={<Wallet size={17} />}
             gradientClassName="bg-gradient-to-br from-amber-50 via-white to-orange-100"
             iconClassName="bg-orange-500"
@@ -320,6 +328,22 @@ export default function DashboardPage() {
               gradientClassName="bg-gradient-to-br from-emerald-50 via-white to-teal-100"
               iconClassName="bg-emerald-500"
             />
+          )}
+        </RoleGate>
+        <RoleGate requiredPermissions={["finance.read"]}>
+          {financeSummaryQuery.isLoading ? (
+            <Skeleton className="h-28 rounded-2xl" />
+          ) : (
+            <Link href="/finance" className="block">
+              <StatCard
+                title={t("dashboard.netProfitThisMonth")}
+                value={formatMoney(financeSummaryQuery.data?.netProfit ?? 0)}
+                icon={<TrendingUp size={17} />}
+                gradientClassName="bg-gradient-to-br from-violet-50 via-white to-purple-100"
+                iconClassName="bg-violet-500"
+                change={t("dashboard.viewFinance")}
+              />
+            </Link>
           )}
         </RoleGate>
       </section>

@@ -86,6 +86,26 @@ export const specialtyController = {
     res.json(apiSuccess(data, "Clinic specialties updated"));
   },
 
+  async myClinicTemplatesBySpecialty(req: AuthenticatedRequest, res: Response) {
+    const data = await specialtyService.listTemplatesBySpecialtyCode(String(req.params.specialtyCode));
+    res.json(apiSuccess(data));
+  },
+
+  async myAssignClinicSpecialtyTemplate(req: AuthenticatedRequest, res: Response) {
+    const clinicId = resolveClinicId(req);
+    const parsed = z
+      .object({
+        templateId: z.string().min(1)
+      })
+      .parse(req.body);
+    const data = await specialtyService.assignTemplateToClinicSpecialtyForClinic(
+      clinicId,
+      String(req.params.clinicSpecialtyId),
+      parsed.templateId
+    );
+    res.json(apiSuccess(data, "Clinic specialty template assigned"));
+  },
+
   async adminAssignClinicSpecialtyTemplate(req: Request, res: Response) {
     const parsed = z
       .object({

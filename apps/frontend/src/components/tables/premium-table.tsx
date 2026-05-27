@@ -19,11 +19,13 @@ import { useI18n } from "@/components/providers/i18n-provider";
 function PremiumTableSkeleton({
   view,
   columnCount,
-  cellsCenter
+  cellsCenter,
+  headerClassName
 }: {
   view: "table" | "cards";
   columnCount: number;
   cellsCenter?: boolean;
+  headerClassName?: string;
 }) {
   const cols = Math.min(Math.max(columnCount, 4), 10);
   const rowCount = 8;
@@ -37,12 +39,16 @@ function PremiumTableSkeleton({
         <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/80 shadow-soft backdrop-blur-sm">
           <div className="max-h-[65vh] overflow-auto">
             <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10 bg-white/95">
+              <thead className={cn("sticky top-0 z-10", headerClassName ?? "bg-white/95")}>
                 <tr>
                   {Array.from({ length: cols }).map((_, i) => (
                     <th
                       key={i}
-                      className={cn("border-b border-slate-100 px-4 py-3", cellsCenter ? "text-center" : "text-left")}
+                      className={cn(
+                        "border-b px-4 py-3",
+                        headerClassName ? "border-orange-400/40" : "border-slate-100",
+                        cellsCenter ? "text-center" : "text-left"
+                      )}
                     >
                       <Skeleton className={cn("h-4 w-20", cellsCenter && "mx-auto")} />
                     </th>
@@ -115,6 +121,8 @@ interface PremiumTableProps<TData> {
   view: "table" | "cards";
   /** Center-align table headers and cells (e.g. billing RTL) */
   cellsCenter?: boolean;
+  /** Optional thead styling (e.g. `bg-orange-500 text-white` for branded headers) */
+  headerClassName?: string;
 }
 
 export function PremiumTable<TData>({
@@ -124,7 +132,8 @@ export function PremiumTable<TData>({
   emptyMessage,
   cardRender,
   view,
-  cellsCenter = false
+  cellsCenter = false,
+  headerClassName
 }: PremiumTableProps<TData>) {
   const { t } = useI18n();
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -157,7 +166,12 @@ export function PremiumTable<TData>({
   if (loading) {
     return (
       <div className="animate-in fade-in duration-200" aria-busy="true" aria-label={t("common.loading")}>
-        <PremiumTableSkeleton view={view} columnCount={skeletonColumnCount} cellsCenter={cellsCenter} />
+        <PremiumTableSkeleton
+          view={view}
+          columnCount={skeletonColumnCount}
+          cellsCenter={cellsCenter}
+          headerClassName={headerClassName}
+        />
       </div>
     );
   }
@@ -218,14 +232,15 @@ export function PremiumTable<TData>({
           >
             <div className="max-h-[65vh] overflow-auto">
               <table className="w-full text-sm">
-                <thead className="sticky top-0 z-10 bg-white/95">
+                <thead className={cn("sticky top-0 z-10", headerClassName ?? "bg-white/95")}>
                   {table.getHeaderGroups().map((headerGroup) => (
                     <tr key={headerGroup.id}>
                       {headerGroup.headers.map((header) => (
                         <th
                           key={header.id}
                           className={cn(
-                            "border-b border-slate-100 px-4 py-3 font-medium text-slate-600",
+                            "border-b px-4 py-3 font-medium",
+                            headerClassName ? "border-orange-400/40" : "border-slate-100 text-slate-600",
                             cellsCenter ? "text-center" : "text-left"
                           )}
                         >
@@ -244,7 +259,13 @@ export function PremiumTable<TData>({
                                   size={14}
                                   className={cn(
                                     "transition",
-                                    header.column.getIsSorted() ? "text-orange-500" : "text-slate-400"
+                                    header.column.getIsSorted()
+                                      ? headerClassName
+                                        ? "text-white"
+                                        : "text-orange-500"
+                                      : headerClassName
+                                        ? "text-white/70"
+                                        : "text-slate-400"
                                   )}
                                 />
                               ) : null}

@@ -173,6 +173,49 @@ export interface PatientExamsResponse {
   exams: PatientExamItem[];
 }
 
+export interface PatientProcedureItem {
+  id: string;
+  patientId: string;
+  clinicId: string;
+  catalogId: string;
+  name: string;
+  procedureType: string;
+  amount: number;
+  notes?: string | null;
+  performedAt: string;
+  invoiceId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  catalog?: { id: string; name: string; procedureType: string };
+  invoice?: { id: string; invoiceNumber: string; status: string; amount: number } | null;
+}
+
+export interface PatientProceduresResponse {
+  patient: {
+    id: string;
+    clinicId: string;
+    fullName: string;
+  };
+  procedures: PatientProcedureItem[];
+}
+
+export interface CreatePatientProcedurePayload {
+  catalogId: string;
+  name?: string;
+  procedureType?: string;
+  amount?: number;
+  notes?: string;
+  performedAt?: string;
+}
+
+export interface UpdatePatientProcedurePayload {
+  name?: string;
+  procedureType?: string;
+  amount?: number;
+  notes?: string;
+  performedAt?: string;
+}
+
 export interface PatientListQuery {
   /** Exact id filter (deep links / global search) */
   patientId?: string;
@@ -318,6 +361,40 @@ export const patientService = {
 
   async removeExamAttachment(patientId: string, examId: string, attachmentId: string, clinicId?: string) {
     await api.delete(`/patients/${patientId}/exams/${examId}/attachments/${attachmentId}`, {
+      params: clinicId ? { clinicId } : undefined
+    });
+  },
+
+  async listProcedures(id: string, clinicId?: string) {
+    const res = await api.get<{ data: PatientProceduresResponse }>(`/patients/${id}/procedures`, {
+      params: clinicId ? { clinicId } : undefined
+    });
+    return res.data.data;
+  },
+
+  async createProcedure(patientId: string, payload: CreatePatientProcedurePayload, clinicId?: string) {
+    const res = await api.post<{ data: PatientProcedureItem }>(`/patients/${patientId}/procedures`, payload, {
+      params: clinicId ? { clinicId } : undefined
+    });
+    return res.data.data;
+  },
+
+  async updateProcedure(
+    patientId: string,
+    procedureId: string,
+    payload: UpdatePatientProcedurePayload,
+    clinicId?: string
+  ) {
+    const res = await api.patch<{ data: PatientProcedureItem }>(
+      `/patients/${patientId}/procedures/${procedureId}`,
+      payload,
+      { params: clinicId ? { clinicId } : undefined }
+    );
+    return res.data.data;
+  },
+
+  async removeProcedure(patientId: string, procedureId: string, clinicId?: string) {
+    await api.delete(`/patients/${patientId}/procedures/${procedureId}`, {
       params: clinicId ? { clinicId } : undefined
     });
   }

@@ -6,7 +6,8 @@ import { useForm } from "react-hook-form";
 import { useQuery } from "@tanstack/react-query";
 import { CircleHelp, Plus } from "lucide-react";
 import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
+import type { FieldErrors, Resolver } from "react-hook-form";
+import { toast } from "sonner";
 import { RippleButton } from "@/components/ui/ripple-button";
 import { useI18n } from "@/components/providers/i18n-provider";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -41,7 +42,15 @@ const governorateValues = [
   "ASWAN",
   "OTHER"
 ] as const;
-const patientSchema = z.object({
+type AppointmentValidationMessages = {
+  specialtyRequired: string;
+  doctorRequired: string;
+  dateRequired: string;
+  timeRequired: string;
+};
+
+const buildPatientSchema = (appointmentMessages: AppointmentValidationMessages) =>
+  z.object({
   fullName: z.string().min(2, "Full name is required"),
   nationalId: z.string().optional(),
   phone: z.string().min(3, "Phone is required"),
@@ -132,34 +141,52 @@ const patientSchema = z.object({
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["appointmentSpecialtyCode"],
-        message: "Specialty is required"
+        message: appointmentMessages.specialtyRequired
       });
     }
     if (!value.appointmentDoctorId?.trim()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["appointmentDoctorId"],
-        message: "Doctor is required"
+        message: appointmentMessages.doctorRequired
       });
     }
     if (!value.appointmentDate?.trim()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["appointmentDate"],
-        message: "Appointment date is required"
+        message: appointmentMessages.dateRequired
       });
     }
     if (!value.appointmentTime?.trim()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["appointmentTime"],
-        message: "Appointment time is required"
+        message: appointmentMessages.timeRequired
       });
     }
   }
 });
 
-export type PatientFormValues = z.infer<typeof patientSchema>;
+export type PatientFormValues = z.infer<ReturnType<typeof buildPatientSchema>>;
+
+function zodSafeResolver(schema: z.ZodType<PatientFormValues>): Resolver<PatientFormValues> {
+  return async (values) => {
+    const result = schema.safeParse(values);
+    if (result.success) {
+      return { values: result.data, errors: {} };
+    }
+    const errors: FieldErrors<PatientFormValues> = {};
+    for (const issue of result.error.issues) {
+      const field = issue.path[0];
+      if (field === undefined) continue;
+      const key = String(field) as keyof PatientFormValues;
+      if (errors[key]) continue;
+      errors[key] = { type: issue.code, message: issue.message };
+    }
+    return { values: {}, errors };
+  };
+}
 
 interface PatientFormProps {
   onSubmit: (values: PatientFormValues) => void;
@@ -181,6 +208,17 @@ export function PatientForm({
 }: PatientFormProps) {
   const { t } = useI18n();
 
+  const patientSchema = useMemo(
+    () =>
+      buildPatientSchema({
+        specialtyRequired: t("patients.appointment.validation.specialtyRequired"),
+        doctorRequired: t("patients.appointment.validation.doctorRequired"),
+        dateRequired: t("patients.appointment.validation.dateRequired"),
+        timeRequired: t("patients.appointment.validation.timeRequired")
+      }),
+    [t]
+  );
+
   const {
     register,
     handleSubmit,
@@ -188,7 +226,7 @@ export function PatientForm({
     setValue,
     formState: { errors, isSubmitting }
   } = useForm<PatientFormValues>({
-    resolver: zodResolver(patientSchema),
+    resolver: zodSafeResolver(patientSchema),
     defaultValues: {
       fullName: initialValues?.fullName ?? "",
       nationalId: initialValues?.nationalId ?? "",
@@ -285,7 +323,15 @@ export function PatientForm({
   })();
 
   return (
-    <form className="space-y-3" onSubmit={handleSubmit(onSubmit)}>
+    <form
+      className="space-y-3"
+      onSubmit={handleSubmit(onSubmit, (fieldErrors) => {
+        const firstMessage = Object.values(fieldErrors).find((entry) => entry?.message)?.message;
+        if (typeof firstMessage === "string" && firstMessage.trim()) {
+          toast.error(firstMessage);
+        }
+      })}
+    >
       <div className="grid gap-3 sm:grid-cols-2">
         <motion.div animate={errors.fullName ? { x: [0, -4, 4, 0] } : {}}>
           <label className="mb-1 block text-base text-slate-600">{t("field.fullName")}</label>
@@ -294,7 +340,7 @@ export function PatientForm({
         </motion.div>
         <div>
           <div className="mb-1 flex items-center justify-between">
-            <label className="block text-base text-slate-600">{t("field.nationalId")} (اختياري)</label>
+            <label className="block text-base text-slate-600">{t("field.nationalId")}</label>
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -322,24 +368,24 @@ export function PatientForm({
           <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("phone")} />
         </div>
         <div>
-          <label className="mb-1 block text-base text-slate-600">{t("field.whatsapp")} (اختياري)</label>
+          <label className="mb-1 block text-base text-slate-600">{t("field.whatsapp")}</label>
           <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("whatsapp")} />
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <label className="mb-1 block text-base text-slate-600">هاتف بديل (اختياري)</label>
+          <label className="mb-1 block text-base text-slate-600">هاتف بديل</label>
           <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("alternatePhone")} />
         </div>
         <div>
-          <label className="mb-1 block text-base text-slate-600">البريد الإلكتروني (اختياري)</label>
+          <label className="mb-1 block text-base text-slate-600">البريد الإلكتروني</label>
           <input type="email" className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("email")} />
           {errors.email ? <p className="mt-1 text-xs text-red-500">{errors.email.message}</p> : null}
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <label className="mb-1 block text-base text-slate-600">النوع (اختياري)</label>
+          <label className="mb-1 block text-base text-slate-600">النوع</label>
           <select className="w-full rounded-2xl border border-slate-200 px-3 py-2 focus:border-orange-500 focus:outline-none" {...register("gender")}>
             <option value="MALE">ذكر</option>
             <option value="FEMALE">انثى</option>
@@ -347,7 +393,7 @@ export function PatientForm({
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-base text-slate-600">الحالة الاجتماعية (اختياري)</label>
+          <label className="mb-1 block text-base text-slate-600">الحالة الاجتماعية</label>
           <select className="w-full rounded-2xl border border-slate-200 px-3 py-2 focus:border-orange-500 focus:outline-none" {...register("maritalStatus")}>
             <option value="SINGLE">اعزب</option>
             <option value="MARRIED">متزوج</option>
@@ -371,18 +417,18 @@ export function PatientForm({
       ) : null}
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <label className="mb-1 block text-base text-slate-600">{t("field.dateOfBirth")} (اختياري)</label>
+          <label className="mb-1 block text-base text-slate-600">{t("field.dateOfBirth")}</label>
           <input type="date" className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("dateOfBirth")} />
           <p className="mt-1 text-xs text-slate-500">Age: {liveAge ?? "-"}</p>
         </div>
         <div>
-          <label className="mb-1 block text-base text-slate-600">{t("field.address")} (اختياري)</label>
+          <label className="mb-1 block text-base text-slate-600">{t("field.address")}</label>
           <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("address")} />
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
         <div>
-          <label className="mb-1 block text-base text-slate-600">الجنسية (اختياري)</label>
+          <label className="mb-1 block text-base text-slate-600">الجنسية</label>
           <select className="w-full rounded-2xl border border-slate-200 px-3 py-2 focus:border-orange-500 focus:outline-none" {...register("nationality")}>
             <option value="EGYPTIAN">مصري</option>
             <option value="SAUDI">سعودي</option>
@@ -397,7 +443,7 @@ export function PatientForm({
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-base text-slate-600">الدولة (اختياري)</label>
+          <label className="mb-1 block text-base text-slate-600">الدولة</label>
           <select className="w-full rounded-2xl border border-slate-200 px-3 py-2 focus:border-orange-500 focus:outline-none" {...register("country")}>
             <option value="EGYPT">مصر</option>
             <option value="SAUDI_ARABIA">السعودية</option>
@@ -412,7 +458,7 @@ export function PatientForm({
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-base text-slate-600">المحافظة (اختياري)</label>
+          <label className="mb-1 block text-base text-slate-600">المحافظة</label>
           <select className="w-full rounded-2xl border border-slate-200 px-3 py-2 focus:border-orange-500 focus:outline-none" {...register("governorate")}>
             <option value="CAIRO">القاهرة</option>
             <option value="GIZA">الجيزة</option>
@@ -431,7 +477,7 @@ export function PatientForm({
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <label className="mb-1 block text-base text-slate-600">المهنة (نص) (اختياري)</label>
+          <label className="mb-1 block text-base text-slate-600">المهنة (نص)</label>
           <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("occupation")} />
         </div>
       </div>
@@ -440,15 +486,15 @@ export function PatientForm({
       {governorate === "OTHER" ? <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" placeholder="المحافظة (أخرى)" {...register("governorateOther")} /> : null}
       <div className="grid gap-3 sm:grid-cols-3">
         <div>
-          <label className="mb-1 block text-base text-slate-600">الفرع (اختياري)</label>
+          <label className="mb-1 block text-base text-slate-600">الفرع</label>
           <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("branch")} />
         </div>
         <div>
-          <label className="mb-1 block text-base text-slate-600">العيادة (اختياري)</label>
+          <label className="mb-1 block text-base text-slate-600">العيادة</label>
           <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("clinicName")} />
         </div>
         <div>
-          <label className="mb-1 block text-base text-slate-600">التخصص (اختياري)</label>
+          <label className="mb-1 block text-base text-slate-600">التخصص</label>
           <select
             className="w-full rounded-2xl border border-slate-200 px-3 py-2 focus:border-orange-500 focus:outline-none"
             {...register("specialtyCode")}
@@ -471,7 +517,7 @@ export function PatientForm({
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <label className="mb-1 block text-base text-slate-600">اسم الطبيب (اختياري)</label>
+          <label className="mb-1 block text-base text-slate-600">اسم الطبيب</label>
           <select
             className="w-full rounded-2xl border border-slate-200 px-3 py-2 focus:border-orange-500 focus:outline-none"
             {...register("doctorName")}
@@ -488,17 +534,17 @@ export function PatientForm({
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-base text-slate-600">اسم الحملة (اختياري)</label>
+          <label className="mb-1 block text-base text-slate-600">اسم الحملة</label>
           <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("campaignName")} />
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <label className="mb-1 block text-base text-slate-600">اسم المحول (اختياري)</label>
+          <label className="mb-1 block text-base text-slate-600">اسم المحول</label>
           <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("referrerName")} />
         </div>
         <div>
-          <label className="mb-1 block text-base text-slate-600">نوع التحويل (اختياري)</label>
+          <label className="mb-1 block text-base text-slate-600">نوع التحويل</label>
           <select className="w-full rounded-2xl border border-slate-200 px-3 py-2 focus:border-orange-500 focus:outline-none" {...register("referralType")}>
             <option value="">—</option>
             <option value="DOCTOR">طبيب</option>
@@ -578,7 +624,7 @@ export function PatientForm({
         </motion.div>
       ) : null}
       <div>
-        <label className="mb-1 block text-base text-slate-600">ملاحظات عامة (اختياري)</label>
+        <label className="mb-1 block text-base text-slate-600">ملاحظات عامة</label>
         <textarea
           rows={3}
           className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20"

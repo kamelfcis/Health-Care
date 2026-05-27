@@ -340,6 +340,47 @@ export const specialtyService = {
     return { id: sectionId };
   },
 
+  async assignTemplateToClinicSpecialtyForClinic(
+    clinicId: string,
+    clinicSpecialtyId: string,
+    templateId: string
+  ) {
+    const clinicSpecialty = await prisma.clinicSpecialty.findFirst({
+      where: { id: clinicSpecialtyId, clinicId },
+      select: { id: true, specialtyId: true }
+    });
+    if (!clinicSpecialty) throw new AppError("Clinic specialty mapping not found", 404);
+
+    const template = await prisma.specialtyTemplate.findUnique({
+      where: { id: templateId },
+      select: { id: true, specialtyId: true, title: true, titleAr: true, version: true, isActive: true }
+    });
+    if (!template) throw new AppError("Template not found", 404);
+    if (!template.isActive) {
+      throw new AppError("Only active templates can be assigned to a clinic", 400);
+    }
+    if (template.specialtyId !== clinicSpecialty.specialtyId) {
+      throw new AppError("Template does not belong to this specialty", 400);
+    }
+
+    return prisma.clinicSpecialty.update({
+      where: { id: clinicSpecialtyId },
+      data: { templateId: template.id },
+      include: {
+        specialty: true,
+        template: {
+          select: {
+            id: true,
+            title: true,
+            titleAr: true,
+            version: true,
+            isActive: true
+          }
+        }
+      }
+    });
+  },
+
   async assignTemplateToClinicSpecialty(clinicSpecialtyId: string, templateId: string) {
     const clinicSpecialty = await prisma.clinicSpecialty.findUnique({
       where: { id: clinicSpecialtyId },

@@ -1,6 +1,7 @@
 import { prisma } from "../config/prisma";
 import { AppError } from "../utils/app-error";
 import { LeadSource, Prisma, Profession } from "@prisma/client";
+import { syncInvoiceStatusFromPayments } from "./payment.service";
 
 interface ListInput {
   clinicId?: string;
@@ -809,5 +810,279 @@ export const patientService = {
       patient,
       assessments: [...appointmentAssessments, ...legacyAssessments]
     };
+  },
+
+  async listProcedures(
+    patientId: string,
+    clinicId: string | undefined,
+    requesterRole?: string,
+    requesterUserId?: string
+  ) {
+    const patient = await prisma.patient.findFirst({
+      where: { id: patientId, ...(clinicId ? { clinicId } : {}), deletedAt: null },
+      select: { id: true, clinicId: true, fullName: true }
+    });
+    if (!patient) {
+      throw new AppError("Patient not found", 404);
+    }
+
+    if (requesterRole === "Doctor" && requesterUserId) {
+      const linked = await prisma.appointment.findFirst({
+        where: {
+          patientId: patient.id,
+          clinicId: patient.clinicId,
+          deletedAt: null,
+          doctor: {
+            userId: requesterUserId,
+            deletedAt: null
+          }
+        },
+        select: { id: true }
+      });
+      if (!linked) {
+        throw new AppError("You are not allowed to access this patient's procedures", 403);
+      }
+    }
+
+    const procedures = await prisma.patientProcedure.findMany({
+      where: { patientId: patient.id, clinicId: patient.clinicId, deletedAt: null },
+      include: {
+        catalog: { select: { id: true, name: true, procedureType: true } },
+        invoice: { select: { id: true, invoiceNumber: true, status: true, amount: true } }
+      },
+      orderBy: [{ performedAt: "desc" }, { createdAt: "desc" }]
+    });
+
+    return { patient, procedures };
+  },
+
+  async createProcedure(
+    patientId: string,
+    clinicId: string | undefined,
+    payload: {
+      catalogId: string;
+      name?: string;
+      procedureType?: string;
+      amount?: number;
+      notes?: string;
+      performedAt?: string;
+    },
+    createdById?: string,
+    requesterRole?: string,
+    requesterUserId?: string
+  ) {
+    const scope = await this.listProcedures(patientId, clinicId, requesterRole, requesterUserId);
+    const catalog = await prisma.procedureCatalog.findFirst({
+      where: {
+        id: payload.catalogId,
+        clinicId: scope.patient.clinicId,
+        deletedAt: null,
+        isActive: true
+      }
+    });
+    if (!catalog) {
+      throw new AppError("Procedure catalog item not found or inactive", 404);
+    }
+
+    const name = (payload.name ?? catalog.name).trim();
+    const procedureType = (payload.procedureType ?? catalog.procedureType).trim();
+    if (!name) {
+      throw new AppError("Procedure name is required", 400);
+    }
+    if (!procedureType) {
+      throw new AppError("Procedure type is required", 400);
+    }
+
+    const amount =
+      payload.amount !== undefined && payload.amount !== null
+        ? Number(payload.amount)
+        : catalog.defaultAmount !== null && catalog.defaultAmount !== undefined
+          ? Number(catalog.defaultAmount)
+          : NaN;
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new AppError("A valid positive amount is required", 400);
+    }
+
+    let performedAt = new Date();
+    if (payload.performedAt) {
+      performedAt = new Date(payload.performedAt);
+      if (Number.isNaN(performedAt.getTime())) {
+        throw new AppError("Invalid performed date", 400);
+      }
+    }
+
+    const userNotes = payload.notes?.trim() || "";
+    const invoiceNotes = [`Procedure: ${name}`, `Type: ${procedureType}`, userNotes].filter(Boolean).join("\n");
+
+    const created = await prisma.$transaction(async (tx) => {
+      const counter = await tx.clinicCounter.upsert({
+        where: { clinicId: scope.patient.clinicId },
+        create: { clinicId: scope.patient.clinicId, lastPatientFileNumber: 0, lastInvoiceSequence: 1 },
+        update: { lastInvoiceSequence: { increment: 1 } }
+      });
+      const invoiceNumber = `INV-${String(counter.lastInvoiceSequence).padStart(5, "0")}`;
+
+      const invoice = await tx.invoice.create({
+        data: {
+          clinicId: scope.patient.clinicId,
+          patientId: scope.patient.id,
+          invoiceNumber,
+          amount,
+          taxAmount: 0,
+          discount: 0,
+          status: "PENDING",
+          invoiceType: "PROCEDURE",
+          notes: invoiceNotes
+        }
+      });
+
+      const procedure = await tx.patientProcedure.create({
+        data: {
+          patientId: scope.patient.id,
+          clinicId: scope.patient.clinicId,
+          catalogId: catalog.id,
+          name,
+          procedureType,
+          amount,
+          notes: userNotes || null,
+          performedAt,
+          invoiceId: invoice.id,
+          createdById: createdById ?? null
+        },
+        include: {
+          catalog: { select: { id: true, name: true, procedureType: true } },
+          invoice: { select: { id: true, invoiceNumber: true, status: true, amount: true } }
+        }
+      });
+
+      return procedure;
+    });
+
+    if (created.invoiceId) {
+      await syncInvoiceStatusFromPayments(created.invoiceId);
+    }
+
+    return created;
+  },
+
+  async updateProcedure(
+    patientId: string,
+    procedureId: string,
+    clinicId: string | undefined,
+    payload: {
+      name?: string;
+      procedureType?: string;
+      amount?: number;
+      notes?: string;
+      performedAt?: string;
+    },
+    requesterRole?: string,
+    requesterUserId?: string
+  ) {
+    const scope = await this.listProcedures(patientId, clinicId, requesterRole, requesterUserId);
+    const existing = await prisma.patientProcedure.findFirst({
+      where: {
+        id: procedureId,
+        patientId: scope.patient.id,
+        clinicId: scope.patient.clinicId,
+        deletedAt: null
+      },
+      include: {
+        invoice: { select: { id: true, status: true } }
+      }
+    });
+    if (!existing) {
+      throw new AppError("Patient procedure not found", 404);
+    }
+
+    const nextData: {
+      name?: string;
+      procedureType?: string;
+      amount?: number;
+      notes?: string | null;
+      performedAt?: Date;
+    } = {};
+
+    if (payload.name !== undefined) {
+      const name = payload.name.trim();
+      if (!name) throw new AppError("Procedure name is required", 400);
+      nextData.name = name;
+    }
+    if (payload.procedureType !== undefined) {
+      const procedureType = payload.procedureType.trim();
+      if (!procedureType) throw new AppError("Procedure type is required", 400);
+      nextData.procedureType = procedureType;
+    }
+    if (payload.amount !== undefined) {
+      const amount = Number(payload.amount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new AppError("A valid positive amount is required", 400);
+      }
+      nextData.amount = amount;
+    }
+    if (payload.notes !== undefined) {
+      nextData.notes = payload.notes.trim() || null;
+    }
+    if (payload.performedAt !== undefined) {
+      const performedAt = new Date(payload.performedAt);
+      if (Number.isNaN(performedAt.getTime())) {
+        throw new AppError("Invalid performed date", 400);
+      }
+      nextData.performedAt = performedAt;
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const procedure = await tx.patientProcedure.update({
+        where: { id: existing.id },
+        data: nextData,
+        include: {
+          catalog: { select: { id: true, name: true, procedureType: true } },
+          invoice: { select: { id: true, invoiceNumber: true, status: true, amount: true } }
+        }
+      });
+
+      if (
+        existing.invoiceId &&
+        existing.invoice?.status === "PENDING" &&
+        nextData.amount !== undefined
+      ) {
+        await tx.invoice.update({
+          where: { id: existing.invoiceId },
+          data: { amount: nextData.amount }
+        });
+        procedure.invoice =
+          (await tx.invoice.findFirst({
+            where: { id: existing.invoiceId },
+            select: { id: true, invoiceNumber: true, status: true, amount: true }
+          })) ?? procedure.invoice;
+      }
+
+      return procedure;
+    });
+
+    return updated;
+  },
+
+  async removeProcedure(
+    patientId: string,
+    procedureId: string,
+    clinicId: string | undefined,
+    requesterRole?: string,
+    requesterUserId?: string
+  ) {
+    const scope = await this.listProcedures(patientId, clinicId, requesterRole, requesterUserId);
+    const result = await prisma.patientProcedure.updateMany({
+      where: {
+        id: procedureId,
+        patientId: scope.patient.id,
+        clinicId: scope.patient.clinicId,
+        deletedAt: null
+      },
+      data: { deletedAt: new Date() }
+    });
+    if (!result.count) {
+      throw new AppError("Patient procedure not found", 404);
+    }
+    return result;
   }
 };

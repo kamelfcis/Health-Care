@@ -12,6 +12,8 @@ import dashboardRoutes from "./dashboard.routes";
 import leadRoutes from "./lead.routes";
 import specialtyRoutes from "./specialty.routes";
 import medicineRoutes from "./medicine.routes";
+import procedureRoutes from "./procedure.routes";
+import financeRoutes from "./finance.routes";
 import searchRoutes from "./search.routes";
 
 const router = Router();
@@ -30,6 +32,8 @@ router.use("/dashboard", dashboardRoutes);
 router.use("/leads", leadRoutes);
 router.use("/specialties", specialtyRoutes);
 router.use("/medicines", medicineRoutes);
+router.use("/procedures", procedureRoutes);
+router.use("/finance", financeRoutes);
 router.use("/search", searchRoutes);
 
 export default router;

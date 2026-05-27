@@ -7,8 +7,11 @@ import { QueryProvider } from "@/components/providers/query-provider";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 
 export const metadata: Metadata = {
-  title: "HealthCare CRM",
-  description: "Multi-clinic healthcare CRM SaaS platform",
+  title: "Opero Manage",
+  description: "Hospital management system for multi-clinic operations, scheduling, and billing",
+  icons: {
+    icon: "/opero-manage-logo.png",
+  },
 };
 
 export default function RootLayout({

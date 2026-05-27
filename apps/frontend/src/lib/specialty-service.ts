@@ -171,6 +171,21 @@ export const specialtyService = {
     return res.data.data;
   },
 
+  async listMyClinicTemplatesByCode(specialtyCode: string) {
+    const res = await api.get<{ data: { specialty: SpecialtyCatalogItem; templates: SpecialtyTemplate[] } }>(
+      `/specialties/clinic/me/${encodeURIComponent(specialtyCode)}/templates`
+    );
+    return res.data.data;
+  },
+
+  async assignMyClinicSpecialtyTemplate(clinicSpecialtyId: string, templateId: string) {
+    const res = await api.patch<{ data: ClinicSpecialtyItem }>(
+      `/specialties/clinic/me/clinic-specialties/${clinicSpecialtyId}/template`,
+      { templateId }
+    );
+    return res.data.data;
+  },
+
   async adminAssignClinicSpecialtyTemplate(clinicSpecialtyId: string, templateId: string) {
     const res = await api.patch<{ data: ClinicSpecialtyItem }>(
       `/specialties/admin/clinic-specialties/${clinicSpecialtyId}/template`,

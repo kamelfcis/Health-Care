@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { hashPasswordWithRecoverable } from "../utils/user-password";
 import { prisma } from "../config/prisma";
 import { AppError } from "../utils/app-error";
 
@@ -121,7 +122,7 @@ export const doctorService = {
       throw new AppError("License number already exists in this clinic", 409);
     }
 
-    const passwordHash = await bcrypt.hash(data.password, 12);
+    const { passwordHash, recoverablePassword } = await hashPasswordWithRecoverable(data.password);
     const existingDoctorByUser = existingUser
       ? await prisma.doctor.findFirst({
           where: { clinicId, userId: existingUser.id }
@@ -141,6 +142,7 @@ export const doctorService = {
               firstName,
               lastName,
               passwordHash,
+              recoverablePassword,
               isActive: true
             }
           })
@@ -151,7 +153,8 @@ export const doctorService = {
               firstName,
               lastName,
               email,
-              passwordHash
+              passwordHash,
+              recoverablePassword
             }
           });
 
