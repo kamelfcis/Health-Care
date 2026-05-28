@@ -1,5 +1,5 @@
 import { Response } from "express";
-import { PaymentMethod, PaymentStatus } from "@prisma/client";
+import { PaymentStatus } from "@prisma/client";
 import { paymentService } from "../services/payment.service";
 import { getPagination } from "../utils/http";
 import { apiSuccess } from "../utils/api-response";
@@ -27,10 +27,7 @@ export const paymentController = {
         ? (req.query.status as PaymentStatus)
         : undefined;
     const method =
-      typeof req.query.method === "string" &&
-      Object.values(PaymentMethod).includes(req.query.method as PaymentMethod)
-        ? (req.query.method as PaymentMethod)
-        : undefined;
+      typeof req.query.method === "string" && req.query.method.trim() ? req.query.method.trim().toUpperCase() : undefined;
     const createdFrom = typeof req.query.from === "string" ? req.query.from.trim().slice(0, 10) : undefined;
     const createdTo = typeof req.query.to === "string" ? req.query.to.trim().slice(0, 10) : undefined;
     const clinicId = getOptionalClinicScope(req);

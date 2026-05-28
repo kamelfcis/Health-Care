@@ -191,6 +191,12 @@ export default function DashboardPage() {
       { href: "/specialties/templates", labelKey: "nav.specialtiesTemplates", icon: ClipboardList, allowedRoles: ["SuperAdmin"] },
       { href: "/specialties/rules", labelKey: "nav.specialtiesRulesBuilder", icon: ClipboardList, allowedRoles: ["SuperAdmin"] },
       { href: "/specialties/lookup", labelKey: "nav.specialtiesLookup", icon: ClipboardList, allowedRoles: ["SuperAdmin"] },
+      {
+        href: "/dashboard/payment-methods-lookup",
+        labelKey: "nav.paymentMethodsLookup",
+        icon: Wallet,
+        allowedRoles: ["SuperAdmin", "ClinicAdmin"]
+      },
       { href: "/users", labelKey: "nav.users", icon: UserCog, requiredPermission: "users.read" },
       { href: "/doctors", labelKey: "nav.doctors", icon: Stethoscope, requiredPermission: "doctors.read" },
       { href: "/patients", labelKey: "nav.patients", icon: Users, requiredPermission: "patients.read" },

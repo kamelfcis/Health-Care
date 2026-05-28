@@ -936,6 +936,23 @@ export const patientService = {
         }
       });
 
+      await tx.invoiceLineItem.create({
+        data: {
+          clinicId: scope.patient.clinicId,
+          invoiceId: invoice.id,
+          lineType: "PROCEDURE",
+          catalogProcedureId: catalog.id,
+          title: name,
+          quantity: 1,
+          unitPrice: amount,
+          discountPercent: 0,
+          taxPercent: 0,
+          lineSubtotal: amount,
+          lineTax: 0,
+          lineTotal: amount
+        }
+      });
+
       const procedure = await tx.patientProcedure.create({
         data: {
           patientId: scope.patient.id,

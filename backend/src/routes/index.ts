@@ -15,6 +15,7 @@ import medicineRoutes from "./medicine.routes";
 import procedureRoutes from "./procedure.routes";
 import financeRoutes from "./finance.routes";
 import searchRoutes from "./search.routes";
+import paymentMethodCatalogRoutes from "./payment-method-catalog.routes";
 
 const router = Router();
 
@@ -35,5 +36,6 @@ router.use("/medicines", medicineRoutes);
 router.use("/procedures", procedureRoutes);
 router.use("/finance", financeRoutes);
 router.use("/search", searchRoutes);
+router.use("/payment-methods", paymentMethodCatalogRoutes);
 
 export default router;

@@ -1,7 +1,8 @@
-import { InvoiceSourceType, InvoiceStatus, Prisma, VisitEntryType } from "@prisma/client";
+import { InvoiceLineType, InvoiceSourceType, InvoiceStatus, Prisma, VisitEntryType } from "@prisma/client";
 import { prisma } from "../config/prisma";
 import { AppError } from "../utils/app-error";
 import { invoiceTotalDue, syncInvoiceStatusFromPayments } from "./payment.service";
+import { paymentMethodCatalogService } from "./payment-method-catalog.service";
 
 interface ListInput {
   clinicId?: string;
@@ -21,6 +22,16 @@ interface ListInput {
   invoiceType?: InvoiceSourceType;
 }
 
+type BillingLineItemInput = {
+  lineType: InvoiceLineType;
+  title?: string;
+  quantity: number;
+  unitPrice: number;
+  discountPercent?: number;
+  taxPercent?: number;
+  catalogProcedureId?: string;
+};
+
 export type BillingCreateInput = {
   patientId: string;
   appointmentId?: string;
@@ -32,14 +43,113 @@ export type BillingCreateInput = {
   notes?: string;
   status?: InvoiceStatus;
   invoiceType?: InvoiceSourceType;
+  paymentMethod?: string;
+  lineItems?: BillingLineItemInput[];
 };
 
 const INVOICE_LIST_INCLUDE = {
   patient: true,
   appointment: { select: { id: true, startsAt: true, status: true, entryType: true } },
   patientProcedure: { select: { id: true, name: true } },
-  payments: { where: { deletedAt: null } }
+  lineItems: {
+    where: { deletedAt: null },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      lineType: true,
+      title: true,
+      quantity: true,
+      unitPrice: true,
+      discountPercent: true,
+      taxPercent: true,
+      lineSubtotal: true,
+      lineTax: true,
+      lineTotal: true,
+      catalogProcedureId: true
+    }
+  },
+  // Billing page only needs payment amount/status for balance calculations.
+  // Avoid reading `method` so invoice listing remains resilient when DB has
+  // legacy enum column values and schema expects text/string.
+  payments: {
+    where: { deletedAt: null },
+    select: { amount: true, status: true }
+  }
 } as const;
+
+/** Latest SUCCESS payment method per invoice (raw SQL avoids legacy enum decode issues). */
+async function resolveLatestSuccessPaymentMethods(invoiceIds: string[]): Promise<Map<string, string>> {
+  if (!invoiceIds.length) return new Map();
+  const rows = await prisma.$queryRaw<Array<{ invoiceId: string; method: string }>>(Prisma.sql`
+    SELECT DISTINCT ON (p."invoiceId") p."invoiceId", p."method"::text AS method
+    FROM "Payment" p
+    WHERE p."deletedAt" IS NULL
+      AND p."status" = 'SUCCESS'::"PaymentStatus"
+      AND p."invoiceId" IN (${Prisma.join(invoiceIds.map((id) => Prisma.sql`${id}`))})
+    ORDER BY p."invoiceId", p."paidAt" DESC NULLS LAST, p."createdAt" DESC
+  `);
+  return new Map(rows.map((row) => [row.invoiceId, row.method]));
+}
+
+function round2(v: number): number {
+  return Math.round((v + Number.EPSILON) * 100) / 100;
+}
+
+function normalizeLineItems(items: BillingLineItemInput[]): Array<{
+  lineType: InvoiceLineType;
+  title: string;
+  quantity: number;
+  unitPrice: number;
+  discountPercent: number;
+  taxPercent: number;
+  lineSubtotal: number;
+  lineTax: number;
+  lineTotal: number;
+  catalogProcedureId: string | null;
+}> {
+  if (!items.length) {
+    throw new AppError("At least one invoice line item is required", 400);
+  }
+
+  return items.map((raw, idx) => {
+    const quantity = Math.max(1, Math.floor(Number(raw.quantity || 0)));
+    const unitPrice = Number(raw.unitPrice || 0);
+    const discountPercent = Math.max(0, Math.min(100, Number(raw.discountPercent || 0)));
+    const taxPercent = Math.max(0, Math.min(100, Number(raw.taxPercent || 0)));
+    if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+      throw new AppError(`Invalid unit price at line ${idx + 1}`, 400);
+    }
+    const lineSubtotal = round2(quantity * unitPrice);
+    const discountValue = round2(lineSubtotal * (discountPercent / 100));
+    const discounted = round2(lineSubtotal - discountValue);
+    const lineTax = round2(discounted * (taxPercent / 100));
+    const lineTotal = round2(discounted + lineTax);
+    const title = (raw.title ?? "").trim();
+    if (!title && !raw.catalogProcedureId) {
+      throw new AppError(`Line ${idx + 1} requires a title`, 400);
+    }
+    return {
+      lineType: raw.lineType,
+      title,
+      quantity,
+      unitPrice,
+      discountPercent,
+      taxPercent,
+      lineSubtotal,
+      lineTax,
+      lineTotal,
+      catalogProcedureId: raw.catalogProcedureId?.trim() || null
+    };
+  });
+}
+
+function aggregateInvoiceTotals(lines: Array<{ lineSubtotal: number; lineTax: number; lineTotal: number }>) {
+  const subtotal = round2(lines.reduce((s, line) => s + line.lineSubtotal, 0));
+  const taxAmount = round2(lines.reduce((s, line) => s + line.lineTax, 0));
+  const total = round2(lines.reduce((s, line) => s + line.lineTotal, 0));
+  const discount = round2(Math.max(0, subtotal + taxAmount - total));
+  return { subtotal, taxAmount, total, discount };
+}
 
 function entryTypeToInvoiceType(entryType: VisitEntryType): InvoiceSourceType {
   return entryType === "CONSULTATION" ? "CONSULTATION" : "EXAM";
@@ -108,7 +218,16 @@ export const billingService = {
             }
           }
         : {}),
-      ...(input.invoiceType ? { invoiceType: input.invoiceType } : {})
+      ...(input.invoiceType
+        ? {
+            lineItems: {
+              some: {
+                deletedAt: null,
+                lineType: input.invoiceType as unknown as InvoiceLineType
+              }
+            }
+          }
+        : {})
     };
 
     const orderBy: Prisma.InvoiceOrderByWithRelationInput | Prisma.InvoiceOrderByWithRelationInput[] =
@@ -127,8 +246,17 @@ export const billingService = {
       prisma.invoice.count({ where })
     ]);
 
+    const lookupIds = items
+      .filter((inv) => !inv.paymentMethodCode?.trim() && inv.payments.some((p) => p.status === "SUCCESS"))
+      .map((inv) => inv.id);
+    const methodFromPayments = await resolveLatestSuccessPaymentMethods(lookupIds);
+    const data = items.map((inv) => ({
+      ...inv,
+      paymentMethodCode: inv.paymentMethodCode?.trim() || methodFromPayments.get(inv.id) || null
+    }));
+
     const totalPages = Math.max(1, Math.ceil(total / input.pageSize));
-    return { data: items, total, page: input.page, pageSize: input.pageSize, totalPages };
+    return { data, total, page: input.page, pageSize: input.pageSize, totalPages };
   },
 
   async stats(clinicId?: string) {
@@ -185,20 +313,21 @@ export const billingService = {
       appointmentId = rawAppt;
     }
 
-    const invoiceType = await resolveInvoiceTypeForCreate(
-      clinicId,
-      data.patientId,
-      appointmentId,
-      data.invoiceType
-    );
-
     const invoiceNumber = data.invoiceNumber?.trim() || undefined;
-
-    const taxAmount = data.taxAmount ?? 0;
-    const discount = data.discount ?? 0;
     const requestedStatus = data.status ?? "PENDING";
     const markPaidOnCreate = requestedStatus === "PAID";
     const initialStatus = markPaidOnCreate ? "PENDING" : requestedStatus;
+
+    let resolvedPaymentMethod: string | undefined;
+    if (markPaidOnCreate) {
+      if (!data.paymentMethod?.trim()) {
+        throw new AppError("Payment method is required when invoice status is PAID", 400);
+      }
+      resolvedPaymentMethod = await paymentMethodCatalogService.assertMethodAllowed(
+        clinicId,
+        data.paymentMethod
+      );
+    }
 
     const created = await prisma.$transaction(async (tx) => {
       let resolvedInvoiceNumber = invoiceNumber;
@@ -218,31 +347,106 @@ export const billingService = {
         throw new AppError("Invoice number already exists for this clinic", 409);
       }
 
+      let normalizedLines = data.lineItems ? normalizeLineItems(data.lineItems) : [];
+      if (!normalizedLines.length) {
+        const fallbackAmount = Number(data.amount ?? 0);
+        if (!Number.isFinite(fallbackAmount) || fallbackAmount <= 0) {
+          throw new AppError("At least one line item or a valid amount is required", 400);
+        }
+        const fallbackType =
+          (await resolveInvoiceTypeForCreate(
+            clinicId,
+            data.patientId,
+            appointmentId,
+            data.invoiceType
+          )) as unknown as InvoiceLineType;
+        normalizedLines = normalizeLineItems([
+          {
+            lineType: fallbackType,
+            title: data.notes?.trim() || "Invoice item",
+            quantity: 1,
+            unitPrice: fallbackAmount,
+            discountPercent: 0,
+            taxPercent: 0
+          }
+        ]);
+      }
+
+      if (normalizedLines.some((line) => line.catalogProcedureId)) {
+        const ids = normalizedLines
+          .map((line) => line.catalogProcedureId)
+          .filter((v): v is string => Boolean(v));
+        if (ids.length) {
+          const catalogs = await tx.procedureCatalog.findMany({
+            where: { id: { in: ids }, clinicId, deletedAt: null, isActive: true },
+            select: { id: true, name: true }
+          });
+          const byId = new Map(catalogs.map((item) => [item.id, item]));
+          normalizedLines = normalizedLines.map((line) => {
+            if (!line.catalogProcedureId) return line;
+            const catalog = byId.get(line.catalogProcedureId);
+            if (!catalog) {
+              throw new AppError(`Invalid procedure item: ${line.catalogProcedureId}`, 400);
+            }
+            return {
+              ...line,
+              title: line.title || catalog.name,
+              lineType: "PROCEDURE" as InvoiceLineType
+            };
+          });
+        }
+      }
+
+      const totals = aggregateInvoiceTotals(normalizedLines);
+
       const invoice = await tx.invoice.create({
         data: {
           clinicId,
           patientId: data.patientId,
           appointmentId,
           invoiceNumber: resolvedInvoiceNumber,
-          amount: data.amount,
-          taxAmount,
-          discount,
+          // amount = line subtotal; tax/discount stored separately for invoiceTotalDue()
+          amount: totals.subtotal,
+          taxAmount: totals.taxAmount,
+          discount: totals.discount,
           dueDate: data.dueDate ? new Date(data.dueDate) : null,
           notes: data.notes,
           status: initialStatus,
-          invoiceType
+          invoiceType: (normalizedLines[0]?.lineType ?? "OTHER") as unknown as InvoiceSourceType,
+          paymentMethodCode: resolvedPaymentMethod ?? null
         }
       });
 
+      await tx.invoiceLineItem.createMany({
+        data: normalizedLines.map((line) => ({
+          clinicId,
+          invoiceId: invoice.id,
+          lineType: line.lineType,
+          catalogProcedureId: line.catalogProcedureId,
+          title: line.title,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          discountPercent: line.discountPercent,
+          taxPercent: line.taxPercent,
+          lineSubtotal: line.lineSubtotal,
+          lineTax: line.lineTax,
+          lineTotal: line.lineTotal
+        }))
+      });
+
       if (markPaidOnCreate) {
-        const totalDue = invoiceTotalDue(invoice);
+        const totalDue = invoiceTotalDue({
+          amount: totals.subtotal,
+          taxAmount: totals.taxAmount,
+          discount: totals.discount
+        });
         if (totalDue > 0.005) {
           await tx.payment.create({
             data: {
               clinicId,
               invoiceId: invoice.id,
               amount: totalDue,
-              method: "CASH",
+              method: resolvedPaymentMethod!,
               status: "SUCCESS",
               paidAt: new Date()
             }
@@ -273,6 +477,7 @@ export const billingService = {
       dueDate?: string | null;
       appointmentId?: string | null;
       invoiceType?: InvoiceSourceType;
+      lineItems?: BillingLineItemInput[];
     }
   ) {
     const existing = await prisma.invoice.findFirst({
@@ -303,28 +508,81 @@ export const billingService = {
     }
 
     if (data.invoiceType !== undefined) {
-      if (existing.patientProcedure) {
-        throw new AppError("Procedure invoice type cannot be changed", 400);
-      }
       patch.invoiceType = data.invoiceType;
     }
 
-    const result = await prisma.invoice.updateMany({
-      where: { id: existing.id, clinicId: existing.clinicId, deletedAt: null },
-      data: patch as {
-        status?: InvoiceStatus;
-        notes?: string;
-        amount?: number;
-        taxAmount?: number;
-        discount?: number;
-        dueDate?: Date | null;
-        appointmentId?: string | null;
-        invoiceType?: InvoiceSourceType;
+    await prisma.$transaction(async (tx) => {
+      if (data.lineItems) {
+        let normalizedLines = normalizeLineItems(data.lineItems);
+        if (normalizedLines.some((line) => line.catalogProcedureId)) {
+          const ids = normalizedLines
+            .map((line) => line.catalogProcedureId)
+            .filter((v): v is string => Boolean(v));
+          if (ids.length) {
+            const catalogs = await tx.procedureCatalog.findMany({
+              where: { id: { in: ids }, clinicId: existing.clinicId, deletedAt: null, isActive: true },
+              select: { id: true, name: true }
+            });
+            const byId = new Map(catalogs.map((item) => [item.id, item]));
+            normalizedLines = normalizedLines.map((line) => {
+              if (!line.catalogProcedureId) return line;
+              const catalog = byId.get(line.catalogProcedureId);
+              if (!catalog) {
+                throw new AppError(`Invalid procedure item: ${line.catalogProcedureId}`, 400);
+              }
+              return {
+                ...line,
+                title: line.title || catalog.name,
+                lineType: "PROCEDURE" as InvoiceLineType
+              };
+            });
+          }
+        }
+        const totals = aggregateInvoiceTotals(normalizedLines);
+        patch.amount = totals.subtotal;
+        patch.taxAmount = totals.taxAmount;
+        patch.discount = totals.discount;
+        patch.invoiceType = (normalizedLines[0]?.lineType ?? "OTHER") as unknown as InvoiceSourceType;
+
+        await tx.invoiceLineItem.updateMany({
+          where: { invoiceId: existing.id, deletedAt: null },
+          data: { deletedAt: new Date() }
+        });
+        await tx.invoiceLineItem.createMany({
+          data: normalizedLines.map((line) => ({
+            clinicId: existing.clinicId,
+            invoiceId: existing.id,
+            lineType: line.lineType,
+            catalogProcedureId: line.catalogProcedureId,
+            title: line.title,
+            quantity: line.quantity,
+            unitPrice: line.unitPrice,
+            discountPercent: line.discountPercent,
+            taxPercent: line.taxPercent,
+            lineSubtotal: line.lineSubtotal,
+            lineTax: line.lineTax,
+            lineTotal: line.lineTotal
+          }))
+        });
+      }
+
+      const result = await tx.invoice.updateMany({
+        where: { id: existing.id, clinicId: existing.clinicId, deletedAt: null },
+        data: patch as {
+          status?: InvoiceStatus;
+          notes?: string;
+          amount?: number;
+          taxAmount?: number;
+          discount?: number;
+          dueDate?: Date | null;
+          appointmentId?: string | null;
+          invoiceType?: InvoiceSourceType;
+        }
+      });
+      if (!result.count) {
+        throw new AppError("Invoice not found", 404);
       }
     });
-    if (!result.count) {
-      throw new AppError("Invoice not found", 404);
-    }
 
     const inv = await prisma.invoice.findFirst({ where: { id } });
     if (inv && inv.status !== "CANCELLED" && inv.status !== "DRAFT") {

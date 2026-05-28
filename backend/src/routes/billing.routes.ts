@@ -10,6 +10,16 @@ const router = Router();
 
 const invoiceStatusZ = z.enum(["DRAFT", "PENDING", "PAID", "OVERDUE", "CANCELLED"]);
 const invoiceTypeZ = z.enum(["PROCEDURE", "EXAM", "CONSULTATION", "OTHER"]);
+const lineTypeZ = z.enum(["PROCEDURE", "EXAM", "CONSULTATION", "OTHER"]);
+const lineItemSchema = z.object({
+  lineType: lineTypeZ,
+  title: z.string().optional(),
+  quantity: z.number().int().positive(),
+  unitPrice: z.number().positive(),
+  discountPercent: z.number().min(0).max(100).optional(),
+  taxPercent: z.number().min(0).max(100).optional(),
+  catalogProcedureId: z.string().min(1).optional()
+});
 
 const createSchema = z.object({
   body: z.object({
@@ -22,7 +32,9 @@ const createSchema = z.object({
     dueDate: z.string().optional(),
     notes: z.string().optional(),
     status: invoiceStatusZ.optional(),
-    invoiceType: invoiceTypeZ.optional()
+    invoiceType: invoiceTypeZ.optional(),
+    paymentMethod: z.string().min(1).optional(),
+    lineItems: z.array(lineItemSchema).min(1).optional()
   })
 });
 
@@ -36,7 +48,8 @@ const updateSchema = z.object({
       discount: z.number().min(0).optional(),
       dueDate: z.union([z.string(), z.literal("")]).optional(),
       appointmentId: z.union([z.string().min(1), z.literal(""), z.null()]).optional(),
-      invoiceType: invoiceTypeZ.optional()
+      invoiceType: invoiceTypeZ.optional(),
+      lineItems: z.array(lineItemSchema).min(1).optional()
     })
     .refine((b) => Object.keys(b).length > 0, { message: "At least one field required" })
 });

@@ -12,7 +12,7 @@ const createSchema = z.object({
   body: z.object({
     invoiceId: z.string().min(1),
     amount: z.number().positive(),
-    method: z.enum(["CASH", "CARD", "ONLINE", "INSURANCE"]),
+    method: z.string().min(1),
     transactionRef: z.string().optional(),
     status: z.enum(["PENDING", "SUCCESS", "FAILED", "REFUNDED"]).optional()
   })
@@ -24,7 +24,7 @@ const updateSchema = z.object({
       status: z.enum(["PENDING", "SUCCESS", "FAILED", "REFUNDED"]).optional(),
       transactionRef: z.string().optional(),
       amount: z.number().positive().optional(),
-      method: z.enum(["CASH", "CARD", "ONLINE", "INSURANCE"]).optional()
+      method: z.string().min(1).optional()
     })
     .refine((b) => Object.keys(b).length > 0, { message: "At least one field required" })
 });

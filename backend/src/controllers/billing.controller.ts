@@ -1,5 +1,5 @@
 import { Response } from "express";
-import { InvoiceSourceType, InvoiceStatus } from "@prisma/client";
+import { InvoiceLineType, InvoiceSourceType, InvoiceStatus } from "@prisma/client";
 
 const INVOICE_SOURCE_TYPES = ["PROCEDURE", "EXAM", "CONSULTATION", "OTHER"] as const;
 import { billingService } from "../services/billing.service";
@@ -108,6 +108,21 @@ export const billingController = {
       INVOICE_SOURCE_TYPES.includes(invoiceTypeRaw as (typeof INVOICE_SOURCE_TYPES)[number])
         ? (invoiceTypeRaw as InvoiceSourceType)
         : undefined;
+    const lineItemsRaw = body.lineItems;
+    const lineItems = Array.isArray(lineItemsRaw)
+      ? lineItemsRaw.map((line) => ({
+          lineType: String((line as Record<string, unknown>).lineType || "OTHER") as InvoiceLineType,
+          title: typeof (line as Record<string, unknown>).title === "string" ? ((line as Record<string, unknown>).title as string) : undefined,
+          quantity: Number((line as Record<string, unknown>).quantity || 1),
+          unitPrice: Number((line as Record<string, unknown>).unitPrice || 0),
+          discountPercent: Number((line as Record<string, unknown>).discountPercent || 0),
+          taxPercent: Number((line as Record<string, unknown>).taxPercent || 0),
+          catalogProcedureId:
+            typeof (line as Record<string, unknown>).catalogProcedureId === "string"
+              ? ((line as Record<string, unknown>).catalogProcedureId as string)
+              : undefined
+        }))
+      : undefined;
     const data = await billingService.update(String(req.params.id), clinicId, {
       status: body.status as InvoiceStatus | undefined,
       notes: body.notes as string | undefined,
@@ -116,7 +131,8 @@ export const billingController = {
       discount: body.discount as number | undefined,
       dueDate: dueRaw === "" ? null : (dueRaw as string | undefined),
       appointmentId,
-      invoiceType
+      invoiceType,
+      lineItems
     });
     if (clinicId) invalidateBillingDashboard(clinicId);
     else {

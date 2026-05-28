@@ -16,10 +16,10 @@ import {
   paymentService,
   PaymentCreatePayload,
   PaymentListItem,
-  PaymentMethod,
   PaymentStatus,
   PaymentUpdatePayload
 } from "@/lib/payment-service";
+import { paymentMethodCatalogService } from "@/lib/payment-method-catalog-service";
 import { billingService, invoiceBalanceDue } from "@/lib/billing-service";
 import { storage } from "@/lib/storage";
 import { useListQueryState } from "@/hooks/use-list-query-state";
@@ -50,13 +50,12 @@ type PaymentRow = {
   amountNum: number;
 };
 
-const METHODS: PaymentMethod[] = ["CASH", "CARD", "ONLINE", "INSURANCE"];
 const PAY_STATUSES: PaymentStatus[] = ["PENDING", "SUCCESS", "FAILED", "REFUNDED"];
 
 const EPS = 0.005;
 
 function PaymentsPageInner() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const { state, setQuery } = useListQueryState();
@@ -88,7 +87,7 @@ function PaymentsPageInner() {
   const listStatus =
     state.status !== "all" && (PAY_STATUSES as readonly string[]).includes(state.status) ? state.status : undefined;
   const listMethod =
-    state.method !== "all" && (METHODS as readonly string[]).includes(state.method) ? state.method : undefined;
+    state.method !== "all" ? state.method : undefined;
   const listDateFrom = state.from.trim() || undefined;
   const listDateTo = state.to.trim() || undefined;
 
@@ -99,7 +98,7 @@ function PaymentsPageInner() {
 
   const [formInvoiceId, setFormInvoiceId] = useState("");
   const [formAmount, setFormAmount] = useState("");
-  const [formMethod, setFormMethod] = useState<PaymentMethod>("CASH");
+  const [formMethod, setFormMethod] = useState<string>("CASH");
   const [formRef, setFormRef] = useState("");
   const [formStatus, setFormStatus] = useState<PaymentStatus>("SUCCESS");
   const amountInputRef = useRef<HTMLInputElement | null>(null);
@@ -127,7 +126,7 @@ function PaymentsPageInner() {
     setEditingPayment(full);
     setFormInvoiceId(full.invoiceId);
     setFormAmount(String(full.amount));
-    setFormMethod(full.method as PaymentMethod);
+    setFormMethod(full.method);
     setFormRef(full.transactionRef ?? "");
     setFormStatus(full.status as PaymentStatus);
     setPayModal("edit");
@@ -141,6 +140,17 @@ function PaymentsPageInner() {
   const { formatMoney } = useClinicCurrency({
     clinicId: isSuperAdmin ? selectedClinicId : undefined,
     clinics: clinicsQuery.data
+  });
+  const paymentMethodClinicId = isSuperAdmin
+    ? selectedClinicId === "all"
+      ? undefined
+      : selectedClinicId
+    : currentUser?.clinicId;
+
+  const paymentMethodsQuery = useQuery({
+    queryKey: ["payment-methods", "active", paymentMethodClinicId ?? "none"],
+    queryFn: () => paymentMethodCatalogService.list(paymentMethodClinicId!),
+    enabled: Boolean(paymentMethodClinicId)
   });
 
   const invoicePickClinicId = isSuperAdmin
@@ -258,13 +268,24 @@ function PaymentsPageInner() {
     return m;
   }, [paymentsListQuery.data?.data]);
 
+  const paymentMethodOptions = useMemo(() => {
+    const list = paymentMethodsQuery.data ?? [];
+    if (!list.length) return [{ value: "CASH", label: t("paymentMethod.CASH") }];
+    return list.map((item) => ({
+      value: item.code,
+      label: locale === "ar" ? item.nameAr : item.name
+    }));
+  }, [locale, paymentMethodsQuery.data, t]);
+
   const methodLabel = useCallback(
     (m: string) => {
+      const byLookup = paymentMethodOptions.find((opt) => opt.value === m)?.label;
+      if (byLookup) return byLookup;
       const key = `paymentMethod.${m}`;
       const tr = t(key);
       return tr === key ? m : tr;
     },
-    [t]
+    [paymentMethodOptions, t]
   );
 
   const statusLabel = useCallback(
@@ -398,6 +419,12 @@ function PaymentsPageInner() {
     Number.isFinite(amountNum) &&
     amountNum > selectedInvoiceBalance + EPS;
 
+  useEffect(() => {
+    if (formMethod.trim()) return;
+    if (!paymentMethodOptions.length) return;
+    setFormMethod(paymentMethodOptions[0].value);
+  }, [formMethod, paymentMethodOptions]);
+
   const handleSubmitPayment = (e: React.FormEvent) => {
     e.preventDefault();
     const amount = Number(formAmount);
@@ -421,6 +448,7 @@ function PaymentsPageInner() {
     } else if (editingPayment) {
       const body: PaymentUpdatePayload = {
         amount,
+        method: formMethod,
         status: formStatus,
         transactionRef: formRef.trim() || undefined
       };
@@ -519,9 +547,9 @@ function PaymentsPageInner() {
                   onChange={(e) => setQuery({ method: e.target.value, page: 1 })}
                 >
                   <option value="all">{t("common.all")}</option>
-                  {METHODS.map((m) => (
-                    <option key={m} value={m}>
-                      {methodLabel(m)}
+                  {paymentMethodOptions.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
                     </option>
                   ))}
                 </select>
@@ -667,11 +695,11 @@ function PaymentsPageInner() {
                   <select
                     className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-950"
                     value={formMethod}
-                    onChange={(e) => setFormMethod(e.target.value as PaymentMethod)}
+                    onChange={(e) => setFormMethod(e.target.value)}
                   >
-                    {METHODS.map((m) => (
-                      <option key={m} value={m}>
-                        {methodLabel(m)}
+                    {paymentMethodOptions.map((m) => (
+                      <option key={m.value} value={m.value}>
+                        {m.label}
                       </option>
                     ))}
                   </select>

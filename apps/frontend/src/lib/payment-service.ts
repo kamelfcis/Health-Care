@@ -1,7 +1,5 @@
 import { api } from "./api";
 
-export const PAYMENT_METHODS = ["CASH", "CARD", "ONLINE", "INSURANCE"] as const;
-export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 export const PAYMENT_STATUSES = ["PENDING", "SUCCESS", "FAILED", "REFUNDED"] as const;
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 
@@ -56,7 +54,7 @@ export interface PaymentStats {
 export type PaymentCreatePayload = {
   invoiceId: string;
   amount: number;
-  method: "CASH" | "CARD" | "ONLINE" | "INSURANCE";
+  method: string;
   transactionRef?: string;
   status?: "PENDING" | "SUCCESS" | "FAILED" | "REFUNDED";
 };
@@ -65,6 +63,7 @@ export type PaymentUpdatePayload = {
   status?: "PENDING" | "SUCCESS" | "FAILED" | "REFUNDED";
   transactionRef?: string;
   amount?: number;
+  method?: string;
 };
 
 function listParams(params?: PaymentListParams): Record<string, string | number> {

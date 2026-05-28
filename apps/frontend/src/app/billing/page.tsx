@@ -26,6 +26,8 @@ import { clinicService } from "@/lib/clinic-service";
 import { useClinicCurrency } from "@/hooks/use-clinic-currency";
 import { patientService, PatientListItem } from "@/lib/patient-service";
 import { appointmentService } from "@/lib/appointment-service";
+import { ProcedureCatalogItem, procedureService } from "@/lib/procedure-service";
+import { paymentMethodCatalogService } from "@/lib/payment-method-catalog-service";
 import { storage } from "@/lib/storage";
 import { RoleGate } from "@/components/auth/role-gate";
 import { useDebounce } from "@/hooks/use-debounce";
@@ -96,10 +98,6 @@ function InvoiceTypeFilterToggles({
       })}
     </div>
   );
-}
-
-function entryTypeToInvoiceType(entryType?: string): InvoiceSourceType {
-  return entryType === "CONSULTATION" ? "CONSULTATION" : "EXAM";
 }
 
 /** Premium status accents for cards and table badges (RTL-safe logical start border). */
@@ -192,10 +190,50 @@ type InvoiceRow = {
   status: string;
   invoiceType: InvoiceSourceType;
   typeLabel: string;
+  paymentMethodCode: string | null;
+  paymentMethodDisplay: string | null;
 };
 
+type EditableLineType = "PROCEDURE" | "EXAM" | "CONSULTATION";
+
+type BillingDraftLine = {
+  id: string;
+  lineType: EditableLineType;
+  itemKey: string;
+  catalogProcedureId: string;
+  title: string;
+  quantity: string;
+  unitPrice: string;
+  discountPercent: string;
+  taxPercent: string;
+};
+
+function makeDraftLine(type: EditableLineType = "PROCEDURE"): BillingDraftLine {
+  return {
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    lineType: type,
+    itemKey: "",
+    catalogProcedureId: "",
+    title: "",
+    quantity: "1",
+    unitPrice: "",
+    discountPercent: "0",
+    taxPercent: "0"
+  };
+}
+
+function lineTotalFromDraft(line: BillingDraftLine): number {
+  const quantity = Math.max(1, Math.floor(Number(line.quantity || 0)));
+  const unitPrice = Math.max(0, Number(line.unitPrice || 0));
+  const discountPercent = Math.max(0, Math.min(100, Number(line.discountPercent || 0)));
+  const taxPercent = Math.max(0, Math.min(100, Number(line.taxPercent || 0)));
+  const subtotal = quantity * unitPrice;
+  const discounted = subtotal - subtotal * (discountPercent / 100);
+  return Math.max(0, discounted + discounted * (taxPercent / 100));
+}
+
 function BillingPageInner() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
   const { state, setQuery } = useListQueryState();
@@ -296,11 +334,64 @@ function BillingPageInner() {
     queryFn: () => billingService.stats(listClinicId)
   });
 
+  const paymentMethodCatalogClinicId = isSuperAdmin
+    ? selectedClinicId === "all"
+      ? undefined
+      : selectedClinicId
+    : currentUser?.clinicId;
+
+  const paymentMethodCatalogQuery = useQuery({
+    queryKey: ["payment-methods", "billing-list", paymentMethodCatalogClinicId ?? "none"],
+    queryFn: () => paymentMethodCatalogService.list(paymentMethodCatalogClinicId!),
+    enabled: Boolean(paymentMethodCatalogClinicId)
+  });
+
+  const paymentMethodCatalogOptions = useMemo(() => {
+    const list = paymentMethodCatalogQuery.data ?? [];
+    if (!list.length) return [{ value: "CASH", label: t("paymentMethod.CASH") }];
+    return list.map((item) => ({
+      value: item.code,
+      label: locale === "ar" ? item.nameAr : item.name
+    }));
+  }, [locale, paymentMethodCatalogQuery.data, t]);
+
+  const paymentMethodLabel = useCallback(
+    (code: string) => {
+      const byLookup = paymentMethodCatalogOptions.find((opt) => opt.value === code)?.label;
+      if (byLookup) return byLookup;
+      const key = `paymentMethod.${code}`;
+      const tr = t(key);
+      return tr === key ? code : tr;
+    },
+    [paymentMethodCatalogOptions, t]
+  );
+
+  const resolvePaymentMethodDisplay = useCallback(
+    (item: BillingListItem) => {
+      const code = item.paymentMethodCode?.trim() || null;
+      if (code) return paymentMethodLabel(code);
+      if (item.status === "PAID") return t("billing.card.paymentMethodNone");
+      return t("billing.card.paymentMethodPending");
+    },
+    [paymentMethodLabel, t]
+  );
+
   const rows: InvoiceRow[] = useMemo(
     () =>
       (billingListQuery.data?.data ?? []).map((item) => {
         const due = item.dueDate ? String(item.dueDate).slice(0, 10) : "-";
         const bal = invoiceBalanceDue(item);
+        const lineTypes = (item.lineItems ?? []).map((line) => line.lineType).filter(Boolean) as InvoiceSourceType[];
+        const inferredType: InvoiceSourceType =
+          lineTypes.length === 0
+            ? ((item.invoiceType ?? "OTHER") as InvoiceSourceType)
+            : lineTypes.every((t) => t === lineTypes[0])
+              ? lineTypes[0]
+              : "OTHER";
+        const inferredLabel =
+          lineTypes.length > 1 && !lineTypes.every((t) => t === lineTypes[0])
+            ? t("billing.invoiceType.mixed")
+            : invoiceTypeLabel(inferredType);
         return {
           raw: item,
           clinicId: item.clinicId,
@@ -312,11 +403,13 @@ function BillingPageInner() {
           balanceDue: formatMoney(bal),
           dueDate: due,
           status: item.status,
-          invoiceType: (item.invoiceType ?? "OTHER") as InvoiceSourceType,
-          typeLabel: invoiceTypeLabel((item.invoiceType ?? "OTHER") as InvoiceSourceType)
+          invoiceType: inferredType,
+          typeLabel: inferredLabel,
+          paymentMethodCode: item.paymentMethodCode?.trim() || null,
+          paymentMethodDisplay: resolvePaymentMethodDisplay(item)
         };
       }),
-    [billingListQuery.data?.data, formatMoney, invoiceTypeLabel]
+    [billingListQuery.data?.data, formatMoney, invoiceTypeLabel, resolvePaymentMethodDisplay, t]
   );
 
   const highlightedId = urlInvoiceId;
@@ -348,13 +441,11 @@ function BillingPageInner() {
 
   const [formPatientId, setFormPatientId] = useState("");
   const [formInvoiceNumber, setFormInvoiceNumber] = useState("");
-  const [formAmount, setFormAmount] = useState("");
-  const [formTax, setFormTax] = useState("0");
-  const [formDiscount, setFormDiscount] = useState("0");
+  const [formLines, setFormLines] = useState<BillingDraftLine[]>([makeDraftLine("PROCEDURE")]);
   const [formDue, setFormDue] = useState("");
   const [formNotes, setFormNotes] = useState("");
   const [formStatus, setFormStatus] = useState<string>("PENDING");
-  const [formInvoiceType, setFormInvoiceType] = useState<InvoiceSourceType>("OTHER");
+  const [formPaymentMethod, setFormPaymentMethod] = useState("");
   const [formAppointmentId, setFormAppointmentId] = useState("");
 
   const apptPickClinicId = editing?.clinicId ?? patientListClinic ?? undefined;
@@ -371,25 +462,40 @@ function BillingPageInner() {
     setFormAppointmentId("");
   }, [formPatientId, editing]);
 
+  const procedureOptionsQuery = useQuery({
+    queryKey: ["billing", "procedure-options", patientListClinic],
+    queryFn: () => procedureService.list(patientListClinic),
+    enabled: modalOpen && !!patientListClinic
+  });
+
+  const paymentMethodsQuery = useQuery({
+    queryKey: ["payment-methods", "billing", patientListClinic ?? "none"],
+    queryFn: () => paymentMethodCatalogService.list(patientListClinic!),
+    enabled: modalOpen && !!patientListClinic && (!isSuperAdmin || selectedClinicId !== "all")
+  });
+
+  const paymentMethodSelectOptions = useMemo(() => {
+    return (paymentMethodsQuery.data ?? []).map((item) => ({
+      value: item.code,
+      label: locale === "ar" ? item.nameAr : item.name,
+      searchText: `${item.name} ${item.nameAr} ${item.code}`
+    }));
+  }, [locale, paymentMethodsQuery.data]);
+
   useEffect(() => {
-    if (editing?.patientProcedure) return;
-    if (!formAppointmentId.trim()) return;
-    const appt = (appointmentsPickQuery.data ?? []).find((a) => a.id === formAppointmentId);
-    if (appt?.entryType) {
-      setFormInvoiceType(entryTypeToInvoiceType(appt.entryType));
-    }
-  }, [formAppointmentId, appointmentsPickQuery.data, editing?.patientProcedure]);
+    if (formStatus !== "PAID" || formPaymentMethod.trim()) return;
+    if (!paymentMethodSelectOptions.length) return;
+    setFormPaymentMethod(paymentMethodSelectOptions[0].value);
+  }, [formStatus, formPaymentMethod, paymentMethodSelectOptions]);
 
   const resetForm = () => {
     setFormPatientId("");
     setFormInvoiceNumber("");
-    setFormAmount("");
-    setFormTax("0");
-    setFormDiscount("0");
+    setFormLines([makeDraftLine("PROCEDURE")]);
     setFormDue("");
     setFormNotes("");
     setFormStatus("PENDING");
-    setFormInvoiceType("OTHER");
+    setFormPaymentMethod("");
     setFormAppointmentId("");
     setPatientQuery("");
     setEditing(null);
@@ -405,52 +511,112 @@ function BillingPageInner() {
     setEditing(item);
     setFormPatientId(item.patientId);
     setFormInvoiceNumber(item.invoiceNumber);
-    setFormAmount(String(item.amount));
-    setFormTax(String(item.taxAmount ?? 0));
-    setFormDiscount(String(item.discount ?? 0));
+    setFormLines(
+      (item.lineItems ?? []).length
+        ? (item.lineItems ?? []).map((line) => ({
+            id: line.id,
+            lineType: (line.lineType === "CONSULTATION" ? "CONSULTATION" : line.lineType === "EXAM" ? "EXAM" : "PROCEDURE") as EditableLineType,
+            itemKey:
+              line.lineType === "PROCEDURE" && line.catalogProcedureId
+                ? `PROCEDURE:${line.catalogProcedureId}`
+                : (line.lineType as string),
+            catalogProcedureId: line.catalogProcedureId ?? "",
+            title: line.title ?? "",
+            quantity: String(line.quantity ?? 1),
+            unitPrice: String(line.unitPrice ?? 0),
+            discountPercent: String(line.discountPercent ?? 0),
+            taxPercent: String(line.taxPercent ?? 0)
+          }))
+        : [makeDraftLine("PROCEDURE")]
+    );
     setFormDue(item.dueDate ? String(item.dueDate).slice(0, 10) : "");
     setFormNotes(item.notes ?? "");
     setFormStatus(item.status);
-    setFormInvoiceType(item.invoiceType ?? "OTHER");
     setFormAppointmentId(item.appointmentId ?? "");
     setPatientQuery("");
     setModalOpen(true);
   };
 
-  const isProcedureInvoice = Boolean(editing?.patientProcedure);
+  const invoiceItemOptions = useMemo(() => {
+    const catalogOptions = (procedureOptionsQuery.data ?? []).map((item: ProcedureCatalogItem) => ({
+      value: `PROCEDURE:${item.id}`,
+      label: item.name,
+      searchText: item.name,
+      lineType: "PROCEDURE" as EditableLineType,
+      procedureId: item.id,
+      defaultAmount: item.defaultAmount ?? 0
+    }));
+
+    const catalogValues = new Set(catalogOptions.map((opt) => opt.value));
+    const legacyOptions = formLines
+      .filter((line) => (line.lineType === "EXAM" || line.lineType === "CONSULTATION") && !catalogValues.has(line.itemKey))
+      .map((line) => ({
+        value: line.itemKey,
+        label: line.title.trim() || (line.lineType === "EXAM" ? t("billing.line.exam") : t("billing.line.consultation")),
+        searchText: line.title,
+        lineType: line.lineType,
+        procedureId: "",
+        defaultAmount: 0
+      }))
+      .filter((opt, index, arr) => arr.findIndex((o) => o.value === opt.value) === index);
+
+    return [...catalogOptions, ...legacyOptions];
+  }, [procedureOptionsQuery.data, formLines, t]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const amount = Number(formAmount);
-      if (!Number.isFinite(amount) || amount <= 0) throw new Error("amount");
-      const taxAmount = Number(formTax) || 0;
-      const discount = Number(formDiscount) || 0;
       if (!formPatientId.trim()) throw new Error("patient");
+      if (!formLines.length) throw new Error("lineItems");
+      const lineItems = formLines.map((line) => {
+        const quantity = Number(line.quantity || 0);
+        const unitPrice = Number(line.unitPrice || 0);
+        if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice <= 0) {
+          throw new Error("amount");
+        }
+        if (line.lineType === "PROCEDURE" && !line.catalogProcedureId.trim()) {
+          throw new Error("procedure");
+        }
+        const procedureName = (procedureOptionsQuery.data ?? []).find((opt) => opt.id === line.catalogProcedureId)?.name;
+        return {
+          lineType: line.lineType,
+          catalogProcedureId: line.lineType === "PROCEDURE" ? line.catalogProcedureId.trim() : undefined,
+          title:
+            line.lineType === "PROCEDURE"
+              ? (procedureName ?? (line.title.trim() || t("billing.line.procedure")))
+              : line.title.trim() || (line.lineType === "EXAM" ? t("billing.line.exam") : t("billing.line.consultation")),
+          quantity: Math.floor(quantity),
+          unitPrice,
+          discountPercent: Number(line.discountPercent || 0),
+          taxPercent: Number(line.taxPercent || 0)
+        };
+      });
 
       if (editing) {
         const payload: BillingUpdatePayload = {
           status: formStatus,
           notes: formNotes.trim() || undefined,
-          amount,
-          taxAmount,
-          discount,
           dueDate: formDue.trim() ? formDue : null,
           appointmentId: formAppointmentId.trim() || null,
-          invoiceType: isProcedureInvoice ? undefined : formInvoiceType
+          lineItems
         };
         return billingService.update(editing.id, payload, scopeForRowMutation(editing.clinicId));
       }
 
+      if (formStatus === "PAID" && !formPaymentMethod.trim()) {
+        throw new Error("paymentMethod");
+      }
+
       const payload: BillingCreatePayload = {
         patientId: formPatientId.trim(),
-        amount,
-        taxAmount,
-        discount,
+        amount: Math.max(0.01, lineItems.reduce((s, l) => s + l.quantity * l.unitPrice, 0)),
         dueDate: formDue.trim() || undefined,
         notes: formNotes.trim() || undefined,
         status: formStatus,
-        invoiceType: formInvoiceType
+        lineItems
       };
+      if (formStatus === "PAID" && formPaymentMethod.trim()) {
+        payload.paymentMethod = formPaymentMethod.trim();
+      }
       const num = formInvoiceNumber.trim();
       if (num) payload.invoiceNumber = num;
       const appt = formAppointmentId.trim();
@@ -474,9 +640,45 @@ function BillingPageInner() {
         toast.error(t("billing.form.selectPatient"));
         return;
       }
+      if (err instanceof Error && err.message === "lineItems") {
+        toast.error(t("billing.line.requireOne"));
+        return;
+      }
+      if (err instanceof Error && err.message === "procedure") {
+        toast.error(t("billing.line.procedureRequired"));
+        return;
+      }
+      if (err instanceof Error && err.message === "paymentMethod") {
+        toast.error(t("billing.form.paymentMethodRequired"));
+        return;
+      }
       toast.error(getApiErrorMessage(err) ?? t("billing.saveFailed"));
     }
   });
+
+  const linesSummary = useMemo(() => {
+    const parsed = formLines.map((line) => {
+      const quantity = Math.max(1, Math.floor(Number(line.quantity || 0)));
+      const unitPrice = Math.max(0, Number(line.unitPrice || 0));
+      const discountPercent = Math.max(0, Math.min(100, Number(line.discountPercent || 0)));
+      const taxPercent = Math.max(0, Math.min(100, Number(line.taxPercent || 0)));
+      const subtotal = quantity * unitPrice;
+      const discountValue = subtotal * (discountPercent / 100);
+      const afterDiscount = subtotal - discountValue;
+      const taxValue = afterDiscount * (taxPercent / 100);
+      const total = afterDiscount + taxValue;
+      return { subtotal, discountValue, taxValue, total };
+    });
+    return parsed.reduce(
+      (acc, cur) => ({
+        subtotal: acc.subtotal + cur.subtotal,
+        discount: acc.discount + cur.discountValue,
+        tax: acc.tax + cur.taxValue,
+        total: acc.total + cur.total
+      }),
+      { subtotal: 0, discount: 0, tax: 0, total: 0 }
+    );
+  }, [formLines]);
 
   const removeMutation = useMutation({
     mutationFn: async ({ id, clinicId }: { id: string; clinicId: string }) => {
@@ -507,7 +709,7 @@ function BillingPageInner() {
       { header: t("billing.column.invoice"), accessorKey: "invoice" },
       { header: t("nav.patients"), accessorKey: "patient" },
       {
-        header: t("billing.form.invoiceType"),
+        header: t("billing.line.items"),
         id: "invoiceType",
         cell: ({ row }) => <InvoiceTypeBadge type={row.original.invoiceType} label={row.original.typeLabel} />
       },
@@ -724,6 +926,17 @@ function BillingPageInner() {
                   <p className="text-xs text-slate-500">
                     {t("billing.column.dueDate")}: {row.dueDate}
                   </p>
+                  <p className="text-xs text-slate-500">
+                    {t("billing.card.paymentMethod")}:{" "}
+                    <span
+                      className={cn(
+                        "font-medium",
+                        row.paymentMethodCode ? "text-slate-800" : "text-slate-500"
+                      )}
+                    >
+                      {row.paymentMethodDisplay}
+                    </span>
+                  </p>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-1 pt-0.5">
                   {canRecordPayment && invoiceBalanceDue(row.raw) > 0 ? (
@@ -764,7 +977,7 @@ function BillingPageInner() {
 
         {modalOpen ? (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal>
-            <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-900">
+            <div className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-3xl border border-slate-200/80 bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-900 sm:p-6">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
                   {editing ? t("billing.form.editTitle") : t("billing.form.createTitle")}
@@ -778,7 +991,7 @@ function BillingPageInner() {
                 <p className="text-sm text-amber-700">{t("billing.selectClinic")}</p>
               ) : (
                 <form
-                  className="space-y-3"
+                  className="space-y-4"
                   onSubmit={(e) => {
                     e.preventDefault();
                     saveMutation.mutate();
@@ -808,25 +1021,139 @@ function BillingPageInner() {
                     </p>
                   )}
 
-                  <label className="block text-sm">
-                    <span className="text-slate-600">{t("billing.form.invoiceType")}</span>
-                    <select
-                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm disabled:bg-slate-100"
-                      value={formInvoiceType}
-                      onChange={(e) => setFormInvoiceType(e.target.value as InvoiceSourceType)}
-                      disabled={isProcedureInvoice}
-                      required
-                    >
-                      {INVOICE_SOURCE_TYPES.map((type) => (
-                        <option key={type} value={type} disabled={!editing && type === "PROCEDURE"}>
-                          {invoiceTypeLabel(type)}
-                        </option>
-                      ))}
-                    </select>
-                    {isProcedureInvoice ? (
-                      <p className="mt-1 text-xs text-slate-500">{t("billing.form.invoiceTypeProcedureLocked")}</p>
-                    ) : null}
-                  </label>
+                  <section className="rounded-2xl border border-slate-200 bg-white/70 p-3 dark:border-slate-700 dark:bg-slate-900/60">
+                    <div className="mb-2 flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{t("billing.line.items")}</h3>
+                      <button
+                        type="button"
+                        className="rounded-lg border border-dashed border-orange-300 bg-orange-50 px-3 py-1.5 text-xs font-medium text-orange-700 hover:bg-orange-100"
+                        onClick={() => setFormLines((prev) => [...prev, makeDraftLine("PROCEDURE")])}
+                      >
+                        + {t("billing.line.add")}
+                      </button>
+                    </div>
+                    <div className="overflow-x-auto rounded-xl border border-orange-200 dark:border-orange-700/60">
+                      <table className="min-w-[980px] w-full text-sm">
+                        <thead className="bg-orange-500 text-white dark:bg-orange-600">
+                          <tr>
+                            <th className="px-2 py-2 text-center">{t("billing.line.item")}</th>
+                            <th className="px-2 py-2 text-center">{t("billing.column.qty")}</th>
+                            <th className="px-2 py-2 text-center">{t("billing.column.amount")}</th>
+                            <th className="px-2 py-2 text-center">{t("billing.form.discount")} %</th>
+                            <th className="px-2 py-2 text-center">{t("billing.form.tax")} %</th>
+                            <th className="px-2 py-2 text-center">{t("billing.column.amount")}</th>
+                            <th className="px-2 py-2 text-center">{t("common.delete")}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                          {formLines.map((line) => (
+                            <tr key={line.id} className="text-center">
+                              <td className="px-2 py-2 align-middle">
+                                <SearchableSelect
+                                  id={`billing-line-item-${line.id}`}
+                                  className="mx-auto w-full max-w-[340px]"
+                                  value={line.itemKey}
+                                  options={invoiceItemOptions}
+                                  dropdownInPortal
+                                  placeholder={t("billing.line.itemPlaceholder")}
+                                  searchPlaceholder={t("common.search")}
+                                  emptyText={t("common.noData")}
+                                  loadingText={t("common.loading")}
+                                  loading={procedureOptionsQuery.isLoading}
+                                  onChange={(value) => {
+                                    const selected = invoiceItemOptions.find((opt) => opt.value === value);
+                                    if (!selected) return;
+                                    setFormLines((prev) =>
+                                      prev.map((l) =>
+                                        l.id === line.id
+                                          ? {
+                                              ...l,
+                                              itemKey: selected.value,
+                                              lineType: selected.lineType,
+                                              catalogProcedureId: selected.procedureId,
+                                              title: selected.label,
+                                              unitPrice:
+                                                !l.unitPrice || Number(l.unitPrice) <= 0
+                                                  ? String(selected.defaultAmount ?? 0)
+                                                  : l.unitPrice
+                                            }
+                                          : l
+                                      )
+                                    );
+                                  }}
+                                />
+                              </td>
+                              <td className="px-2 py-2 align-middle">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  className="mx-auto w-24 rounded-lg border border-slate-200 px-2 py-1 text-center text-sm dark:border-slate-600 dark:bg-slate-800"
+                                  value={line.quantity}
+                                  onChange={(e) =>
+                                    setFormLines((prev) => prev.map((l) => (l.id === line.id ? { ...l, quantity: e.target.value } : l)))
+                                  }
+                                />
+                              </td>
+                              <td className="px-2 py-2 align-middle">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  className="mx-auto w-28 rounded-lg border border-slate-200 px-2 py-1.5 text-center text-sm dark:border-slate-600 dark:bg-slate-800"
+                                  value={line.unitPrice}
+                                  onChange={(e) =>
+                                    setFormLines((prev) => prev.map((l) => (l.id === line.id ? { ...l, unitPrice: e.target.value } : l)))
+                                  }
+                                />
+                              </td>
+                              <td className="px-2 py-2 align-middle">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  step="0.01"
+                                  className="mx-auto w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-center text-sm dark:border-slate-600 dark:bg-slate-800"
+                                  value={line.discountPercent}
+                                  onChange={(e) =>
+                                    setFormLines((prev) =>
+                                      prev.map((l) => (l.id === line.id ? { ...l, discountPercent: e.target.value } : l))
+                                    )
+                                  }
+                                />
+                              </td>
+                              <td className="px-2 py-2 align-middle">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  step="0.01"
+                                  className="mx-auto w-24 rounded-lg border border-slate-200 px-2 py-1.5 text-center text-sm dark:border-slate-600 dark:bg-slate-800"
+                                  value={line.taxPercent}
+                                  onChange={(e) =>
+                                    setFormLines((prev) =>
+                                      prev.map((l) => (l.id === line.id ? { ...l, taxPercent: e.target.value } : l))
+                                    )
+                                  }
+                                />
+                              </td>
+                              <td className="px-2 py-2 align-middle text-center font-semibold text-slate-800 dark:text-slate-100">
+                                {formatMoney(lineTotalFromDraft(line))}
+                              </td>
+                              <td className="px-2 py-2 align-middle text-center">
+                                <button
+                                  type="button"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50"
+                                  onClick={() => setFormLines((prev) => (prev.length > 1 ? prev.filter((l) => l.id !== line.id) : prev))}
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
 
                   {apptPatientIdForQuery ? (
                     <label className="block text-sm">
@@ -863,52 +1190,37 @@ function BillingPageInner() {
                   ) : null}
 
                   <label className="block text-sm">
-                    <span className="text-slate-600">{t("billing.form.amount")}</span>
-                    <input
-                      required
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                      value={formAmount}
-                      onChange={(e) => setFormAmount(e.target.value)}
-                    />
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <label className="block text-sm">
-                      <span className="text-slate-600">{t("billing.form.tax")}</span>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                        value={formTax}
-                        onChange={(e) => setFormTax(e.target.value)}
-                      />
-                    </label>
-                    <label className="block text-sm">
-                      <span className="text-slate-600">{t("billing.form.discount")}</span>
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                        value={formDiscount}
-                        onChange={(e) => setFormDiscount(e.target.value)}
-                      />
-                    </label>
-                  </div>
-                  <label className="block text-sm">
                     <span className="text-slate-600">{t("billing.form.dueDate")}</span>
                     <input type="date" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" value={formDue} onChange={(e) => setFormDue(e.target.value)} />
                   </label>
-                  <label className="block text-sm">
-                    <span className="text-slate-600">{t("billing.form.notes")}</span>
-                    <textarea className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" rows={2} value={formNotes} onChange={(e) => setFormNotes(e.target.value)} />
-                  </label>
+                  <div className="grid gap-3 lg:grid-cols-3">
+                    <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-800/40">
+                      <h4 className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">{t("billing.line.total")}</h4>
+                      <div className="space-y-1 text-sm">
+                        <p className="flex items-center justify-between"><span>{t("billing.form.amount")}</span><span>{formatMoney(linesSummary.subtotal)}</span></p>
+                        <p className="flex items-center justify-between"><span>{t("billing.form.discount")}</span><span>{formatMoney(linesSummary.discount)}</span></p>
+                        <p className="flex items-center justify-between"><span>{t("billing.form.tax")}</span><span>{formatMoney(linesSummary.tax)}</span></p>
+                        <p className="mt-2 flex items-center justify-between border-t border-slate-200 pt-2 font-semibold dark:border-slate-700">
+                          <span>{t("billing.line.total")}</span><span>{formatMoney(linesSummary.total)}</span>
+                        </p>
+                      </div>
+                    </section>
+                    <label className="block text-sm lg:col-span-2">
+                      <span className="text-slate-600">{t("billing.form.notes")}</span>
+                      <textarea className="mt-1 min-h-[120px] w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-slate-700 dark:bg-slate-800" rows={4} value={formNotes} onChange={(e) => setFormNotes(e.target.value)} />
+                    </label>
+                  </div>
                   <label className="block text-sm">
                     <span className="text-slate-600">{t("billing.form.status")}</span>
-                    <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm" value={formStatus} onChange={(e) => setFormStatus(e.target.value)}>
+                    <select
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                      value={formStatus}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setFormStatus(next);
+                        if (next !== "PAID") setFormPaymentMethod("");
+                      }}
+                    >
                       {INVOICE_STATUSES.map((s) => (
                         <option key={s} value={s}>
                           {statusLabel(s)}
@@ -916,6 +1228,24 @@ function BillingPageInner() {
                       ))}
                     </select>
                   </label>
+                  {!editing && formStatus === "PAID" ? (
+                    <label className="block text-sm">
+                      <span className="text-slate-600">{t("billing.form.paymentMethod")}</span>
+                      <div className="mt-1">
+                        <SearchableSelect
+                          id="billing-form-payment-method"
+                          value={formPaymentMethod}
+                          options={paymentMethodSelectOptions}
+                          placeholder={t("billing.form.selectPaymentMethod")}
+                          searchPlaceholder={t("common.search")}
+                          emptyText={t("common.noData")}
+                          loading={paymentMethodsQuery.isLoading}
+                          dropdownInPortal
+                          onChange={setFormPaymentMethod}
+                        />
+                      </div>
+                    </label>
+                  ) : null}
                   <div className="flex justify-end gap-2 pt-2">
                     <RippleButton type="button" glow={false} className="border border-slate-200 bg-white !text-slate-700 hover:bg-slate-50" onClick={() => setModalOpen(false)}>
                       {t("common.cancel")}

@@ -12,6 +12,21 @@ export interface InvoicePaymentSlice {
 
 export const INVOICE_SOURCE_TYPES = ["PROCEDURE", "EXAM", "CONSULTATION", "OTHER"] as const;
 export type InvoiceSourceType = (typeof INVOICE_SOURCE_TYPES)[number];
+export type BillingLineType = InvoiceSourceType;
+
+export interface BillingLineItem {
+  id: string;
+  lineType: BillingLineType;
+  title: string;
+  quantity: number;
+  unitPrice: number;
+  discountPercent: number;
+  taxPercent: number;
+  lineSubtotal: number;
+  lineTax: number;
+  lineTotal: number;
+  catalogProcedureId?: string | null;
+}
 
 export interface BillingListItem {
   id: string;
@@ -21,6 +36,7 @@ export interface BillingListItem {
   appointment?: { id: string; startsAt: string; status?: string; entryType?: string } | null;
   invoiceType?: InvoiceSourceType;
   patientProcedure?: { id: string; name: string } | null;
+  lineItems?: BillingLineItem[];
   invoiceNumber: string;
   amount: number;
   taxAmount: number;
@@ -30,6 +46,8 @@ export interface BillingListItem {
   notes?: string | null;
   patient?: InvoicePatientRef | null;
   payments?: InvoicePaymentSlice[];
+  /** Set on invoice or derived from latest successful payment in list API. */
+  paymentMethodCode?: string | null;
 }
 
 export interface BillingListParams {
@@ -78,6 +96,16 @@ export type BillingCreatePayload = {
   notes?: string;
   status?: string;
   invoiceType?: InvoiceSourceType;
+  paymentMethod?: string;
+  lineItems?: Array<{
+    lineType: BillingLineType;
+    title?: string;
+    quantity: number;
+    unitPrice: number;
+    discountPercent?: number;
+    taxPercent?: number;
+    catalogProcedureId?: string;
+  }>;
 };
 
 export type BillingUpdatePayload = {
@@ -89,6 +117,15 @@ export type BillingUpdatePayload = {
   dueDate?: string | null;
   appointmentId?: string | null;
   invoiceType?: InvoiceSourceType;
+  lineItems?: Array<{
+    lineType: BillingLineType;
+    title?: string;
+    quantity: number;
+    unitPrice: number;
+    discountPercent?: number;
+    taxPercent?: number;
+    catalogProcedureId?: string;
+  }>;
 };
 
 function listParams(params?: BillingListParams): Record<string, string | number> {
