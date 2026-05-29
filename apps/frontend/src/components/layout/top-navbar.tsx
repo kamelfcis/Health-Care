@@ -107,10 +107,10 @@ export function TopNavbar() {
   };
 
   return (
-    <header className="sticky top-0 z-40 flex items-center justify-between border-b border-slate-200/80 bg-white/90 p-4 shadow-soft backdrop-blur-xl dark:border-slate-800/70 dark:bg-slate-950/85">
+    <header className="sticky top-0 z-40 flex items-center justify-between border-b border-slate-200/80 bg-white/90 p-4 shadow-soft backdrop-blur-xl dark:border-transparent dark:bg-sidebar/90 dark:shadow-elevated-sm">
       <div className="flex items-center gap-2">
         {mounted && clinicImageSrc ? (
-          <div className="hidden h-10 w-10 overflow-hidden rounded-xl border border-slate-200 bg-white md:block dark:border-slate-700 dark:bg-slate-900">
+          <div className="hidden h-10 w-10 overflow-hidden rounded-xl border border-slate-200 bg-white md:block dark:border-transparent dark:bg-surface-raised dark:shadow-elevated-sm">
             <Image
               src={clinicImageSrc}
               alt="Clinic logo"
@@ -121,19 +121,19 @@ export function TopNavbar() {
             />
           </div>
         ) : null}
-        <button className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 md:hidden" onClick={openMobile}>
+        <button className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 dark:border-transparent dark:bg-surface-raised dark:text-foreground/90 dark:shadow-elevated-sm md:hidden" onClick={openMobile}>
           <Menu size={16} />
         </button>
-        <button className="hidden h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 md:inline-flex" onClick={toggleCollapsed}>
+        <button className="hidden h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 dark:border-transparent dark:bg-surface-raised dark:text-foreground/90 dark:shadow-elevated-sm md:inline-flex" onClick={toggleCollapsed}>
           <Menu size={16} />
         </button>
       </div>
       <div ref={searchWrapRef} className="relative mx-3 hidden max-w-xl flex-1 md:block">
-        <motion.div whileHover={{ scale: 1.01 }} className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-3 py-2 dark:border-slate-700 dark:bg-slate-900/80">
-          <Search size={15} className="shrink-0 text-slate-400 dark:text-slate-500" />
+        <motion.div whileHover={{ scale: 1.01 }} className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white/80 px-3 py-2.5 dark:border-transparent dark:bg-surface-raised/90 dark:shadow-elevated-sm">
+          <Search size={15} className="shrink-0 text-slate-400 dark:text-muted-foreground" />
           <input
             placeholder={t("nav.search.placeholder")}
-            className="min-w-0 flex-1 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-100 dark:placeholder:text-slate-500"
+            className="min-w-0 flex-1 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400 dark:text-foreground dark:placeholder:text-muted-foreground"
             value={searchInput}
             onChange={(e) => {
               setSearchInput(e.target.value);
@@ -146,7 +146,7 @@ export function TopNavbar() {
           {searchQuery.isFetching ? <Loader2 size={15} className="shrink-0 animate-spin text-slate-400" /> : null}
         </motion.div>
         {searchOpen && searchInput.trim().length > 0 ? (
-          <div className="absolute start-0 end-0 top-[calc(100%+6px)] z-50 max-h-80 overflow-y-auto rounded-xl border border-slate-200 bg-white py-2 text-sm shadow-lg dark:border-slate-700 dark:bg-slate-900">
+          <div className="absolute start-0 end-0 top-[calc(100%+6px)] z-50 max-h-80 overflow-y-auto rounded-xl border border-slate-200 bg-white py-2 text-sm shadow-lg dark:border-transparent dark:bg-popover dark:shadow-elevated-lg">
             {debouncedSearch.trim().length < 2 ? (
               <p className="px-3 py-2 text-slate-500">{t("nav.search.typeMore")}</p>
             ) : searchQuery.isError ? (
@@ -166,15 +166,15 @@ export function TopNavbar() {
                         <li key={`p-${hit.id}`}>
                           <button
                             type="button"
-                            className="w-full rounded-lg px-2 py-1.5 text-start hover:bg-orange-50 dark:hover:bg-slate-800"
+                            className="w-full rounded-lg px-2 py-1.5 text-start hover:bg-orange-50 dark:hover:bg-accent"
                             onClick={() => {
                               setSearchOpen(false);
                               setSearchInput("");
                               router.push(hit.href);
                             }}
                           >
-                            <span className="block font-medium text-slate-800 dark:text-slate-100">{hit.title}</span>
-                            {hit.subtitle ? <span className="block text-xs text-slate-500">{hit.subtitle}</span> : null}
+                            <span className="block font-medium text-slate-800 dark:text-foreground">{hit.title}</span>
+                            {hit.subtitle ? <span className="block text-xs text-slate-500 dark:text-muted-foreground">{hit.subtitle}</span> : null}
                           </button>
                         </li>
                       ))}
@@ -189,15 +189,15 @@ export function TopNavbar() {
                         <li key={`d-${hit.id}`}>
                           <button
                             type="button"
-                            className="w-full rounded-lg px-2 py-1.5 text-start hover:bg-orange-50 dark:hover:bg-slate-800"
+                            className="w-full rounded-lg px-2 py-1.5 text-start hover:bg-orange-50 dark:hover:bg-accent"
                             onClick={() => {
                               setSearchOpen(false);
                               setSearchInput("");
                               router.push(hit.href);
                             }}
                           >
-                            <span className="block font-medium text-slate-800 dark:text-slate-100">{hit.title}</span>
-                            {hit.subtitle ? <span className="block text-xs text-slate-500">{hit.subtitle}</span> : null}
+                            <span className="block font-medium text-slate-800 dark:text-foreground">{hit.title}</span>
+                            {hit.subtitle ? <span className="block text-xs text-slate-500 dark:text-muted-foreground">{hit.subtitle}</span> : null}
                           </button>
                         </li>
                       ))}
@@ -212,15 +212,15 @@ export function TopNavbar() {
                         <li key={`i-${hit.id}`}>
                           <button
                             type="button"
-                            className="w-full rounded-lg px-2 py-1.5 text-start hover:bg-orange-50 dark:hover:bg-slate-800"
+                            className="w-full rounded-lg px-2 py-1.5 text-start hover:bg-orange-50 dark:hover:bg-accent"
                             onClick={() => {
                               setSearchOpen(false);
                               setSearchInput("");
                               router.push(hit.href);
                             }}
                           >
-                            <span className="block font-medium text-slate-800 dark:text-slate-100">{hit.title}</span>
-                            {hit.subtitle ? <span className="block text-xs text-slate-500">{hit.subtitle}</span> : null}
+                            <span className="block font-medium text-slate-800 dark:text-foreground">{hit.title}</span>
+                            {hit.subtitle ? <span className="block text-xs text-slate-500 dark:text-muted-foreground">{hit.subtitle}</span> : null}
                           </button>
                         </li>
                       ))}
@@ -241,7 +241,7 @@ export function TopNavbar() {
         </div>
         <button
           className={cn(
-            "relative hidden rounded-xl border border-slate-200 bg-white/80 p-2 text-slate-500 transition hover:shadow-soft dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 md:inline-flex"
+            "relative hidden rounded-xl border border-slate-200 bg-white/80 p-2 text-slate-500 transition hover:shadow-soft dark:border-transparent dark:bg-surface-raised dark:text-muted-foreground dark:shadow-elevated-sm md:inline-flex"
           )}
         >
           <Bell size={16} />
@@ -250,26 +250,26 @@ export function TopNavbar() {
         <div ref={accountMenuRef} className="relative hidden md:block">
           <button
             type="button"
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white/85 px-2 py-1.5 text-left text-slate-600 transition hover:shadow-soft dark:border-slate-700 dark:bg-slate-900/85 dark:text-slate-200"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white/85 px-2 py-1.5 text-left text-slate-600 transition hover:shadow-soft dark:border-transparent dark:bg-surface-raised/90 dark:text-foreground/90 dark:shadow-elevated-sm"
             onClick={() => setAccountOpen((prev) => !prev)}
           >
             <div className="text-right">
-              <p className="text-sm font-medium text-brand-navy dark:text-slate-100">
+              <p className="text-sm font-medium text-brand-navy dark:text-foreground">
                 {mounted ? `${user?.firstName ?? ""} ${user?.lastName ?? ""}`.trim() || t("common.guest") : t("common.guest")}
               </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">{mounted ? user?.role ?? t("common.guest") : t("common.guest")}</p>
+              <p className="text-xs text-slate-500 dark:text-muted-foreground">{mounted ? user?.role ?? t("common.guest") : t("common.guest")}</p>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white/90 p-2 text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+            <div className="rounded-lg border border-slate-200 bg-white/90 p-2 text-slate-500 dark:border-transparent dark:bg-muted dark:text-muted-foreground">
               <AvatarIcon />
             </div>
             <ChevronDown size={15} className={cn("transition", accountOpen && "rotate-180")} />
           </button>
 
           {accountOpen ? (
-            <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-44 rounded-xl border border-slate-200 bg-white p-1.5 shadow-soft dark:border-slate-700 dark:bg-slate-900">
+            <div className="absolute right-0 top-[calc(100%+8px)] z-50 w-44 rounded-xl border border-slate-200 bg-white p-1.5 shadow-soft dark:border-transparent dark:bg-popover dark:shadow-elevated-lg">
               <button
                 type="button"
-                className="inline-flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 transition hover:bg-orange-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                className="inline-flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 transition hover:bg-orange-50 dark:text-foreground dark:hover:bg-accent"
                 onClick={() => {
                   setAccountOpen(false);
                   router.push("/profile");

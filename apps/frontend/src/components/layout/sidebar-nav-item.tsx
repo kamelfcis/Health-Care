@@ -32,8 +32,8 @@ export const sidebarNavItemClass = (active: boolean, locale: Locale, options?: {
     sidebarNavTextClass(locale, options?.nested),
     transitionBase,
     active
-      ? "bg-orange-50 font-medium text-orange-700 dark:bg-orange-500/12 dark:text-orange-300"
-      : "font-normal text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/45 dark:hover:text-slate-100"
+      ? "bg-orange-50 font-medium text-orange-700 dark:bg-primary/14 dark:text-[hsl(28,72%,68%)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+      : "font-normal text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-muted-foreground dark:hover:bg-accent dark:hover:text-foreground"
   );
 
 function SidebarNavIcon({ icon: Icon, active }: { icon: SidebarIconComponent; active: boolean }) {

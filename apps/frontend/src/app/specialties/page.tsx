@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronDown, ClipboardList, Eye, FileStack, PencilLine, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, ClipboardList, Eye, FileStack, Loader2, PencilLine, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { motion, type Variants } from "framer-motion";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/app-shell";
@@ -60,6 +60,8 @@ const sectionColorClasses = [
 ];
 const premiumIconButtonClass =
   "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 shadow-sm transition-all hover:-translate-y-0.5 hover:border-orange-300 hover:text-orange-700 hover:shadow";
+const reorderArrowButtonClass =
+  "inline-flex items-center justify-center rounded-lg bg-gradient-to-b from-orange-600 to-orange-500 text-white shadow-sm transition-all hover:from-orange-700 hover:to-orange-600 hover:shadow-md disabled:cursor-not-allowed disabled:from-orange-300 disabled:to-orange-200 disabled:text-white/80 dark:from-[hsl(28,78%,48%)] dark:to-[hsl(26,72%,54%)] dark:hover:from-[hsl(28,78%,42%)] dark:hover:to-[hsl(26,72%,48%)] dark:disabled:from-orange-900/50 dark:disabled:to-orange-900/40 dark:disabled:text-white/50";
 const premiumDeleteButtonClass =
   "inline-flex h-9 w-9 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-rose-600 shadow-sm transition-all hover:-translate-y-0.5 hover:border-rose-300 hover:bg-rose-100 hover:shadow";
 const dsInputClass =
@@ -70,6 +72,8 @@ const dsInputCompactClass =
   "h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100";
 const dsPanelClass = "rounded-2xl border border-slate-200 bg-slate-50/70 p-4";
 const dsCardClass = "rounded-2xl border border-slate-200 bg-white p-4 shadow-sm";
+const selectedTemplateCardClass =
+  "border-orange-400 bg-orange-50 shadow-[0_8px_24px_-12px_rgba(249,115,22,0.4)] ring-2 ring-orange-200/70 border-s-[3px] border-s-orange-500";
 const dsTextActionClass = "text-sm font-medium text-slate-600 transition hover:text-slate-800";
 const dsTextActionSuccessClass = "text-sm font-medium text-emerald-700 transition hover:text-emerald-800";
 const dsModalCancelButtonClass =
@@ -168,6 +172,91 @@ type GridCellConfig = {
   options: GridCellOptionDraft[];
 };
 const gridCellFieldTypes: GridCellFieldType[] = ["TEXT", "TEXT_AREA", "NUMBER", "YES_NO", "DATE", "DROPDOWN", "MULTI_SELECT", "AUTO", "EMPTY"];
+
+type ReorderDirection = "up" | "down";
+
+type ReorderPendingTarget =
+  | { type: "section"; id: string }
+  | { type: "item"; id: string }
+  | { type: "option"; id: string; fieldId: string };
+
+type TemplatesQueryData = Awaited<ReturnType<typeof specialtyService.adminListTemplatesBySpecialty>>;
+
+function swapArrayItem<T>(items: T[], fromIndex: number, toIndex: number): T[] {
+  if (fromIndex < 0 || toIndex < 0 || fromIndex >= items.length || toIndex >= items.length) {
+    return items;
+  }
+  const next = [...items];
+  const [moved] = next.splice(fromIndex, 1);
+  if (!moved) return items;
+  next.splice(toIndex, 0, moved);
+  return next;
+}
+
+function ReorderArrowButtons({
+  onMoveUp,
+  onMoveDown,
+  disableUp,
+  disableDown,
+  disabled,
+  loading,
+  loadingLabel,
+  moveUpLabel,
+  moveDownLabel,
+  compact,
+  className
+}: {
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  disableUp?: boolean;
+  disableDown?: boolean;
+  disabled?: boolean;
+  loading?: boolean;
+  loadingLabel?: string;
+  moveUpLabel: string;
+  moveDownLabel: string;
+  compact?: boolean;
+  className?: string;
+}) {
+  const buttonSizeClass = compact ? "h-6 w-6" : "h-8 w-8";
+  const iconSize = compact ? 13 : 15;
+  const spinnerSize = compact ? 12 : 14;
+
+  return (
+    <div className={cn("inline-flex shrink-0 flex-col gap-0.5", loading && "opacity-90", className)}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className={cn(reorderArrowButtonClass, buttonSizeClass)}
+            aria-label={loading ? loadingLabel ?? moveUpLabel : moveUpLabel}
+            aria-busy={loading}
+            disabled={disabled || disableUp || loading}
+            onClick={onMoveUp}
+          >
+            {loading ? <Loader2 size={spinnerSize} className="animate-spin" /> : <ChevronUp size={iconSize} />}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top">{loading ? loadingLabel ?? moveUpLabel : moveUpLabel}</TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className={cn(reorderArrowButtonClass, buttonSizeClass)}
+            aria-label={loading ? loadingLabel ?? moveDownLabel : moveDownLabel}
+            aria-busy={loading}
+            disabled={disabled || disableDown || loading}
+            onClick={onMoveDown}
+          >
+            {loading ? <Loader2 size={spinnerSize} className="animate-spin" /> : <ChevronDown size={iconSize} />}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top">{loading ? loadingLabel ?? moveDownLabel : moveDownLabel}</TooltipContent>
+      </Tooltip>
+    </div>
+  );
+}
 
 const toSlug = (value: string) =>
   value
@@ -325,8 +414,7 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
   const [expandedSectionIds, setExpandedSectionIds] = useState<string[]>([]);
   const [addFieldSectionId, setAddFieldSectionId] = useState<string | null>(null);
   const [newRuleFieldId, setNewRuleFieldId] = useState<string | null>(null);
-  const [dragItem, setDragItem] = useState<{ sectionId: string; itemType: SectionRenderItem["itemType"]; itemId: string } | null>(null);
-  const [dragOption, setDragOption] = useState<{ fieldId: string; optionId: string } | null>(null);
+  const [reorderPendingTarget, setReorderPendingTarget] = useState<ReorderPendingTarget | null>(null);
 
   useEffect(() => {
     try {
@@ -357,6 +445,10 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
     queryFn: () => specialtyService.adminListTemplatesBySpecialty(specialtyCode),
     enabled: Boolean(specialtyCode)
   });
+  const templatesQueryKey = useMemo(
+    () => ["specialties", "admin", "templates", specialtyCode] as const,
+    [specialtyCode]
+  );
 
   const templates = useMemo(() => templatesQuery.data?.templates ?? [], [templatesQuery.data?.templates]);
   const selectedCatalogSpecialty = useMemo(
@@ -615,10 +707,62 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
   }, [previewTemplate]);
 
   const refreshData = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["specialties", "admin", "templates", specialtyCode] });
+    await queryClient.invalidateQueries({ queryKey: templatesQueryKey });
     if (selectedTemplateId) {
       await queryClient.invalidateQueries({ queryKey: ["specialties", "admin", "rules", selectedTemplateId] });
     }
+  };
+  const patchSelectedTemplate = (updater: (template: SpecialtyTemplate) => SpecialtyTemplate) => {
+    if (!selectedTemplateId) return;
+    queryClient.setQueryData<TemplatesQueryData>(templatesQueryKey, (old) => {
+      if (!old) return old;
+      return {
+        ...old,
+        templates: old.templates.map((template) =>
+          template.id === selectedTemplateId ? updater(template) : template
+        )
+      };
+    });
+  };
+  const applyOptimisticSectionReorder = (sectionIds: string[]) => {
+    patchSelectedTemplate((template) => ({
+      ...template,
+      sections: template.sections
+        .map((section) => {
+          const index = sectionIds.indexOf(section.id);
+          return index >= 0 ? { ...section, displayOrder: index + 1 } : section;
+        })
+        .sort((a, b) => a.displayOrder - b.displayOrder)
+    }));
+  };
+  const applyOptimisticFieldReorder = (fieldIds: string[]) => {
+    patchSelectedTemplate((template) => ({
+      ...template,
+      fields: template.fields
+        .map((field) => {
+          const index = fieldIds.indexOf(field.id);
+          return index >= 0 ? { ...field, displayOrder: index + 1 } : field;
+        })
+        .sort((a, b) => a.displayOrder - b.displayOrder)
+    }));
+  };
+  const applyOptimisticOptionReorder = (fieldId: string, optionIds: string[]) => {
+    patchSelectedTemplate((template) => ({
+      ...template,
+      fields: template.fields.map((field) =>
+        field.id !== fieldId
+          ? field
+          : {
+              ...field,
+              options: field.options
+                .map((option) => {
+                  const index = optionIds.indexOf(option.id);
+                  return index >= 0 ? { ...option, displayOrder: index + 1 } : option;
+                })
+                .sort((a, b) => a.displayOrder - b.displayOrder)
+            }
+      )
+    }));
   };
   const refreshClinicSpecialtyAssignments = async () => {
     if (!selectedClinicId) return;
@@ -1289,26 +1433,79 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
     setEditingRuleId(null);
   };
 
-  const handleSectionItemDrop = (sectionId: string, targetItemId: string) => {
-    if (reorderFieldsMutation.isPending) return;
-    if (!selectedTemplate || !dragItem) return;
-    if (dragItem.sectionId !== sectionId) return;
-    if (dragItem.itemId === targetItemId) return;
+  const reorderSectionsMutation = useMutation({
+    mutationFn: async (sectionIds: string[]) => {
+      if (!selectedTemplate) return;
+      await specialtyService.adminReorderSections(selectedTemplate.id, sectionIds);
+    },
+    onMutate: async (sectionIds) => {
+      await queryClient.cancelQueries({ queryKey: templatesQueryKey });
+      const previous = queryClient.getQueryData<TemplatesQueryData>(templatesQueryKey);
+      applyOptimisticSectionReorder(sectionIds);
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(templatesQueryKey, context.previous);
+      }
+      setReorderPendingTarget(null);
+      toast.error(t("specialties.reorder.sectionsFailed"));
+    },
+    onSettled: () => {
+      setReorderPendingTarget(null);
+      void queryClient.invalidateQueries({ queryKey: templatesQueryKey });
+    }
+  });
 
-    const currentItems = sectionItemsById.get(sectionId) ?? [];
-    if (!currentItems.length) return;
+  const reorderFieldsMutation = useMutation({
+    mutationFn: async (orderedFieldIds: string[]) => {
+      if (!selectedTemplate) return;
+      await specialtyService.adminReorderFields(selectedTemplate.id, orderedFieldIds);
+    },
+    onMutate: async (orderedFieldIds) => {
+      await queryClient.cancelQueries({ queryKey: templatesQueryKey });
+      const previous = queryClient.getQueryData<TemplatesQueryData>(templatesQueryKey);
+      applyOptimisticFieldReorder(orderedFieldIds);
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(templatesQueryKey, context.previous);
+      }
+      setReorderPendingTarget(null);
+      toast.error(t("specialties.reorder.fieldsFailed"));
+    },
+    onSettled: () => {
+      setReorderPendingTarget(null);
+      void queryClient.invalidateQueries({ queryKey: templatesQueryKey });
+    }
+  });
 
-    const fromIndex = currentItems.findIndex(
-      (item) => item.itemType === dragItem.itemType && item.id === dragItem.itemId
-    );
-    const toIndex = currentItems.findIndex((item) => item.id === targetItemId);
-    if (fromIndex < 0 || toIndex < 0) return;
+  const reorderOptionsMutation = useMutation({
+    mutationFn: async ({ fieldId, orderedOptionIds }: { fieldId: string; orderedOptionIds: string[] }) => {
+      await specialtyService.adminReorderOptions(fieldId, orderedOptionIds);
+    },
+    onMutate: async ({ fieldId, orderedOptionIds }) => {
+      await queryClient.cancelQueries({ queryKey: templatesQueryKey });
+      const previous = queryClient.getQueryData<TemplatesQueryData>(templatesQueryKey);
+      applyOptimisticOptionReorder(fieldId, orderedOptionIds);
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(templatesQueryKey, context.previous);
+      }
+      setReorderPendingTarget(null);
+      toast.error(t("specialties.reorder.optionsFailed"));
+    },
+    onSettled: () => {
+      setReorderPendingTarget(null);
+      void queryClient.invalidateQueries({ queryKey: templatesQueryKey });
+    }
+  });
 
-    const reorderedItems = [...currentItems];
-    const [movedItem] = reorderedItems.splice(fromIndex, 1);
-    if (!movedItem) return;
-    reorderedItems.splice(toIndex, 0, movedItem);
-
+  const applySectionFieldOrder = (sectionId: string, reorderedItems: SectionRenderItem[]) => {
+    if (!selectedTemplate) return;
     const orderedSectionFieldIds = reorderedItems.flatMap((item) =>
       item.itemType === "field"
         ? [item.field.id]
@@ -1338,29 +1535,44 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
     }
 
     reorderFieldsMutation.mutate(finalOrderedIds);
-    setDragItem(null);
   };
 
-  const reorderFieldsMutation = useMutation({
-    mutationFn: async (orderedFieldIds: string[]) => {
-      if (!selectedTemplate) return;
-      await specialtyService.adminReorderFields(selectedTemplate.id, orderedFieldIds);
-    },
-    onSuccess: async () => {
-      await refreshData();
-    },
-    onError: () => toast.error("تعذر إعادة ترتيب الحقول")
-  });
+  const moveSection = (sectionId: string, direction: ReorderDirection) => {
+    if (reorderSectionsMutation.isPending || !selectedTemplate) return;
+    const sections = [...selectedTemplateSections].sort((a, b) => a.displayOrder - b.displayOrder);
+    const fromIndex = sections.findIndex((section) => section.id === sectionId);
+    if (fromIndex < 0) return;
+    const toIndex = direction === "up" ? fromIndex - 1 : fromIndex + 1;
+    if (toIndex < 0 || toIndex >= sections.length) return;
+    setReorderPendingTarget({ type: "section", id: sectionId });
+    reorderSectionsMutation.mutate(swapArrayItem(sections, fromIndex, toIndex).map((section) => section.id));
+  };
 
-  const reorderOptionsMutation = useMutation({
-    mutationFn: async ({ fieldId, orderedOptionIds }: { fieldId: string; orderedOptionIds: string[] }) => {
-      await specialtyService.adminReorderOptions(fieldId, orderedOptionIds);
-    },
-    onSuccess: async () => {
-      await refreshData();
-    },
-    onError: () => toast.error("تعذر إعادة ترتيب الخيارات")
-  });
+  const moveSectionItem = (sectionId: string, itemId: string, direction: ReorderDirection) => {
+    if (reorderFieldsMutation.isPending || !selectedTemplate) return;
+    const currentItems = sectionItemsById.get(sectionId) ?? [];
+    if (!currentItems.length) return;
+    const fromIndex = currentItems.findIndex((item) => item.id === itemId);
+    if (fromIndex < 0) return;
+    const toIndex = direction === "up" ? fromIndex - 1 : fromIndex + 1;
+    if (toIndex < 0 || toIndex >= currentItems.length) return;
+    setReorderPendingTarget({ type: "item", id: itemId });
+    applySectionFieldOrder(sectionId, swapArrayItem(currentItems, fromIndex, toIndex));
+  };
+
+  const moveFieldOption = (field: SpecialtyTemplateField, optionId: string, direction: ReorderDirection) => {
+    if (reorderOptionsMutation.isPending) return;
+    const ordered = [...field.options].sort((a, b) => a.displayOrder - b.displayOrder);
+    const fromIndex = ordered.findIndex((option) => option.id === optionId);
+    if (fromIndex < 0) return;
+    const toIndex = direction === "up" ? fromIndex - 1 : fromIndex + 1;
+    if (toIndex < 0 || toIndex >= ordered.length) return;
+    setReorderPendingTarget({ type: "option", id: optionId, fieldId: field.id });
+    reorderOptionsMutation.mutate({
+      fieldId: field.id,
+      orderedOptionIds: swapArrayItem(ordered, fromIndex, toIndex).map((option) => option.id)
+    });
+  };
 
   const updateRuleCondition = (
     index: number,
@@ -1537,8 +1749,14 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                 </div>
               ) : (
               <div className="space-y-2">
-                {templates.map((template) => (
-                  <div key={template.id} className={`${dsCardClass} ${selectedTemplateId === template.id ? "border-orange-300 bg-orange-50/50" : ""}`}>
+                {templates.map((template) => {
+                  const isSelected = selectedTemplateId === template.id;
+                  return (
+                  <div
+                    key={template.id}
+                    className={cn(dsCardClass, "transition-all", isSelected && selectedTemplateCardClass)}
+                    aria-current={isSelected ? "true" : undefined}
+                  >
                     {editingTemplateId === template.id ? (
                       <div className="grid gap-2">
                         <input
@@ -1563,9 +1781,11 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                         </label>
                       </div>
                     ) : (
-                      <button type="button" className="w-full text-left" onClick={() => setSelectedTemplateId(template.id)}>
-                        <p className="text-base font-semibold text-slate-800">الإصدار {template.version} - {template.titleAr}</p>
-                        <p className="text-sm text-slate-500">{template.title}</p>
+                      <button type="button" className="w-full text-start" onClick={() => setSelectedTemplateId(template.id)}>
+                        <p className={cn("text-base font-semibold", isSelected ? "text-orange-900" : "text-slate-800")}>
+                          الإصدار {template.version} - {template.titleAr}
+                        </p>
+                        <p className={cn("text-sm", isSelected ? "text-orange-700/80" : "text-slate-500")}>{template.title}</p>
                       </button>
                     )}
                     <div className="mt-2 flex items-center justify-between">
@@ -1654,7 +1874,8 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                       </div>
                     </div>
                   </div>
-                ))}
+                );
+                })}
                 {!templates.length ? <p className="text-base text-slate-500">لا توجد قوالب بعد</p> : null}
               </div>
               )}
@@ -1722,7 +1943,7 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                     </div>
 
                     <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm">
-                      <div className="grid grid-cols-[minmax(0,1.6fr)_120px_220px] items-center border-b border-slate-200 bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 px-4 py-3 text-sm font-semibold text-white">
+                      <div className="grid grid-cols-[minmax(0,1.6fr)_120px_280px] items-center border-b border-slate-200 bg-gradient-to-r from-slate-800 via-slate-700 to-slate-800 px-4 py-3 text-sm font-semibold text-white">
                         <span className="pe-2 text-right">الشاشة</span>
                         <span className="text-center">عدد الحقول</span>
                         <span className="text-right">إجراءات</span>
@@ -1730,9 +1951,12 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                       {sectionRows.map((row, rowIndex) => {
                         const expanded = expandedSectionIds.includes(row.id);
                         const isAddingHere = addFieldSectionId === row.id;
+                        const sectionCount = sectionRows.length;
+                        const reorderBusy = reorderSectionsMutation.isPending;
+                        const sectionReorderDisabled = reorderBusy || editingSectionId === row.id;
                         return (
                           <div key={row.id} className="border-b border-slate-200/90 last:border-b-0">
-                            <div className="grid grid-cols-[minmax(0,1.6fr)_120px_220px] items-center px-4 py-3">
+                            <div className="grid grid-cols-[minmax(0,1.6fr)_120px_280px] items-center px-4 py-3">
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   {editingSectionId === row.id ? (
@@ -1772,6 +1996,17 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                               </Tooltip>
                               <span className="text-center text-base font-semibold text-slate-700">{row.fields.length}</span>
                               <div className="flex items-center justify-end gap-2">
+                                <ReorderArrowButtons
+                                  moveUpLabel={t("specialties.reorder.moveUp")}
+                                  moveDownLabel={t("specialties.reorder.moveDown")}
+                                  loadingLabel={t("specialties.reorder.loading")}
+                                  loading={reorderPendingTarget?.type === "section" && reorderPendingTarget.id === row.id}
+                                  disabled={sectionReorderDisabled}
+                                  disableUp={rowIndex === 0}
+                                  disableDown={rowIndex === sectionCount - 1}
+                                  onMoveUp={() => moveSection(row.id, "up")}
+                                  onMoveDown={() => moveSection(row.id, "down")}
+                                />
                                 {editingSectionId === row.id ? (
                                   <>
                                     <Tooltip>
@@ -2083,17 +2318,16 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
 
                             {expanded ? (
                               <div className="space-y-3 border-t border-slate-100 bg-white p-3">
-                                {(sectionItemsById.get(row.id) ?? []).map((item) => {
+                                {(sectionItemsById.get(row.id) ?? []).map((item, itemIndex, sectionItems) => {
+                                  const itemReorderDisabled = reorderFieldsMutation.isPending;
+                                  const isFirstItem = itemIndex === 0;
+                                  const isLastItem = itemIndex === sectionItems.length - 1;
                                   if (item.itemType === "grid") {
                                     const group = item.group;
                                     return (
                                       <div
                                         key={`grid-group-${group.id}`}
                                         className="rounded-xl border border-orange-200 bg-orange-50/50 p-3"
-                                        draggable
-                                        onDragStart={() => setDragItem({ sectionId: row.id, itemType: "grid", itemId: group.id })}
-                                        onDragOver={(event) => event.preventDefault()}
-                                        onDrop={() => handleSectionItemDrop(row.id, group.id)}
                                       >
                                         <div className="flex items-center justify-between gap-2">
                                           <div>
@@ -2102,6 +2336,18 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                                               الصفوف: {group.rows.length} | الأعمدة: {group.columns.length} | الخلايا: {group.fields.length}
                                             </p>
                                           </div>
+                                          <div className="flex items-center gap-2">
+                                            <ReorderArrowButtons
+                                              moveUpLabel={t("specialties.reorder.moveUp")}
+                                              moveDownLabel={t("specialties.reorder.moveDown")}
+                                              loadingLabel={t("specialties.reorder.loading")}
+                                              loading={reorderPendingTarget?.type === "item" && reorderPendingTarget.id === group.id}
+                                              disabled={itemReorderDisabled}
+                                              disableUp={isFirstItem}
+                                              disableDown={isLastItem}
+                                              onMoveUp={() => moveSectionItem(row.id, group.id, "up")}
+                                              onMoveDown={() => moveSectionItem(row.id, group.id, "down")}
+                                            />
                                           <button
                                             type="button"
                                             className="inline-flex h-9 items-center rounded-lg border border-orange-200 bg-white px-3 text-sm font-medium text-orange-700 transition hover:bg-orange-50"
@@ -2116,19 +2362,17 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                                           >
                                             حذف الـ Grid
                                           </button>
+                                          </div>
                                         </div>
                                       </div>
                                     );
                                   }
                                   const field = item.field;
+                                  const fieldReorderDisabled = itemReorderDisabled || editingFieldId === field.id;
                                   return (
                             <div
                               key={field.id}
                               className="rounded-xl border border-slate-200 bg-white p-3"
-                              draggable
-                              onDragStart={() => setDragItem({ sectionId: row.id, itemType: "field", itemId: field.id })}
-                              onDragOver={(event) => event.preventDefault()}
-                              onDrop={() => handleSectionItemDrop(row.id, field.id)}
                             >
                               <div className="flex flex-wrap items-start justify-between gap-2">
                                 <div>
@@ -2170,6 +2414,17 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                                   )}
                                 </div>
                                 <div className="flex items-center gap-2">
+                                  <ReorderArrowButtons
+                                    moveUpLabel={t("specialties.reorder.moveUp")}
+                                    moveDownLabel={t("specialties.reorder.moveDown")}
+                                    loadingLabel={t("specialties.reorder.loading")}
+                                    loading={reorderPendingTarget?.type === "item" && reorderPendingTarget.id === field.id}
+                                    disabled={fieldReorderDisabled}
+                                    disableUp={isFirstItem}
+                                    disableDown={isLastItem}
+                                    onMoveUp={() => moveSectionItem(row.id, field.id, "up")}
+                                    onMoveDown={() => moveSectionItem(row.id, field.id, "down")}
+                                  />
                                   {editingFieldId === field.id ? (
                                     <>
                                       <Tooltip>
@@ -2225,29 +2480,32 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                                 <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50/60 p-3">
                                   <p className="mb-2 text-sm font-semibold text-slate-700">الخيارات</p>
                                   <div className="mb-3 flex flex-wrap gap-2">
-                                    {field.options.map((option) => (
+                                    {[...field.options]
+                                      .sort((a, b) => a.displayOrder - b.displayOrder)
+                                      .map((option, optionIndex, optionsOrdered) => {
+                                        const optionReorderDisabled =
+                                          reorderOptionsMutation.isPending || editingOptionId === option.id;
+                                        return (
                                       <span
                                         key={option.id}
                                         className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700"
-                                        draggable
-                                        onDragStart={() => setDragOption({ fieldId: field.id, optionId: option.id })}
-                                        onDragOver={(event) => event.preventDefault()}
-                                        onDrop={() => {
-                                          if (reorderOptionsMutation.isPending) return;
-                                          if (!dragOption || dragOption.fieldId !== field.id || dragOption.optionId === option.id) return;
-                                          const ordered = [...field.options];
-                                          const fromIndex = ordered.findIndex((item) => item.id === dragOption.optionId);
-                                          const toIndex = ordered.findIndex((item) => item.id === option.id);
-                                          if (fromIndex < 0 || toIndex < 0) return;
-                                          const [moved] = ordered.splice(fromIndex, 1);
-                                          ordered.splice(toIndex, 0, moved);
-                                          reorderOptionsMutation.mutate({
-                                            fieldId: field.id,
-                                            orderedOptionIds: ordered.map((item) => item.id)
-                                          });
-                                          setDragOption(null);
-                                        }}
                                       >
+                                        <ReorderArrowButtons
+                                          compact
+                                          moveUpLabel={t("specialties.reorder.moveUp")}
+                                          moveDownLabel={t("specialties.reorder.moveDown")}
+                                          loadingLabel={t("specialties.reorder.loading")}
+                                          loading={
+                                            reorderPendingTarget?.type === "option" &&
+                                            reorderPendingTarget.id === option.id &&
+                                            reorderPendingTarget.fieldId === field.id
+                                          }
+                                          disabled={optionReorderDisabled}
+                                          disableUp={optionIndex === 0}
+                                          disableDown={optionIndex === optionsOrdered.length - 1}
+                                          onMoveUp={() => moveFieldOption(field, option.id, "up")}
+                                          onMoveDown={() => moveFieldOption(field, option.id, "down")}
+                                        />
                                         {editingOptionId === option.id ? (
                                           <>
                                             <input value={editingOption.value} onChange={(e) => setEditingOption((p) => ({ ...p, value: e.target.value }))} className="h-8 w-24 rounded-lg border border-slate-200 px-2 text-xs" />
@@ -2278,7 +2536,8 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
                                           <TooltipContent side="top">حذف الخيار</TooltipContent>
                                         </Tooltip>
                                       </span>
-                                    ))}
+                                        );
+                                    })}
                                   </div>
                                   <form className="grid gap-2 md:grid-cols-4" onSubmit={(event) => handleCreateOption(event, field.id)}>
                                     <input name="value" className={dsInputClass} placeholder="القيمة" />

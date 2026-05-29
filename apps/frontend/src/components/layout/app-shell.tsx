@@ -21,7 +21,7 @@ function AppShellLayout({ children }: AppShellProps) {
   const mobileSheetSide = locale === "ar" ? "right" : "left";
 
   return (
-    <div className="min-h-screen bg-hero-gradient dark:bg-slate-950">
+    <div className="min-h-screen bg-hero-gradient dark:bg-dark-workspace">
       <div className="mx-auto flex h-screen max-w-[1700px] overflow-hidden">
         <div className="hidden h-full shrink-0 md:block">
           <Sidebar collapsed={collapsed} onToggle={toggleCollapsed} variant="desktop" />
@@ -40,7 +40,7 @@ function AppShellLayout({ children }: AppShellProps) {
               "[&>button]:end-3 [&>button]:start-auto [&>button]:top-3 [&>button]:h-9 [&>button]:w-9 [&>button]:rounded-lg [&>button]:opacity-70 [&>button]:transition-opacity hover:[&>button]:opacity-100"
             )}
           >
-            <div className="h-full overflow-hidden bg-white/98 backdrop-blur-xl dark:bg-slate-950/98">
+            <div className="h-full overflow-hidden bg-white/98 backdrop-blur-xl dark:bg-sidebar/98">
               <Sidebar collapsed={false} onToggle={toggleCollapsed} onNavigate={closeMobile} variant="mobile" />
             </div>
           </SheetContent>
@@ -48,7 +48,7 @@ function AppShellLayout({ children }: AppShellProps) {
 
         <motion.main layout className="min-w-0 flex-1 overflow-y-auto">
           <TopNavbar />
-          <div className="p-3 md:p-6">{children}</div>
+          <div className="p-3 md:p-6 dark:p-4 dark:md:p-7 dark:md:leading-relaxed">{children}</div>
         </motion.main>
       </div>
     </div>

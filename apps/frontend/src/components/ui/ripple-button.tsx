@@ -36,8 +36,9 @@ export function RippleButton({ className, children, glow = true, onClick, ...pro
     <Button
       onClick={handleClick}
       className={cn(
-        "relative overflow-hidden rounded-2xl bg-gradient-to-r from-orange-600 to-orange-500 text-white shadow-md transition",
-        glow && "hover:shadow-glow",
+        "relative overflow-hidden rounded-2xl bg-gradient-to-r from-orange-600 to-orange-500 px-4 py-2.5 text-white shadow-md transition duration-300",
+        glow && "hover:shadow-glow dark:hover:shadow-glow-dark-lg",
+        "dark:from-[hsl(28,78%,48%)] dark:to-[hsl(26,72%,54%)] dark:shadow-glow-dark",
         className
       )}
       {...props}

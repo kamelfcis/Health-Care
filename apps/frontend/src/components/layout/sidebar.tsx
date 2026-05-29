@@ -220,7 +220,7 @@ export function Sidebar({ collapsed, onToggle, onNavigate, variant = "desktop" }
       className={cn(
         "relative flex h-screen min-h-0 flex-col md:h-full md:max-h-screen md:sticky md:top-0",
         "border-e border-slate-200/70 bg-white/98 shadow-[1px_0_0_0_rgba(15,23,42,0.04)] backdrop-blur-md",
-        "dark:border-slate-800/80 dark:bg-slate-950/98 dark:shadow-none",
+        "dark:border-transparent dark:bg-sidebar/95 dark:shadow-elevated-sm",
         showCollapsed ? "px-2 py-4" : "px-3 py-4",
         isMobileDrawer && "w-full max-w-none border-0 shadow-none"
       )}
@@ -262,7 +262,7 @@ export function Sidebar({ collapsed, onToggle, onNavigate, variant = "desktop" }
           type="button"
           variant="ghost"
           size="icon"
-          className="mt-2 h-10 w-full shrink-0 rounded-lg text-slate-500 transition-colors duration-200 hover:bg-slate-100 dark:hover:bg-slate-800/50"
+          className="mt-2 h-10 w-full shrink-0 rounded-lg text-muted-foreground transition-colors duration-200 hover:bg-slate-100 dark:hover:bg-surface-raised/80"
           onClick={onToggle}
           aria-label={t("nav.expandSidebar")}
         >

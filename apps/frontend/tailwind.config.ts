@@ -67,6 +67,8 @@ const config: Config = {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
+        sidebar: "hsl(var(--sidebar) / <alpha-value>)",
+        "surface-raised": "hsl(var(--surface-raised) / <alpha-value>)",
         chart: {
           "1": "hsl(var(--chart-1))",
           "2": "hsl(var(--chart-2))",
@@ -84,11 +86,18 @@ const config: Config = {
       boxShadow: {
         soft: "0 10px 30px rgba(11, 42, 74, 0.08)",
         premium: "0 20px 60px rgba(15, 23, 42, 0.14)",
-        glow: "0 0 30px rgba(249, 115, 22, 0.28)"
+        glow: "0 0 30px rgba(249, 115, 22, 0.28)",
+        "elevated-sm": "0 2px 8px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.2)",
+        elevated: "0 4px 24px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.25)",
+        "elevated-lg": "0 8px 40px rgba(0, 0, 0, 0.45), 0 4px 16px rgba(0, 0, 0, 0.3)",
+        "glow-dark": "0 0 20px rgba(230, 138, 46, 0.22), 0 4px 14px rgba(0, 0, 0, 0.35)",
+        "glow-dark-lg": "0 0 32px rgba(230, 138, 46, 0.32), 0 6px 20px rgba(0, 0, 0, 0.4)"
       },
       backgroundImage: {
         "hero-gradient":
-          "radial-gradient(circle at 20% 20%, rgba(251,146,60,0.14), transparent 40%), radial-gradient(circle at 80% 0%, rgba(251,146,60,0.1), transparent 35%), linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)"
+          "radial-gradient(circle at 20% 20%, rgba(251,146,60,0.14), transparent 40%), radial-gradient(circle at 80% 0%, rgba(251,146,60,0.1), transparent 35%), linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)",
+        "dark-workspace":
+          "radial-gradient(circle at 12% 18%, rgba(230, 138, 46, 0.06), transparent 42%), radial-gradient(circle at 88% 6%, rgba(230, 138, 46, 0.04), transparent 48%), linear-gradient(180deg, hsl(228 21% 7%) 0%, hsl(228 18% 6%) 100%)"
       },
       keyframes: {
         "float-slow": {
