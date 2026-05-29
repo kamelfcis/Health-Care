@@ -132,6 +132,7 @@ model Clinic {
   invoiceLineItems InvoiceLineItem[]
   payments       Payment[]
   paymentMethodCatalogs PaymentMethodCatalog[]
+  campaignCatalogs CampaignCatalog[]
   notifications  Notification[]
   roles          Role[]
   leads          Lead[]
@@ -308,7 +309,7 @@ model Patient {
   specialtyName  String?
   clinicName     String?
   doctorName     String?
-  campaignName   String?
+  campaignId     String?
   referrerName   String?
   referralType   String?
   referralTypeOther String?
@@ -320,6 +321,7 @@ model Patient {
   updatedAt      DateTime        @updatedAt
   deletedAt      DateTime?
   clinic         Clinic          @relation(fields: [clinicId], references: [id])
+  campaign       CampaignCatalog? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
   appointments   Appointment[]
   medicalRecords MedicalRecord[]
   prescriptions  Prescription[]
@@ -335,6 +337,23 @@ model Patient {
   @@index([clinicId, nationalId])
   @@index([clinicId, fileNumber])
   @@index([clinicId, deletedAt, createdAt])
+  @@index([campaignId])
+}
+
+model CampaignCatalog {
+  id        String    @id @default(cuid())
+  clinicId  String
+  name      String
+  nameAr    String
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  clinic    Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patients  Patient[]
+
+  @@unique([clinicId, name])
+  @@index([clinicId, isActive, deletedAt])
 }
 
 model PatientExam {

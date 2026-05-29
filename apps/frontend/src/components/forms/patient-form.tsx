@@ -13,6 +13,7 @@ import { useI18n } from "@/components/providers/i18n-provider";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { doctorService } from "@/lib/doctor-service";
 import { specialtyService, VisitEntryType } from "@/lib/specialty-service";
+import { campaignCatalogService } from "@/lib/campaign-catalog-service";
 
 const referralTypeValues = ["DOCTOR", "FRIEND", "CAMPAIGN", "SOCIAL_MEDIA", "SEARCH", "OTHER"] as const;
 const nationalityValues = [
@@ -78,7 +79,7 @@ const buildPatientSchema = (appointmentMessages: AppointmentValidationMessages) 
   specialtyName: z.string().optional(),
   clinicName: z.string().optional(),
   doctorName: z.string().optional(),
-  campaignName: z.string().optional(),
+  campaignId: z.string().optional(),
   referrerName: z.string().optional(),
   referralType: z.preprocess(
     (v) => (v === "" || v === null || v === undefined ? undefined : v),
@@ -195,6 +196,8 @@ interface PatientFormProps {
   clinicScope?: string;
   /** When false (e.g. SuperAdmin + all clinics), skip /specialties/clinic/me until a clinic is scoped. Default true. */
   clinicSpecialtiesEnabled?: boolean;
+  /** When true (SuperAdmin + all clinics), campaign dropdown stays disabled until a clinic is scoped. Default false. */
+  campaignRequiresClinicScope?: boolean;
   enableAppointmentSection?: boolean;
 }
 
@@ -204,6 +207,7 @@ export function PatientForm({
   submitLabel,
   clinicScope,
   clinicSpecialtiesEnabled = true,
+  campaignRequiresClinicScope = false,
   enableAppointmentSection = true
 }: PatientFormProps) {
   const { t } = useI18n();
@@ -255,7 +259,7 @@ export function PatientForm({
       specialtyName: initialValues?.specialtyName ?? "",
       clinicName: initialValues?.clinicName ?? "",
       doctorName: initialValues?.doctorName ?? "",
-      campaignName: initialValues?.campaignName ?? "",
+      campaignId: initialValues?.campaignId ?? "",
       referrerName: initialValues?.referrerName ?? "",
       referralType: initialValues?.referralType,
       referralTypeOther: initialValues?.referralTypeOther ?? "",
@@ -289,6 +293,11 @@ export function PatientForm({
     queryKey: ["patients", "form", "clinic-specialties", clinicScope ?? "mine"],
     queryFn: () => specialtyService.listMyClinicSpecialties(clinicScope),
     enabled: clinicSpecialtiesEnabled
+  });
+  const campaignsQuery = useQuery({
+    queryKey: ["campaigns", "active", clinicScope ?? "mine"],
+    queryFn: () => campaignCatalogService.list(clinicScope),
+    enabled: !campaignRequiresClinicScope
   });
   const selectedSpecialtyName = useMemo(
     () =>
@@ -534,8 +543,22 @@ export function PatientForm({
           </select>
         </div>
         <div>
-          <label className="mb-1 block text-base text-slate-600">اسم الحملة</label>
-          <input className="w-full rounded-2xl border border-slate-200/80 bg-white/90 px-3 py-2 shadow-sm transition focus:border-orange-500 focus:outline-none focus:ring-2 focus:ring-orange-500/20" {...register("campaignName")} />
+          <label className="mb-1 block text-base text-slate-600">{t("patients.form.selectCampaign")}</label>
+          <select
+            className="w-full rounded-2xl border border-slate-200 px-3 py-2 focus:border-orange-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-slate-50"
+            {...register("campaignId")}
+            disabled={campaignRequiresClinicScope}
+          >
+            <option value="">{t("patients.form.selectCampaign")}</option>
+            {(campaignsQuery.data ?? []).map((campaign) => (
+              <option key={campaign.id} value={campaign.id}>
+                {campaign.nameAr || campaign.name}
+              </option>
+            ))}
+          </select>
+          {campaignRequiresClinicScope ? (
+            <p className="mt-1 text-xs text-slate-500">{t("dashboard.clinicScope")}</p>
+          ) : null}
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">

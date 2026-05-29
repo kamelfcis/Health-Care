@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Building2, Calendar, CalendarClock, ClipboardList, CreditCard, LayoutDashboard, Pill, Settings, Stethoscope, TrendingUp, UserCog, Users, Wallet } from "lucide-react";
+import { Building2, Calendar, CalendarClock, ClipboardList, CreditCard, LayoutDashboard, Megaphone, Pill, Settings, Stethoscope, TrendingUp, UserCog, Users, Wallet } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { StatCard } from "@/components/ui/stat-card";
 import { AppShell } from "@/components/layout/app-shell";
@@ -197,12 +197,19 @@ export default function DashboardPage() {
         icon: Wallet,
         allowedRoles: ["SuperAdmin", "ClinicAdmin"]
       },
+      {
+        href: "/dashboard/campaigns-lookup",
+        labelKey: "nav.campaignsLookup",
+        icon: Megaphone,
+        allowedRoles: ["SuperAdmin", "ClinicAdmin"]
+      },
       { href: "/users", labelKey: "nav.users", icon: UserCog, requiredPermission: "users.read" },
       { href: "/doctors", labelKey: "nav.doctors", icon: Stethoscope, requiredPermission: "doctors.read" },
       { href: "/patients", labelKey: "nav.patients", icon: Users, requiredPermission: "patients.read" },
       { href: "/appointments", labelKey: "nav.appointments", icon: Calendar, requiredPermission: "appointments.read" },
       { href: "/pharmacy", labelKey: "nav.pharmacy", icon: Pill, requiredPermission: "pharmacy.view" },
       { href: "/billing", labelKey: "nav.billing", icon: CreditCard, requiredPermission: "billing.read" },
+      { href: "/procedures", labelKey: "nav.procedures", icon: ClipboardList, requiredPermission: "billing.manage" },
       { href: "/payments", labelKey: "nav.payments", icon: Wallet, requiredPermission: "payments.read" },
       { href: "/dashboard/leads", labelKey: "nav.leads", icon: ClipboardList, requiredPermission: "leads.read" },
       { href: "/settings", labelKey: "nav.settings", icon: Settings }

@@ -2,6 +2,7 @@ import { prisma } from "../config/prisma";
 import { AppError } from "../utils/app-error";
 import { LeadSource, Prisma, Profession } from "@prisma/client";
 import { syncInvoiceStatusFromPayments } from "./payment.service";
+import { campaignCatalogService } from "./campaign-catalog.service";
 
 interface ListInput {
   clinicId?: string;
@@ -19,7 +20,7 @@ interface ListInput {
   leadSource?: LeadSource;
   specialtyCode?: string;
   specialtyName?: string;
-  campaignName?: string;
+  campaignId?: string;
   governorate?: string;
   maritalStatus?: string;
   doctorName?: string;
@@ -81,8 +82,8 @@ export const patientService = {
     if (input.specialtyName?.trim()) {
       andParts.push({ specialtyName: { contains: input.specialtyName.trim(), mode: insensitive } });
     }
-    if (input.campaignName?.trim()) {
-      andParts.push({ campaignName: { contains: input.campaignName.trim(), mode: insensitive } });
+    if (input.campaignId?.trim()) {
+      andParts.push({ campaignId: input.campaignId.trim() });
     }
     if (input.governorate?.trim()) {
       andParts.push({ governorate: input.governorate.trim() });
@@ -165,6 +166,13 @@ export const patientService = {
               name: true
             }
           },
+          campaign: {
+            select: {
+              id: true,
+              name: true,
+              nameAr: true
+            }
+          },
           appointments: {
             where: {
               deletedAt: null
@@ -187,7 +195,7 @@ export const patientService = {
     return { data: items, total, page: input.page, pageSize: input.pageSize, totalPages };
   },
 
-  create(
+  async create(
     clinicId: string,
     data: {
       fullName: string;
@@ -220,7 +228,7 @@ export const patientService = {
       specialtyName?: string;
       clinicName?: string;
       doctorName?: string;
-      campaignName?: string;
+      campaignId?: string;
       referrerName?: string;
       referralType?: string;
       referralTypeOther?: string;
@@ -256,6 +264,11 @@ export const patientService = {
     }
     if (data.referralType === "OTHER" && !data.referralTypeOther?.trim()) {
       throw new AppError("referralTypeOther is required when referralType is OTHER", 400);
+    }
+
+    let campaignId: string | null = null;
+    if (data.campaignId?.trim()) {
+      campaignId = await campaignCatalogService.assertCampaignAllowed(clinicId, data.campaignId.trim());
     }
 
     return prisma.$transaction(async (tx) => {
@@ -309,7 +322,7 @@ export const patientService = {
           specialtyName: data.specialtyName?.trim() || null,
           clinicName: data.clinicName?.trim() || null,
           doctorName: data.doctorName?.trim() || null,
-          campaignName: data.campaignName?.trim() || null,
+          campaignId,
           referrerName: data.referrerName?.trim() || null,
           referralType: data.referralType?.trim() || null,
           referralTypeOther: data.referralType === "OTHER" ? data.referralTypeOther?.trim() ?? null : null,
@@ -346,7 +359,6 @@ export const patientService = {
       "specialtyName",
       "clinicName",
       "doctorName",
-      "campaignName",
       "referrerName",
       "referralType",
       "referralTypeOther",
@@ -430,6 +442,21 @@ export const patientService = {
     }
     if (data.referralType && data.referralType !== "OTHER") {
       data.referralTypeOther = null;
+    }
+    if (Object.prototype.hasOwnProperty.call(data, "campaignId")) {
+      const raw = data.campaignId;
+      if (typeof raw === "string" && raw.trim()) {
+        const patientRow = await prisma.patient.findFirst({
+          where: { id, ...(clinicId ? { clinicId } : {}), deletedAt: null },
+          select: { clinicId: true }
+        });
+        if (!patientRow) {
+          throw new AppError("Patient not found", 404);
+        }
+        data.campaignId = await campaignCatalogService.assertCampaignAllowed(patientRow.clinicId, raw.trim());
+      } else {
+        data.campaignId = null;
+      }
     }
     const result = await prisma.patient.updateMany({
       where: { id, ...(clinicId ? { clinicId } : {}), deletedAt: null },

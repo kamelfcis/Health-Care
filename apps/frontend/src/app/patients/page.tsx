@@ -127,7 +127,8 @@ type PatientRow = {
   specialtyName?: string | null;
   clinicNameValue?: string | null;
   doctorName?: string | null;
-  campaignName?: string | null;
+  campaignId?: string | null;
+  campaignLabel?: string | null;
   referrerName?: string | null;
   referralType?: string | null;
   referralTypeOther?: string | null;
@@ -257,6 +258,7 @@ function PatientsPageInner() {
     withoutContactInfo: 0
   };
   const specialtyClinicScope = isSuperAdmin && selectedClinicId !== "all" ? selectedClinicId : undefined;
+  const campaignRequiresClinicScope = userHydrated && isSuperAdmin && selectedClinicId === "all";
   const medicalRecordClinicScope =
     specialtyClinicScope ?? (isSuperAdmin && selectedClinicId === "all" ? medicalRecordPatient?.clinicId : undefined);
   const appointmentMutationClinicScope = isSuperAdmin ? (selectedClinicId === "all" ? undefined : selectedClinicId) : undefined;
@@ -399,7 +401,8 @@ function PatientsPageInner() {
         specialtyName: item.specialtyName ?? null,
         clinicNameValue: item.clinicName ?? null,
         doctorName: item.doctorName ?? null,
-        campaignName: item.campaignName ?? null,
+        campaignId: item.campaignId ?? null,
+        campaignLabel: item.campaign?.nameAr ?? item.campaign?.name ?? null,
         referrerName: item.referrerName ?? null,
         referralType: item.referralType ?? null,
         referralTypeOther: item.referralTypeOther ?? null,
@@ -844,7 +847,7 @@ function PatientsPageInner() {
       specialtyName: values.specialtyName || undefined,
       clinicName: values.clinicName || undefined,
       doctorName: values.doctorName || undefined,
-      campaignName: values.campaignName || undefined,
+      campaignId: values.campaignId || undefined,
       referrerName: values.referrerName || undefined,
       referralType: values.referralType,
       referralTypeOther: values.referralTypeOther || undefined,
@@ -920,6 +923,7 @@ function PatientsPageInner() {
           key={editing?.id ?? "new-patient"}
           clinicScope={specialtyClinicScope}
           clinicSpecialtiesEnabled={clinicSpecialtiesQueryEnabled}
+          campaignRequiresClinicScope={campaignRequiresClinicScope}
           enableAppointmentSection={!isSuperAdmin || selectedClinicId !== "all"}
           initialValues={
             editing
@@ -977,7 +981,7 @@ function PatientsPageInner() {
                   specialtyName: editing.specialtyName ?? "",
                   clinicName: editing.clinicNameValue ?? "",
                   doctorName: editing.doctorName ?? "",
-                  campaignName: editing.campaignName ?? "",
+                  campaignId: editing.campaignId ?? "",
                   referrerName: editing.referrerName ?? "",
                   ...splitReferralForForm(editing.referralType, editing.referralTypeOther),
                   generalNotes: editing.generalNotes ?? "",
@@ -1220,6 +1224,8 @@ function PatientsPageInner() {
                 value={patientFilterDraft}
                 onChange={setPatientFilterDraft}
                 onClear={() => setPatientFilterDraft(emptyPatientListQuery())}
+                clinicScope={specialtyClinicScope}
+                campaignRequiresClinicScope={campaignRequiresClinicScope}
               />
             }
             belowHeader={
@@ -1466,7 +1472,7 @@ function PatientsPageInner() {
                               <div className="rounded-xl bg-white/90 p-2">
                                 <p className="text-xs text-slate-500">اسم المحول / الحملة</p>
                                 <p className="mt-0.5 font-semibold text-slate-800 break-words">
-                                  {[row.referrerName, row.campaignName].filter(Boolean).join(" · ") || t("patients.card.notSet")}
+                                  {[row.referrerName, row.campaignLabel].filter(Boolean).join(" · ") || t("patients.card.notSet")}
                                 </p>
                               </div>
                               <div className="rounded-xl bg-white/90 p-2">

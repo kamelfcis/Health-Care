@@ -36,6 +36,7 @@ export interface NavigationLink {
 
 export const ROUTE_ACCESS_RULES: RouteAccessRule[] = [
   { pattern: "/dashboard/payment-methods-lookup", allowedRoles: ["SuperAdmin", "ClinicAdmin"] },
+  { pattern: "/dashboard/campaigns-lookup", allowedRoles: ["SuperAdmin", "ClinicAdmin"] },
   { pattern: "/dashboard/leads", requiredPermissions: ["leads.read"] },
   { pattern: "/dashboard", requiredPermissions: ["dashboard.view"] },
   { pattern: "/clinics", requiredPermissions: ["clinics.read"] },

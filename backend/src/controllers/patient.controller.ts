@@ -47,7 +47,7 @@ export const patientController = {
           leadSource: q.leadSource,
           specialtyCode: q.specialtyCode,
           specialtyName: q.specialtyName,
-          campaignName: q.campaignName,
+          campaignId: q.campaignId,
           governorate: q.governorate,
           maritalStatus: q.maritalStatus,
           doctorName: q.doctorName,

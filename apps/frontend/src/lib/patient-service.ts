@@ -32,7 +32,12 @@ export interface PatientListItem {
   specialtyName?: string | null;
   clinicName?: string | null;
   doctorName?: string | null;
-  campaignName?: string | null;
+  campaignId?: string | null;
+  campaign?: {
+    id: string;
+    name: string;
+    nameAr: string;
+  } | null;
   referrerName?: string | null;
   referralType?: string | null;
   referralTypeOther?: string | null;
@@ -87,7 +92,7 @@ export interface PatientPayload {
   specialtyName?: string;
   clinicName?: string;
   doctorName?: string;
-  campaignName?: string;
+  campaignId?: string;
   referrerName?: string;
   referralType?: "DOCTOR" | "FRIEND" | "CAMPAIGN" | "SOCIAL_MEDIA" | "SEARCH" | "OTHER";
   referralTypeOther?: string;
@@ -232,7 +237,7 @@ export interface PatientListQuery {
   leadSource?: string;
   specialtyCode?: string;
   specialtyName?: string;
-  campaignName?: string;
+  campaignId?: string;
   governorate?: string;
   maritalStatus?: string;
   doctorName?: string;
@@ -254,7 +259,7 @@ const buildPatientListParams = (clinicId: string | undefined, query: PatientList
     ["leadSource", query.leadSource],
     ["specialtyCode", query.specialtyCode],
     ["specialtyName", query.specialtyName],
-    ["campaignName", query.campaignName],
+    ["campaignId", query.campaignId],
     ["governorate", query.governorate],
     ["maritalStatus", query.maritalStatus],
     ["doctorName", query.doctorName],

@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useI18n } from "@/components/providers/i18n-provider";
 import { PatientListQuery } from "@/lib/patient-service";
 import { specialtyService } from "@/lib/specialty-service";
+import { campaignCatalogService } from "@/lib/campaign-catalog-service";
 
 const GOVERNORATE_OPTIONS = [
   "CAIRO",
@@ -36,7 +37,7 @@ export const emptyPatientListQuery = (): PatientListQuery => ({
   leadSource: "",
   specialtyCode: "",
   specialtyName: "",
-  campaignName: "",
+  campaignId: "",
   governorate: "",
   maritalStatus: "",
   doctorName: "",
@@ -50,15 +51,30 @@ interface PatientSearchBarProps {
   value: PatientListQuery;
   onChange: (next: PatientListQuery) => void;
   onClear: () => void;
+  clinicScope?: string;
+  /** When true (SuperAdmin + all clinics), campaign filter stays disabled until a clinic is scoped. */
+  campaignRequiresClinicScope?: boolean;
 }
 
-export function PatientSearchBar({ value, onChange, onClear }: PatientSearchBarProps) {
+export function PatientSearchBar({
+  value,
+  onChange,
+  onClear,
+  clinicScope,
+  campaignRequiresClinicScope = false
+}: PatientSearchBarProps) {
   const { t, locale } = useI18n();
   const [open, setOpen] = useState(false);
 
   const catalogQuery = useQuery({
     queryKey: ["specialties", "catalog", "filter"],
     queryFn: () => specialtyService.listCatalog()
+  });
+
+  const campaignsQuery = useQuery({
+    queryKey: ["campaigns", "active", "search", clinicScope ?? "mine"],
+    queryFn: () => campaignCatalogService.list(clinicScope),
+    enabled: !campaignRequiresClinicScope
   });
 
   const specialties = useMemo(() => catalogQuery.data ?? [], [catalogQuery.data]);
@@ -190,11 +206,19 @@ export function PatientSearchBar({ value, onChange, onClear }: PatientSearchBarP
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-600">{t("patients.search.campaignName")}</label>
-              <input
-                value={value.campaignName ?? ""}
-                onChange={(e) => setField("campaignName", e.target.value)}
+              <select
+                value={value.campaignId ?? ""}
+                onChange={(e) => setField("campaignId", e.target.value)}
                 className={inputClass}
-              />
+                disabled={campaignRequiresClinicScope}
+              >
+                <option value="">{t("patients.form.selectCampaign")}</option>
+                {(campaignsQuery.data ?? []).map((campaign) => (
+                  <option key={campaign.id} value={campaign.id}>
+                    {locale === "ar" ? campaign.nameAr || campaign.name : campaign.name || campaign.nameAr}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium text-slate-600">{t("patients.search.createdRange")}</label>
