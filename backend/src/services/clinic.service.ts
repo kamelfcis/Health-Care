@@ -367,5 +367,45 @@ export const clinicService = {
         createdAt: user.createdAt
       }))
     };
+  },
+
+  /** SuperAdmin recovery: fixed default password stored in recoverablePassword (demo/admin use). */
+  async resetUserPasswordForSuperAdmin(clinicId: string, userId: string) {
+    const DEFAULT_ADMIN_RESET_PASSWORD = "12345678";
+
+    const clinic = await prisma.clinic.findFirst({
+      where: { id: clinicId, deletedAt: null },
+      select: { id: true }
+    });
+    if (!clinic) {
+      throw new AppError("Clinic not found", 404);
+    }
+
+    const user = await prisma.user.findFirst({
+      where: { id: userId, clinicId, deletedAt: null },
+      select: { id: true, email: true }
+    });
+    if (!user) {
+      throw new AppError("User not found", 404);
+    }
+
+    const { passwordHash, recoverablePassword } = await hashPasswordWithRecoverable(
+      DEFAULT_ADMIN_RESET_PASSWORD
+    );
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordHash,
+        recoverablePassword,
+        refreshToken: null
+      }
+    });
+
+    return {
+      id: user.id,
+      email: user.email,
+      recoverablePassword
+    };
   }
 };

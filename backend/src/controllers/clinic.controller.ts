@@ -37,6 +37,14 @@ export const clinicController = {
     res.json(apiSuccess(data));
   },
 
+  async resetUserPassword(req: Request, res: Response) {
+    const data = await clinicService.resetUserPasswordForSuperAdmin(
+      String(req.params.id),
+      String(req.params.userId)
+    );
+    res.json(apiSuccess(data, "Password reset"));
+  },
+
   async list(req: Request, res: Response) {
     const { page, pageSize, search } = getPagination(req);
     const cachePrefix = buildCacheKey("clinics");

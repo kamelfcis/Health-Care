@@ -115,6 +115,12 @@ router.patch(
 router.get("/", requireAuth, allowRoles("SuperAdmin"), asyncHandler(clinicController.list));
 router.get("/:id/users", requireAuth, allowRoles("SuperAdmin"), asyncHandler(clinicController.listUsers));
 router.post(
+  "/:id/users/:userId/reset-password",
+  requireAuth,
+  allowRoles("SuperAdmin"),
+  asyncHandler(clinicController.resetUserPassword)
+);
+router.post(
   "/",
   requireAuth,
   allowRoles("SuperAdmin"),

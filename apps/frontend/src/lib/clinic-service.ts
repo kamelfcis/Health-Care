@@ -172,6 +172,13 @@ export const clinicService = {
       };
     }>(`/clinics/${clinicId}/users`);
     return res.data.data;
+  },
+
+  async resetClinicUserPassword(clinicId: string, userId: string) {
+    const res = await api.post<{
+      data: { id: string; email: string; recoverablePassword: string };
+    }>(`/clinics/${clinicId}/users/${userId}/reset-password`);
+    return res.data.data;
   }
 };
 
