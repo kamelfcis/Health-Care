@@ -6,6 +6,7 @@ import { ColumnDef } from "@tanstack/react-table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { SquarePen, Trash2 } from "lucide-react";
 import { ClinicUsersButton, ClinicUsersModal } from "@/components/clinics/clinic-users-modal";
+import { ConfirmDeleteModal } from "@/components/ui/confirm-delete-modal";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/app-shell";
 import ProtectedRoute from "@/components/auth/protected-route";
@@ -17,6 +18,8 @@ import { specialtyService } from "@/lib/specialty-service";
 import { hasPermission } from "@/lib/permissions";
 import { storage } from "@/lib/storage";
 
+type DeletedFilter = "active" | "deleted" | "all";
+
 type ClinicRow = {
   id: string;
   name: string;
@@ -26,7 +29,61 @@ type ClinicRow = {
   city: string;
   status: string;
   specialties: string;
+  deletedAt: string | null;
+  isDeleted: boolean;
 };
+
+const formatDeletedDate = (value: string | null, locale: string) => {
+  if (!value) return "";
+  try {
+    return new Intl.DateTimeFormat(locale === "ar" ? "ar-EG" : "en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric"
+    }).format(new Date(value));
+  } catch {
+    return value;
+  }
+};
+
+function DeletedFilterToggle({
+  value,
+  onChange,
+  label
+}: {
+  value: DeletedFilter;
+  onChange: (next: DeletedFilter) => void;
+  label: string;
+}) {
+  const { t } = useI18n();
+  const options: Array<{ value: DeletedFilter; label: string }> = [
+    { value: "active", label: t("common.active") },
+    { value: "deleted", label: t("common.deleted") },
+    { value: "all", label: t("common.all") }
+  ];
+
+  return (
+    <div className="inline-flex flex-wrap items-center gap-2 rounded-xl border border-orange-200/70 bg-orange-50/40 px-2 py-1.5">
+      <span className="text-xs font-medium text-slate-600">{label}</span>
+      <div className="inline-flex rounded-lg border border-orange-200 bg-white p-0.5">
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${
+              value === option.value
+                ? "bg-orange-500 text-white shadow-sm"
+                : "text-slate-600 hover:bg-orange-50 hover:text-orange-700"
+            }`}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function ClinicsPage() {
   const { t, locale } = useI18n();
@@ -90,10 +147,12 @@ export default function ClinicsPage() {
 
   const canManageClinics = hasPermission(currentUser, "clinics.manage");
   const isSuperAdmin = currentUser?.role === "SuperAdmin";
+  const [deletedFilter, setDeletedFilter] = useState<DeletedFilter>("active");
+  const [deleteTarget, setDeleteTarget] = useState<ClinicRow | null>(null);
   const [usersModalClinic, setUsersModalClinic] = useState<{ id: string; name: string } | null>(null);
   const clinicsQuery = useQuery({
-    queryKey: ["clinics", { page: 1, pageSize: 100 }],
-    queryFn: () => clinicService.list()
+    queryKey: ["clinics", { page: 1, pageSize: 100, deletedFilter }],
+    queryFn: () => clinicService.list(isSuperAdmin ? { deletedFilter } : undefined)
   });
   const specialtyCatalogQuery = useQuery({
     queryKey: ["specialties", "catalog", "clinics-form"],
@@ -185,6 +244,7 @@ export default function ClinicsPage() {
     mutationFn: (clinicId: string) => clinicService.remove(clinicId),
     onSuccess: () => {
       toast.success(t("clinics.deleted"));
+      setDeleteTarget(null);
       void queryClient.invalidateQueries({ queryKey: ["clinics"] });
     },
     onError: () => {
@@ -205,8 +265,10 @@ export default function ClinicsPage() {
           imageUrl: clinic.imageUrl ?? null,
           email: clinic.email ?? "-",
           city: clinic.city ?? "-",
-          status: clinic.isActive ? "Active" : "Inactive",
-          specialties: specialtyNames.join("، ") || "-"
+          status: clinic.deletedAt ? "Deleted" : clinic.isActive ? "Active" : "Inactive",
+          specialties: specialtyNames.join("، ") || "-",
+          deletedAt: clinic.deletedAt ?? null,
+          isDeleted: Boolean(clinic.deletedAt)
         };
       }),
     [clinicsQuery.data, locale]
@@ -262,7 +324,22 @@ export default function ClinicsPage() {
       { header: t("field.email"), accessorKey: "email" },
       { header: "City", accessorKey: "city" },
       { header: t("auth.clinicSpecialties"), accessorKey: "specialties" },
-      { header: "Status", accessorKey: "status" }
+      {
+        header: "Status",
+        accessorKey: "status",
+        cell: ({ row }) => (
+          <div className="space-y-1">
+            <p className={`text-xs font-semibold ${row.original.isDeleted ? "text-slate-500 line-through" : "text-orange-600"}`}>
+              {row.original.status}
+            </p>
+            {row.original.isDeleted && row.original.deletedAt ? (
+              <p className="text-[11px] text-slate-400">
+                {t("clinics.deletedOn", { date: formatDeletedDate(row.original.deletedAt, locale) })}
+              </p>
+            ) : null}
+          </div>
+        )
+      }
     ];
     if (!canManageClinics) return base;
     return [
@@ -272,23 +349,22 @@ export default function ClinicsPage() {
         id: "actions",
         cell: ({ row }) => (
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-cyan-200 bg-cyan-50 text-cyan-700 transition hover:bg-cyan-100"
-              onClick={() => startEdit(row.original)}
-              aria-label="Edit clinic"
-            >
-              <SquarePen size={13} />
-            </button>
+            {!row.original.isDeleted ? (
+              <button
+                type="button"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-cyan-200 bg-cyan-50 text-cyan-700 transition hover:bg-cyan-100"
+                onClick={() => startEdit(row.original)}
+                aria-label="Edit clinic"
+              >
+                <SquarePen size={13} />
+              </button>
+            ) : null}
             <button
               type="button"
               className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 transition hover:bg-rose-100"
-              onClick={() => {
-                if (window.confirm(t("clinics.deleteConfirm"))) {
-                  removeMutation.mutate(row.original.id);
-                }
-              }}
-              aria-label="Delete clinic"
+              onClick={() => setDeleteTarget(row.original)}
+              aria-label={t("clinics.permanentDelete")}
+              title={t("clinics.permanentDelete")}
             >
               <Trash2 size={13} />
             </button>
@@ -296,7 +372,7 @@ export default function ClinicsPage() {
         )
       }
     ];
-  }, [canManageClinics, removeMutation, resolveClinicImageSrc, startEdit, t]);
+  }, [canManageClinics, locale, removeMutation, resolveClinicImageSrc, startEdit, t]);
 
   const specialtyOptions = useMemo(
     () => (specialtyCatalogQuery.data ?? []).filter((item) => item.isActive && !item.deletedAt),
@@ -545,6 +621,15 @@ export default function ClinicsPage() {
         ) : (
           <EntityCollectionView
             title={t("nav.clinics")}
+            titleExtra={
+              isSuperAdmin ? (
+                <DeletedFilterToggle
+                  value={deletedFilter}
+                  onChange={setDeletedFilter}
+                  label={t("clinics.filterDeleted")}
+                />
+              ) : undefined
+            }
             columns={columns}
             data={data}
             belowHeader={formBlock}
@@ -552,7 +637,8 @@ export default function ClinicsPage() {
             statusOptions={[
               { label: t("common.allStatuses"), value: "all" },
               { label: "Active", value: "Active" },
-              { label: "Inactive", value: "Inactive" }
+              { label: "Inactive", value: "Inactive" },
+              ...(isSuperAdmin ? [{ label: t("common.deleted"), value: "Deleted" }] : [])
             ]}
             searchPlaceholder={`${t("common.search")} ${t("nav.clinics")}`}
             addButton={
@@ -571,9 +657,23 @@ export default function ClinicsPage() {
             getSearchText={(row) => `${row.name} ${row.slug} ${row.city} ${row.email} ${row.specialties} ${row.status}`}
             getStatus={(row) => row.status}
             renderCard={(row) => (
-              <div className="rounded-2xl border border-slate-200 bg-white/90 p-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
-                <div className="flex items-start gap-3 border-l-4 border-l-orange-500 pl-3">
-                  <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl border border-orange-200 bg-orange-50/40">
+              <div
+                className={`rounded-2xl border p-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
+                  row.isDeleted
+                    ? "border-slate-300 bg-slate-50/90 opacity-75"
+                    : "border-slate-200 bg-white/90"
+                }`}
+              >
+                <div
+                  className={`flex items-start gap-3 border-l-4 pl-3 ${
+                    row.isDeleted ? "border-l-slate-400" : "border-l-orange-500"
+                  }`}
+                >
+                  <div
+                    className={`h-14 w-14 shrink-0 overflow-hidden rounded-xl border ${
+                      row.isDeleted ? "border-slate-300 bg-slate-100" : "border-orange-200 bg-orange-50/40"
+                    }`}
+                  >
                     {resolveClinicImageSrc(row.imageUrl) ? (
                       <Image
                         src={resolveClinicImageSrc(row.imageUrl)!}
@@ -581,7 +681,7 @@ export default function ClinicsPage() {
                         width={56}
                         height={56}
                         unoptimized
-                        className="h-full w-full object-cover"
+                        className={`h-full w-full object-cover ${row.isDeleted ? "grayscale" : ""}`}
                       />
                     ) : (
                       <div className="flex h-full w-full items-center justify-center text-xs text-slate-400">
@@ -590,16 +690,32 @@ export default function ClinicsPage() {
                     )}
                   </div>
                   <div className="min-w-0 space-y-1">
-                    <h3 className="truncate font-semibold text-slate-900">{row.name}</h3>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className={`truncate font-semibold ${row.isDeleted ? "text-slate-500 line-through" : "text-slate-900"}`}>
+                        {row.name}
+                      </h3>
+                      {row.isDeleted ? (
+                        <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                          {t("clinics.deletedBadge")}
+                        </span>
+                      ) : null}
+                    </div>
                     <p className="truncate text-sm text-slate-500">{row.city} - {row.slug}</p>
                     <p className="truncate text-xs text-slate-500">{row.email}</p>
                     <p className="line-clamp-2 text-xs text-slate-500">{row.specialties}</p>
-                    <p className="text-xs font-semibold text-orange-600">{row.status}</p>
+                    <p className={`text-xs font-semibold ${row.isDeleted ? "text-slate-500" : "text-orange-600"}`}>
+                      {row.status}
+                    </p>
+                    {row.isDeleted && row.deletedAt ? (
+                      <p className="text-[11px] text-slate-400">
+                        {t("clinics.deletedOn", { date: formatDeletedDate(row.deletedAt, locale) })}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
                 {canManageClinics || isSuperAdmin ? (
                   <div className="flex flex-wrap items-center gap-2 pt-1">
-                    {isSuperAdmin ? (
+                    {isSuperAdmin && !row.isDeleted ? (
                       <ClinicUsersButton
                         label={t("clinics.users.view")}
                         onClick={() => setUsersModalClinic({ id: row.id, name: row.name })}
@@ -607,23 +723,22 @@ export default function ClinicsPage() {
                     ) : null}
                     {canManageClinics ? (
                       <>
-                        <button
-                          type="button"
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-cyan-200 bg-cyan-50 text-cyan-700 transition hover:bg-cyan-100"
-                          onClick={() => startEdit(row)}
-                          aria-label="Edit clinic"
-                        >
-                          <SquarePen size={13} />
-                        </button>
+                        {!row.isDeleted ? (
+                          <button
+                            type="button"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-cyan-200 bg-cyan-50 text-cyan-700 transition hover:bg-cyan-100"
+                            onClick={() => startEdit(row)}
+                            aria-label="Edit clinic"
+                          >
+                            <SquarePen size={13} />
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 transition hover:bg-rose-100"
-                          onClick={() => {
-                            if (window.confirm(t("clinics.deleteConfirm"))) {
-                              removeMutation.mutate(row.id);
-                            }
-                          }}
-                          aria-label="Delete clinic"
+                          onClick={() => setDeleteTarget(row)}
+                          aria-label={t("clinics.permanentDelete")}
+                          title={t("clinics.permanentDelete")}
                         >
                           <Trash2 size={13} />
                         </button>
@@ -635,6 +750,18 @@ export default function ClinicsPage() {
             )}
           />
         )}
+        <ConfirmDeleteModal
+          open={Boolean(deleteTarget)}
+          title={t("clinics.permanentDelete")}
+          message={t("clinics.deleteConfirm")}
+          confirmLabel={t("clinics.permanentDelete")}
+          confirmingLabel={t("systemUsers.deleting")}
+          isPending={removeMutation.isPending}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => {
+            if (deleteTarget) removeMutation.mutate(deleteTarget.id);
+          }}
+        />
         <ClinicUsersModal
           open={Boolean(usersModalClinic)}
           clinicId={usersModalClinic?.id ?? null}

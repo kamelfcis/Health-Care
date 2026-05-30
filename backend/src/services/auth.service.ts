@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import { Prisma } from "@prisma/client";
 import { hashPasswordWithRecoverable } from "../utils/user-password";
 import jwt from "jsonwebtoken";
 import type { Secret, SignOptions } from "jsonwebtoken";
@@ -7,6 +8,7 @@ import { env } from "../config/env";
 import { permissionService } from "./permission.service";
 import { DEFAULT_ROLE_PERMISSIONS } from "../constants/permissions";
 import { AppError } from "../utils/app-error";
+import { hardDeleteOrphanClinicShell } from "../utils/clinic-cleanup";
 import { RoleName } from "../types/auth";
 
 interface RegisterInput {
@@ -89,30 +91,45 @@ const getAuthUser = async (userId: string) => {
   };
 };
 
+const EMAIL_ALREADY_REGISTERED = "Email already registered";
+
+const assertRegisterEmailAvailable = async (normalizedEmail: string) => {
+  const existingUser = await prisma.user.findFirst({
+    where: { email: normalizedEmail, deletedAt: null },
+    select: { id: true }
+  });
+  if (existingUser) {
+    throw new AppError(EMAIL_ALREADY_REGISTERED, 409);
+  }
+
+  const existingClinic = await prisma.clinic.findFirst({
+    where: { email: normalizedEmail, deletedAt: null },
+    select: { id: true }
+  });
+  if (!existingClinic) {
+    return;
+  }
+
+  const reclaimed = await prisma.$transaction((tx) => hardDeleteOrphanClinicShell(tx, existingClinic.id));
+  if (!reclaimed) {
+    throw new AppError(EMAIL_ALREADY_REGISTERED, 409);
+  }
+};
+
+const mapRegisterPrismaError = (error: unknown): never => {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+    const target = error.meta?.target;
+    const fields = Array.isArray(target) ? target : [];
+    if (fields.includes("email")) {
+      throw new AppError(EMAIL_ALREADY_REGISTERED, 409);
+    }
+  }
+  throw error;
+};
+
 export const authService = {
   async register(input: RegisterInput) {
-    const baseSlug = input.clinicName
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-
-    let slug = baseSlug || `clinic-${Date.now()}`;
-    let suffix = 1;
-    while (await prisma.clinic.findUnique({ where: { slug } })) {
-      slug = `${baseSlug || "clinic"}-${suffix++}`;
-    }
-
-    const clinic = await prisma.clinic.create({
-      data: {
-        name: input.clinicName.trim(),
-        slug,
-        email: input.email.toLowerCase(),
-        imageUrl: input.imageUrl,
-        countryCode: "US",
-        currencyCode: "USD"
-      }
-    });
+    const normalizedEmail = input.email.trim().toLowerCase();
 
     const incomingSpecialties = Array.isArray(input.specialtyCodes) ? input.specialtyCodes : [input.specialtyCodes];
     const normalizedSpecialtyCodes = Array.from(
@@ -136,39 +153,68 @@ export const authService = {
       throw new AppError(`Invalid specialties: ${missing.join(", ")}`, 400);
     }
 
-    await prisma.clinicSpecialty.createMany({
-      data: specialties.map((specialty) => ({
-        clinicId: clinic.id,
-        specialtyId: specialty.id
-      }))
-    });
+    await assertRegisterEmailAvailable(normalizedEmail);
 
-    await permissionService.ensureDefaultRoles(clinic.id);
+    const baseSlug = input.clinicName
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
 
-    const existingRole = await prisma.role.findFirst({
-      where: { clinicId: clinic.id, name: "ClinicAdmin", deletedAt: null }
-    });
-
-    const role =
-      existingRole ??
-      (await prisma.role.create({
-        data: { clinicId: clinic.id, name: "ClinicAdmin" }
-      }));
+    let slug = baseSlug || `clinic-${Date.now()}`;
+    let suffix = 1;
+    while (await prisma.clinic.findUnique({ where: { slug } })) {
+      slug = `${baseSlug || "clinic"}-${suffix++}`;
+    }
 
     const { passwordHash, recoverablePassword } = await hashPasswordWithRecoverable(input.password);
 
-    const user = await prisma.user.create({
-      data: {
-        clinicId: clinic.id,
-        roleId: role.id,
-        firstName: input.firstName,
-        lastName: input.lastName,
-        email: input.email.toLowerCase(),
-        passwordHash,
-        recoverablePassword
-      },
-      include: { role: true }
-    });
+    const { clinicId, user } = await prisma
+      .$transaction(async (tx) => {
+        const clinic = await tx.clinic.create({
+          data: {
+            name: input.clinicName.trim(),
+            slug,
+            email: normalizedEmail,
+            imageUrl: input.imageUrl,
+            countryCode: "US",
+            currencyCode: "USD"
+          }
+        });
+
+        await tx.clinicSpecialty.createMany({
+          data: specialties.map((specialty) => ({
+            clinicId: clinic.id,
+            specialtyId: specialty.id
+          }))
+        });
+
+        const role = await tx.role.create({
+          data: {
+            clinicId: clinic.id,
+            name: "ClinicAdmin",
+            isSystem: true
+          }
+        });
+
+        const createdUser = await tx.user.create({
+          data: {
+            clinicId: clinic.id,
+            roleId: role.id,
+            firstName: input.firstName.trim(),
+            lastName: input.lastName.trim(),
+            email: normalizedEmail,
+            passwordHash,
+            recoverablePassword
+          },
+          include: { role: true }
+        });
+
+        return { clinicId: clinic.id, user: createdUser };
+      })
+      .catch((error: unknown) => mapRegisterPrismaError(error));
+
+    await permissionService.ensureDefaultRoles(clinicId);
 
     const authPayload = await getAuthUser(user.id);
     const accessToken = signAccessToken(user.id, user.clinicId, user.role.name as RoleName, authPayload.permissions);

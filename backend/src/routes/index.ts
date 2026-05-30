@@ -17,6 +17,7 @@ import financeRoutes from "./finance.routes";
 import searchRoutes from "./search.routes";
 import paymentMethodCatalogRoutes from "./payment-method-catalog.routes";
 import campaignCatalogRoutes from "./campaign-catalog.routes";
+import userRoutes from "./user.routes";
 
 const router = Router();
 
@@ -39,5 +40,6 @@ router.use("/finance", financeRoutes);
 router.use("/search", searchRoutes);
 router.use("/payment-methods", paymentMethodCatalogRoutes);
 router.use("/campaigns", campaignCatalogRoutes);
+router.use("/users", userRoutes);
 
 export default router;

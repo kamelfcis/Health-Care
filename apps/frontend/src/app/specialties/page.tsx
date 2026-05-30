@@ -430,7 +430,7 @@ function SpecialtiesTemplatesPage({ mode = "templates" }: { mode?: "templates" |
   });
   const clinicsQuery = useQuery({
     queryKey: ["clinics", "specialties-admin"],
-    queryFn: clinicService.list
+    queryFn: () => clinicService.list(),
   });
 
   useEffect(() => {

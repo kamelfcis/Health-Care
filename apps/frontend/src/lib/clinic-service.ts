@@ -14,6 +14,7 @@ export interface ClinicItem {
   currencyCode?: string | null;
   timezone?: string | null;
   isActive: boolean;
+  deletedAt?: string | null;
   clinicSpecialties?: Array<{
     specialty: {
       id: string;
@@ -122,8 +123,11 @@ export const clinicService = {
     return formData;
   },
 
-  async list() {
-    const res = await api.get<{ data: ClinicsListResponse }>("/clinics?page=1&pageSize=100");
+  async list(params?: { deletedFilter?: "active" | "deleted" | "all" }) {
+    const deletedFilter = params?.deletedFilter ?? "active";
+    const res = await api.get<{ data: ClinicsListResponse }>("/clinics", {
+      params: { page: 1, pageSize: 100, deletedFilter }
+    });
     return res.data.data.data;
   },
 

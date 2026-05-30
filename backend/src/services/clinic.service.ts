@@ -2,11 +2,15 @@ import { prisma } from "../config/prisma";
 import { AppError } from "../utils/app-error";
 import { permissionService } from "./permission.service";
 import { hashPasswordWithRecoverable } from "../utils/user-password";
+import { hardDeleteClinicCascade, purgeOrphanClinics } from "../utils/clinic-cleanup";
+
+type DeletedFilter = "active" | "deleted" | "all";
 
 interface ListInput {
   page: number;
   pageSize: number;
   search?: string;
+  deletedFilter?: DeletedFilter;
 }
 
 interface ClinicAdminInput {
@@ -79,8 +83,15 @@ export const clinicService = {
   async list(input: ListInput) {
     const normalizedSearch = input.search?.trim();
     const isShortSearch = Boolean(normalizedSearch && normalizedSearch.length <= 3);
+    const deletedFilter = input.deletedFilter ?? "active";
+    const deletedWhere =
+      deletedFilter === "all"
+        ? {}
+        : deletedFilter === "deleted"
+          ? { deletedAt: { not: null } }
+          : { deletedAt: null };
     const where = {
-      deletedAt: null,
+      ...deletedWhere,
       ...(normalizedSearch
         ? {
             OR: [
@@ -333,11 +344,12 @@ export const clinicService = {
     });
   },
 
-  async remove(id: string) {
-    return prisma.clinic.update({
-      where: { id },
-      data: { deletedAt: new Date(), isActive: false }
-    });
+  async remove(id: string, actorUserId: string) {
+    return hardDeleteClinicCascade(id, actorUserId);
+  },
+
+  async purgeOrphans() {
+    return purgeOrphanClinics();
   },
 
   async listUsersForSuperAdmin(clinicId: string) {

@@ -203,6 +203,12 @@ export default function DashboardPage() {
         icon: Megaphone,
         allowedRoles: ["SuperAdmin", "ClinicAdmin"]
       },
+      {
+        href: "/dashboard/system-users",
+        labelKey: "nav.systemUsers",
+        icon: Users,
+        allowedRoles: ["SuperAdmin"]
+      },
       { href: "/users", labelKey: "nav.users", icon: UserCog, requiredPermission: "users.read" },
       { href: "/doctors", labelKey: "nav.doctors", icon: Stethoscope, requiredPermission: "doctors.read" },
       { href: "/patients", labelKey: "nav.patients", icon: Users, requiredPermission: "patients.read" },

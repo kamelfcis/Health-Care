@@ -113,6 +113,12 @@ router.patch(
 );
 
 router.get("/", requireAuth, allowRoles("SuperAdmin"), asyncHandler(clinicController.list));
+router.post(
+  "/purge-orphans",
+  requireAuth,
+  allowRoles("SuperAdmin"),
+  asyncHandler(clinicController.purgeOrphans)
+);
 router.get("/:id/users", requireAuth, allowRoles("SuperAdmin"), asyncHandler(clinicController.listUsers));
 router.post(
   "/:id/users/:userId/reset-password",

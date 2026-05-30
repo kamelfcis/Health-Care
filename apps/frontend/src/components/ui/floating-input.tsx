@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, InputHTMLAttributes } from "react";
+import { forwardRef, InputHTMLAttributes, useCallback } from "react";
 import { cn } from "@/lib/utils";
 
 interface FloatingInputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -9,12 +9,29 @@ interface FloatingInputProps extends InputHTMLAttributes<HTMLInputElement> {
   endAdornment?: React.ReactNode;
 }
 
+function assignRef<T>(ref: React.Ref<T> | undefined, value: T | null) {
+  if (typeof ref === "function") ref(value);
+  else if (ref) (ref as React.MutableRefObject<T | null>).current = value;
+}
+
 export const FloatingInput = forwardRef<HTMLInputElement, FloatingInputProps>(
-  ({ label, id, className, error, endAdornment, ...props }, ref) => {
+  function FloatingInput({ label, id, className, error, endAdornment, ...props }, forwardedRef) {
+    const { ref: propsRef, ...inputProps } = props as FloatingInputProps & {
+      ref?: React.Ref<HTMLInputElement>;
+    };
+
+    const mergedRef = useCallback(
+      (node: HTMLInputElement | null) => {
+        assignRef(forwardedRef, node);
+        assignRef(propsRef, node);
+      },
+      [forwardedRef, propsRef]
+    );
+
     return (
       <div className="relative">
         <input
-          ref={ref}
+          ref={mergedRef}
           id={id}
           placeholder=" "
           className={cn(
@@ -23,7 +40,7 @@ export const FloatingInput = forwardRef<HTMLInputElement, FloatingInputProps>(
             error ? "border-red-400 focus:border-red-400 focus:ring-red-300/40" : "",
             className
           )}
-          {...props}
+          {...inputProps}
         />
         <label
           htmlFor={id}
